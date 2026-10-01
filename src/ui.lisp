@@ -21,6 +21,7 @@
    (plan :initform '() :accessor plan)
    (where :initform (make-hash-table :test 'equal) :accessor where)
    (show-hidden :initform nil :accessor show-hidden)
+   (help-shown :initform nil :accessor help-shown)
    (note :initform nil :accessor note))
   (:pretty-name "Esploro")
   (:menu-bar nil)
@@ -118,11 +119,15 @@
                 (format pane "open in ~a" (where-text places))))))))))
 
 (defun display-plan (frame pane)
+  (when (help-shown frame)
+    (return-from display-plan (display-help pane)))
   (clim:with-text-style (pane (clim:make-text-style nil :bold nil))
     (write-string "Plan" pane))
   (terpri pane)
   (cond ((null (plan frame))
-         (write-string "Nothing planned. Right-click a file for what can be done with it; changes wait here until applied." pane)
+         (write-string "Nothing planned. Right-click a file for what can be done with it; changes wait here until applied. " pane)
+         (clim:present '(com-help) 'clim:command :stream pane)
+         (write-string " (or ?) shows what Esploro can do." pane)
          (terpri pane))
         (t
          (let ((problems (check-plan (plan frame))))
@@ -179,7 +184,7 @@ of them, otherwise ENTRY alone."
   (let ((frame clim:*application-frame*))
     (if (eq (entry-kind entry) :folder)
         (go-to frame (entry-path entry))
-        (let ((window (open-path (entry-path entry) :where (where frame))))
+        (let ((window (open-path (entry-path entry))))
           (setf (note frame) (and window (format nil "~a is open in ~a: went there"
                                                  (entry-name entry) (where-text (file-where (entry-path entry) (where frame))))))))))
 
@@ -188,7 +193,7 @@ of them, otherwise ENTRY alone."
     (object)
   (list object))
 
-(define-esploro-command (com-up :name t) ()
+(define-esploro-command (com-up :name t :keystroke (:up :meta)) ()
   (let ((frame clim:*application-frame*))
     (go-to frame (path-parent (folder frame)))))
 
@@ -307,7 +312,7 @@ in /), else, for one file, to that path."
 (define-esploro-command (com-clear-plan :name t) ()
   (setf (plan clim:*application-frame*) '()))
 
-(define-esploro-command (com-undo :name t) ()
+(define-esploro-command (com-undo :name t :keystroke (#\z :control)) ()
   (let ((frame clim:*application-frame*))
     (handler-case (setf (note frame) (if (undo-last) "Undone" "Nothing to undo"))
       (plan-refused (c) (setf (note frame) (princ-to-string c))))
@@ -335,7 +340,7 @@ in /), else, for one file, to that path."
                             (note frame) "The plan, as edited")
           (error (e) (setf (note frame) (format nil "The edited plan couldn't be read: ~a" e)))))))
 
-(define-esploro-command (com-refresh :name t) ()
+(define-esploro-command (com-refresh :name t :keystroke (:f5)) ()
   (refresh clim:*application-frame*))
 
 (define-esploro-command (com-toggle-hidden :name t) ()
@@ -345,6 +350,60 @@ in /), else, for one file, to that path."
 
 (define-esploro-command (com-quit :name t) ()
   (clim:frame-exit clim:*application-frame*))
+
+;;; --- Help -----------------------------------------------------------------------
+
+(defparameter *help*
+  '(("Mouse"
+     ("click" "open it: a folder goes in; a file open in a window goes to that window")
+     ("shift-click" "mark it (or unmark)")
+     ("right-click" "what can be done with it; with all the marked ones when it's marked"))
+    ("Keys"
+     ("? or F1" "this help")
+     ("Alt+Up" "the folder above")
+     ("F5" "read the folder again")
+     ("Ctrl+z" "undo the last applied plan")
+     ("Tab" "completes a command's name as you type it")
+     ("Ctrl+?" "what can be typed here"))
+    ("Commands (type them on the Command: line; Tab completes)"
+     ("Go FOLDER" "go to a folder: ~, ~/src, or a name in this one")
+     ("Up" "the folder above")
+     ("New Folder NAME" "plan a new folder here")
+     ("Rename FILE NAME" "plan a new name (click the file when it asks)")
+     ("Move Marked TO" "plan moving the marked files into a folder (end it with / for a new one)")
+     ("Copy Marked TO" "the same, copying")
+     ("Trash Marked" "plan putting the marked files in the Trash")
+     ("Unmark All" "")
+     ("Apply Plan" "do the plan; nothing changes before this")
+     ("Edit Plan" "the plan as text in Emacs; save, then C-x # brings it back")
+     ("Clear Plan" "forget the plan")
+     ("Undo" "put back the last applied plan")
+     ("Toggle Hidden" "show or hide files starting with a dot")
+     ("Refresh" "read the folder again")
+     ("Help" "this")
+     ("Quit" ""))))
+
+(define-esploro-command (com-help :name t :keystroke (:f1)) ()
+  (let ((frame clim:*application-frame*))
+    (setf (help-shown frame) (not (help-shown frame)))))
+
+(defun display-help (pane)
+  (loop for (title . rows) in *help*
+        do (clim:with-text-face (pane :bold) (format pane "~a~%" title))
+           (loop for (what does) in rows
+                 do (clim:with-text-face (pane :bold) (write-string what pane))
+                    (format pane "~:[  ~a~;~*~]~%" (string= does "") does))
+           (terpri pane))
+  (format pane "Each file's own commands (Open in emacs, Duplicate, ...) are on its right-click menu.~%~%")
+  (clim:present '(com-help) 'clim:command :stream pane)
+  (write-string " again hides this." pane)
+  (terpri pane))
+
+;;; "?" is help too. A key like this works anywhere on the command line,
+;;; so a "?" can't be typed into a name there: rename such a file in the
+;;; plan's text (Edit Plan) instead.
+(dolist (key '((#\?) (#\? :shift)))   ; X sends ? with shift held
+  (clim:add-keystroke-to-command-table 'esploro key :command '(com-help) :errorp nil))
 
 ;;; --- Starting --------------------------------------------------------------------
 

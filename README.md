@@ -22,7 +22,7 @@ make install         # into ~/.local/bin
 make test            # the core's tests: SBCL alone, no X
 ```
 
-In the window: click a file to open it (or go to the window that has it), click a folder to go in, shift-click to mark, right-click for what can be done with it. Changes collect in the plan on the right, applied or edited in Emacs with a click; the bottom line takes commands by name (`Go ~/src`, `New Folder`, `Move Marked`, `Undo`, `Toggle Hidden`).
+In the window, `?` or F1 shows help in the side pane. Click a file to open it (or go to the window that has it), click a folder to go in, shift-click to mark, right-click for what can be done with it; Alt+Up goes up, F5 reads the folder again, Ctrl+z undoes. Changes collect in the plan on the right, applied or edited in Emacs with a click; the bottom line takes commands by name (`Go ~/src`, `New Folder`, `Move Marked`, `Undo`, `Toggle Hidden`).
 
 It knows the windows when StumpWM runs Swank (on 127.0.0.1:4004; `ESPLORO_SWANK_PORT` changes it, and the password in `~/.slime-secret` is sent when there is one), and Emacs's buffers when Emacs runs its server. Without them it is a plain explorer. [Vikix](https://vikix.dev) sets both up.
 

@@ -38,7 +38,9 @@ Then the window, `esploro` (McCLIM): the folder's list, each entry a presentatio
 
 Phase 0's core is done and tested (`make test`, 63 checks): folders, plans checked on paper then applied with restarts when a step fails (retry, skip, stop, put back), the freedesktop Trash, the journal and undo, the Swank client, the window map (StumpWM + `/proc` + Emacs), and `define-file-command` with the first commands (open in Emacs, terminal here, open with default, duplicate, trash). The window lists a folder with presentations, marks, the plan pane with Apply / Edit / Clear / Undo, "open in" beside open files, and the restarts as a menu when a step fails. `esploro --where` answers from the command line.
 
-Not yet: tried by hand at length (it was driven by a script so far), the theme, keys for the common commands, Vikix installing it.
+Help is in the side pane (`?`, F1, or the Help button), with keys for the common commands (Alt+Up, F5, Ctrl+z). Opening a text file goes to Emacs when its server runs; a program meant for a terminal (nvim) is given one, since plain `xdg-open` would start it unseen.
+
+Not yet: tried by hand at length, the theme, Vikix installing it.
 
 ## Later
 

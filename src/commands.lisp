@@ -94,10 +94,74 @@ Esploro and leaves no process to wait for."
 
 (defparameter *terminal* (or (sb-posix:getenv "TERMINAL") "alacritty"))
 
-(defun open-path (path &key where)
-  "Open PATH: when a window already has it (WHERE, from SCAN-WHERE), go to
-that window instead of opening it again; otherwise its usual program."
-  (let ((places (and where (file-where path where))))
+(defun command-output (program &rest args)
+  "What PROGRAM prints, first line, or NIL."
+  (ignore-errors
+   (let ((out (with-output-to-string (s)
+                (sb-ext:run-program program args :search t :output s :error nil :wait t))))
+     (let ((line (string-trim '(#\Space #\Newline) (subseq out 0 (position #\Newline out)))))
+       (and (plusp (length line)) line)))))
+
+(defun desktop-file (name)
+  "Where the desktop entry NAME (\"nvim.desktop\") is, in the XDG folders."
+  (let ((dirs (cons (join-path (env-folder "XDG_DATA_HOME" ".local/share") "applications")
+                    (mapcar (lambda (d) (join-path d "applications"))
+                            (remove "" (split-on #\: (or (sb-posix:getenv "XDG_DATA_DIRS")
+                                                         "/usr/local/share:/usr/share"))
+                                    :test #'string=)))))
+    (loop for dir in dirs
+          for file = (join-path dir name)
+          when (path-exists-p file) return file)))
+
+(defun desktop-entry (file)
+  "FILE's Exec= and Terminal= from its [Desktop Entry]: (VALUES EXEC TERMINAL-P)."
+  (with-open-file (in (native file) :external-format :utf-8)
+    (let ((section nil) exec terminal)
+      (loop for line = (read-line in nil) while line
+            do (cond ((and (plusp (length line)) (char= (char line 0) #\[)) (setf section line))
+                     ((string/= section "[Desktop Entry]"))
+                     ((and (not exec) (> (length line) 5) (string= "Exec=" line :end2 5))
+                      (setf exec (subseq line 5)))
+                     ((and (> (length line) 9) (string= "Terminal=" line :end2 9))
+                      (setf terminal (string-equal (subseq line 9) "true")))))
+      (values exec terminal))))
+
+(defun exec-arguments (exec path)
+  "EXEC (a desktop entry's command) as a list, with PATH for %f %F %u %U and
+the other field codes left out."
+  (let ((args '()) (used nil))
+    (dolist (word (remove "" (split-on #\Space exec) :test #'string=))
+      (cond ((member word '("%f" "%F" "%u" "%U") :test #'string=) (push path args) (setf used t))
+            ((and (= (length word) 2) (char= (char word 0) #\%)))
+            (t (push (string-trim "\"" word) args))))
+    (unless used (push path args))
+    (nreverse args)))
+
+(defun open-default (path)
+  "Open PATH with its usual program. Text goes to Emacs when its server is
+running. A program meant for a terminal (nvim, less) gets one: xdg-open,
+outside a big desktop, would start it with no terminal, unseen."
+  (cond ((and (kind-is (path-kind path) :text) (emacs-ask "t"))
+         (let ((frames (nth-value 1 (emacs-buffers))))
+           (cond (frames
+                  (launch "emacsclient" "-n" path)
+                  (focus-window (first frames)))
+                 ;; A daemon with no frame: -n alone would open nothing to see.
+                 (t (launch "emacsclient" "-c" "-n" path)))))
+        (t
+         (let* ((mime (command-output "xdg-mime" "query" "filetype" path))
+                (entry (and mime (command-output "xdg-mime" "query" "default" mime)))
+                (file (and entry (desktop-file entry))))
+           (multiple-value-bind (exec terminal) (if file (desktop-entry file) (values nil nil))
+             (if (and exec terminal)
+                 (apply #'launch *terminal* "-e" (exec-arguments exec path))
+                 (launch "xdg-open" path)))))))
+
+(defun open-path (path &key (where (scan-where)))
+  "Open PATH: when a window already has it (WHERE, from SCAN-WHERE, fresh by
+default), go to that window instead of opening it again; otherwise its
+usual program. Returns the window gone to, or NIL."
+  (let ((places (file-where path where)))
     (cond (places
            (let ((place (or (find-if (lambda (p) (member (cdr p) '(:buffer :modified-buffer))) places)
                             (first places))))
@@ -110,7 +174,7 @@ that window instead of opening it again; otherwise its usual program."
                                          (lisp-string path))))
                     (focus-window (window-id (car place)))))
              (car place)))
-          (t (launch "xdg-open" path) nil))))
+          (t (open-default path) nil))))
 
 ;;; --- The first commands --------------------------------------------------------
 
@@ -124,7 +188,7 @@ that window instead of opening it again; otherwise its usual program."
 
 (define-file-command open-with-default ((path :file))
   "Open with its usual program, even when a window has it already."
-  (launch "xdg-open" path))
+  (open-default path))
 
 (define-file-command duplicate ((path t) :changes t)
   "Plan a copy beside it."
