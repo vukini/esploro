@@ -271,6 +271,20 @@
     (sb-ext:process-kill shell 15)
     (sb-ext:process-wait shell)))
 
+;;; --- Previews -------------------------------------------------------------------------
+
+(make-file (p "long.txt") (format nil "one~%two~%three~%four~%"))
+(check "a text's first lines" (equal (text-head (p "long.txt") :lines 2) '("one" "two")))
+(check "not text: no lines"
+       (progn (with-open-file (out (p "bin.dat") :direction :output :element-type '(unsigned-byte 8))
+                (write-sequence #(1 0 2 0) out))
+              (null (text-head (p "bin.dat")))))
+(check "a thumbnail is named by the file, its size and time"
+       (let ((before (esploro::thumbnail-path (p "long.txt"))))
+         (make-file (p "long.txt") "changed, and longer than before")
+         (string/= before (esploro::thumbnail-path (p "long.txt")))))
+(check "nothing to make a thumbnail of a text" (null (thumbnail (p "long.txt"))))
+
 ;;; --- The end -------------------------------------------------------------------------
 
 (sb-ext:run-program "chmod" (list "-R" "u+w" *top*) :search t)

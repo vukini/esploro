@@ -9,7 +9,7 @@
   :author "Vid <vukini@gmail.com>"
   :license "MIT"
   :version "0.1.0"
-  :depends-on ((:require "sb-posix") (:require "sb-bsd-sockets"))
+  :depends-on ((:require "sb-posix") (:require "sb-bsd-sockets") (:require "sb-md5"))
   :pathname "src/"
   :serial t
   :components ((:file "package")
@@ -17,7 +17,8 @@
                (:file "plan")
                (:file "stumpwm")
                (:file "where")
-               (:file "commands")))
+               (:file "commands")
+               (:file "preview")))
 
 (defsystem "esploro"
   :description "A file explorer in Common Lisp for Lisp desktops: StumpWM, with Emacs beside it."

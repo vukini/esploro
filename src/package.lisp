@@ -25,6 +25,8 @@
    #:file-command-doc #:file-command-changes #:file-command-label
    #:commands-for #:find-file-command #:run-file-command #:launch
    #:open-path #:open-default
+   ;; Previews
+   #:thumbnail #:text-head #:file-description
    ;; The window
    #:run #:main))
 

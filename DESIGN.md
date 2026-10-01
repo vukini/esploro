@@ -40,7 +40,9 @@ Phase 0's core is done and tested (`make test`, 63 checks): folders, plans check
 
 Help is in the side pane (`?`, F1, or the Help button), with keys for the common commands (Alt+Up, F5, Ctrl+z). Opening a text file goes to Emacs when its server runs; a program meant for a terminal (nvim) is given one, since plain `xdg-open` would start it unseen.
 
-Not yet: tried by hand at length, the theme, Vikix installing it.
+Selection is as in other file managers, by mouse (click, Ctrl, Shift, double-click opens) and by keys (arrows, Shift, Ctrl, Ctrl+Space, Page Up/Down, Return opens when nothing is typed); the one file selected is previewed above the plan (thumbnails of pictures, PDFs and videos made once and kept in `~/.cache/esploro`; text; folders).
+
+Not yet: tried by hand at length, the theme, thumbnails made in the background (now a first look at a big picture waits for ImageMagick), Vikix installing it.
 
 ## Later
 

@@ -1,27 +1,36 @@
 ;;;; ui.lisp — Esploro's window (McCLIM).
 ;;;;
 ;;;; The folder's entries on the left, each one a presentation of its file:
-;;;; what's on screen is the file object itself, so a click opens it, a
-;;;; right click offers the file commands for its kind, and a shift-click
-;;;; marks it. The plan on the right, applied or edited in Emacs with one
-;;;; click. Beside each file, the windows that have it open; opening a file
-;;;; that's open goes to its window.
+;;;; what's on screen is the file object itself, so the right-click menu
+;;;; offers the file commands for its kind. A selection, made with the
+;;;; mouse or the keys as in any file manager (click, Ctrl and Shift; the
+;;;; arrows, Ctrl and Shift); the one file selected is previewed on the
+;;;; right, above the plan. Beside each file, the windows that have it open;
+;;;; opening a file that's open goes to its window.
 
 (in-package #:esploro)
 
 (clim:define-presentation-type file-entry ())
 (clim:define-presentation-type folder-up ())
 
-(clim:define-gesture-name :mark :pointer-button-press (:left :shift))
+(clim:define-gesture-name :toggle-select :pointer-button-press (:left :control))
+(clim:define-gesture-name :extend-select :pointer-button-press (:left :shift))
 
 (clim:define-application-frame esploro ()
   ((folder :initarg :folder :accessor folder)
    (entries :initform '() :accessor entries)
-   (marks :initform (make-hash-table :test 'equal) :accessor marks)
+   (selection :initform (make-hash-table :test 'equal) :accessor selection)
+   (cursor :initform nil :accessor cursor)   ; the index the keys move from
+   (anchor :initform nil :accessor anchor)   ; where Shift extends from
+   (last-click :initform nil :accessor last-click)
+   (scroll-wanted :initform nil :accessor scroll-wanted)
+   (row-height :initform 20 :accessor row-height)
+   (rows-top :initform 0 :accessor rows-top)
    (plan :initform '() :accessor plan)
    (where :initform (make-hash-table :test 'equal) :accessor where)
    (show-hidden :initform nil :accessor show-hidden)
    (help-shown :initform nil :accessor help-shown)
+   (patterns :initform (make-hash-table :test 'equal) :accessor patterns)
    (note :initform nil :accessor note))
   (:pretty-name "Esploro")
   (:menu-bar nil)
@@ -31,6 +40,11 @@
           :scroll-bars :both
           :end-of-line-action :allow
           :text-style (clim:make-text-style :sans-serif :roman :normal))
+   (preview :application
+            :display-function 'display-preview
+            :scroll-bars :vertical
+            :end-of-line-action :wrap*
+            :text-style (clim:make-text-style :sans-serif :roman :small))
    (plan-pane :application
               :display-function 'display-plan
               :scroll-bars :vertical
@@ -39,7 +53,9 @@
    (interactor :interactor :height 70))
   (:layouts
    (default (clim:vertically ()
-              (clim:horizontally () (2/3 files) (1/3 plan-pane))
+              (clim:horizontally ()
+                (3/5 files)
+                (2/5 (clim:vertically () (2/3 preview) (1/3 plan-pane))))
               interactor))))
 
 ;;; --- Reading the folder --------------------------------------------------------
@@ -50,17 +66,91 @@
                             (setf (note frame) (format nil "Can't read ~a: ~a" (folder frame) (syscall-reason e)))
                             '()))
         (where frame) (scan-where))
-  ;; Marks on files that went away go too.
+  ;; What went away isn't selected any more; the cursor stays in range.
   (maphash (lambda (path v) (declare (ignore v))
-             (unless (path-exists-p path) (remhash path (marks frame))))
-           (marks frame)))
+             (unless (path-exists-p path) (remhash path (selection frame))))
+           (selection frame))
+  (let ((n (length (entries frame))))
+    (when (cursor frame)
+      (setf (cursor frame) (if (zerop n) nil (min (cursor frame) (1- n)))))))
 
-(defun go-to (frame folder)
+(defun go-to (frame folder &key cursor-on)
+  "Show FOLDER, with the cursor on the entry whose path is CURSOR-ON (the
+folder just left, going up), nothing selected."
   (setf (folder frame) folder)
-  (clrhash (marks frame))
-  (refresh frame))
+  (clrhash (selection frame))
+  (refresh frame)
+  (let ((i (and cursor-on (position cursor-on (entries frame) :key #'entry-path :test #'string=))))
+    (setf (cursor frame) i (anchor frame) i (scroll-wanted frame) t)))
 
-;;; --- Drawing ---------------------------------------------------------------------
+;;; --- The selection ----------------------------------------------------------------
+
+(defun selected (frame)
+  "The selected paths, in the folder's order."
+  (loop for entry in (entries frame)
+        when (gethash (entry-path entry) (selection frame)) collect (entry-path entry)))
+
+(defun cursor-entry (frame)
+  (and (cursor frame) (nth (cursor frame) (entries frame))))
+
+(defun select-only (frame i)
+  (clrhash (selection frame))
+  (let ((entry (nth i (entries frame))))
+    (when entry (setf (gethash (entry-path entry) (selection frame)) t)))
+  (setf (cursor frame) i (anchor frame) i (scroll-wanted frame) t))
+
+(defun select-range (frame i)
+  "Select from the anchor to I, and nothing else."
+  (let ((from (or (anchor frame) (cursor frame) i)))
+    (clrhash (selection frame))
+    (loop for k from (min from i) to (max from i)
+          do (setf (gethash (entry-path (nth k (entries frame))) (selection frame)) t))
+    (setf (anchor frame) from (cursor frame) i (scroll-wanted frame) t)))
+
+(defun toggle-select (frame i)
+  (let ((path (entry-path (nth i (entries frame))))
+        (selection (selection frame)))
+    (if (gethash path selection) (remhash path selection) (setf (gethash path selection) t))
+    (setf (cursor frame) i (anchor frame) i)))
+
+(defun quiet-command-line (frame)
+  "Clear the command line's past: each key would otherwise leave an empty
+Command: line behind."
+  (let ((interactor (clim:find-pane-named frame 'interactor)))
+    (when interactor (clim:window-clear interactor))))
+
+(defun move-cursor (frame delta how)
+  "Move the cursor DELTA rows (clamped). HOW: :only selects just the row
+it lands on, :extend selects from the anchor to it, :keep moves only."
+  (quiet-command-line frame)
+  (let ((n (length (entries frame))))
+    (unless (zerop n)
+      ;; With no cursor yet, Down starts at the top and Up at the bottom.
+      (let ((i (max 0 (min (1- n) (+ (or (cursor frame) (if (plusp delta) -1 n)) delta)))))
+        (ecase how
+          (:only (select-only frame i))
+          (:extend (select-range frame i))
+          (:keep (setf (cursor frame) i (scroll-wanted frame) t)))))))
+
+(defun targets (frame entry)
+  "The files a command on ENTRY acts on: the whole selection when ENTRY is
+in it, otherwise ENTRY alone."
+  (let ((selected (selected frame)))
+    (if (member (entry-path entry) selected :test #'string=) selected (list (entry-path entry)))))
+
+(defun add-to-plan (frame steps)
+  (setf (plan frame) (append (plan frame) steps)))
+
+(defun resolve (frame text)
+  "TEXT typed by someone as a path: ~ is home, relative is from the folder."
+  (let ((text (string-trim " " text)))
+    (normalize-path
+     (cond ((string= text "~") (home-folder))
+           ((and (> (length text) 1) (string= "~/" text :end2 2)) (join-path (home-folder) (subseq text 2)))
+           ((and (plusp (length text)) (char= (char text 0) #\/)) text)
+           (t (join-path (folder frame) text))))))
+
+;;; --- Drawing the folder ---------------------------------------------------------------
 
 (defun human-size (bytes)
   (cond ((null bytes) "")
@@ -80,8 +170,18 @@
     (:audio . ,clim:+dark-orange+) (:pdf . ,clim:+firebrick+) (:lisp . ,clim:+dark-green+)
     (:archive . ,clim:+saddle-brown+)))
 
+(defparameter *selected-ink* (clim:make-rgb-color 0.80 0.88 1.0))
+(defparameter *cursor-ink* (clim:make-rgb-color 0.25 0.45 0.85))
+
 (defun kind-ink (kind)
   (or (cdr (assoc kind *kind-inks*)) clim:+foreground-ink+))
+
+(defun entry-label (entry)
+  (format nil "~a~:[~;/~]~:[~; ->~]" (entry-name entry)
+          (eq (entry-kind entry) :folder) (entry-link-p entry)))
+
+(defun text-width (pane string)
+  (values (clim:text-size pane string)))
 
 (defun display-files (frame pane)
   (clim:with-text-style (pane (clim:make-text-style nil :bold :large))
@@ -96,49 +196,149 @@
     (clim:with-output-as-presentation (pane (path-parent (folder frame)) 'folder-up)
       (write-string "..  (up)" pane))
     (terpri pane))
-  (clim:formatting-table (pane :x-spacing 18)
-    (dolist (entry (entries frame))
-      (let ((path (entry-path entry))
-            (places (file-where (entry-path entry) (where frame))))
-        (clim:formatting-row (pane)
-          (clim:formatting-cell (pane)
-            (write-string (if (gethash path (marks frame)) "*" " ") pane))
-          (clim:formatting-cell (pane)
-            (clim:with-output-as-presentation (pane entry 'file-entry)
-              (clim:with-drawing-options (pane :ink (kind-ink (entry-kind entry)))
-                (write-string (entry-name entry) pane)
-                (when (eq (entry-kind entry) :folder) (write-string "/" pane))
-                (when (entry-link-p entry) (write-string " ->" pane)))))
-          (clim:formatting-cell (pane :align-x :right)
-            (write-string (human-size (entry-size entry)) pane))
-          (clim:formatting-cell (pane)
-            (write-string (human-time (entry-mtime entry)) pane))
-          (clim:formatting-cell (pane)
-            (when places
-              (clim:with-drawing-options (pane :ink clim:+dark-cyan+)
-                (format pane "open in ~a" (where-text places))))))))))
+  ;; Rows drawn by hand rather than as a table, so a selected row can have
+  ;; its background across the whole width, and the keys know where rows are.
+  (let* ((entries (entries frame))
+         (row-h (+ (clim:text-style-height (clim:medium-text-style pane) pane) 6))
+         (gap 24)
+         (name-w (max 150 (min 520 (loop for e in entries maximize (text-width pane (entry-label e))))))
+         (sizes (mapcar (lambda (e) (human-size (entry-size e))) entries))
+         (size-w (max 40 (loop for s in sizes maximize (text-width pane s))))
+         (time-w (text-width pane "2026-10-01 22:17"))
+         (x-name 10)
+         (x-size-end (+ x-name name-w gap size-w))
+         (x-time (+ x-size-end gap))
+         (x-where (+ x-time time-w gap))
+         (width (max (+ x-where 320)
+                     (clim:bounding-rectangle-width (clim:sheet-region pane))))
+         (top (nth-value 1 (clim:stream-cursor-position pane)))
+         (blank (clim:pane-background pane)))
+    (setf (row-height frame) row-h (rows-top frame) top)
+    (loop for entry in entries
+          for size in sizes
+          for i from 0
+          for y = (+ top (* i row-h))
+          for text-y = (+ y 3)
+          for places = (file-where (entry-path entry) (where frame))
+          do (clim:with-output-as-presentation (pane entry 'file-entry)
+               ;; The whole row is the presentation, background included.
+               (clim:draw-rectangle* pane 0 y width (+ y row-h)
+                                     :ink (if (gethash (entry-path entry) (selection frame))
+                                              *selected-ink* blank))
+               (when (eql i (cursor frame))
+                 (clim:draw-rectangle* pane 1 (1+ y) (- width 2) (+ y row-h -1)
+                                       :filled nil :ink *cursor-ink* :line-thickness 1))
+               (clim:draw-text* pane (entry-label entry) x-name text-y
+                                :align-y :top :ink (kind-ink (entry-kind entry)))
+               (clim:draw-text* pane size x-size-end text-y :align-x :right :align-y :top)
+               (clim:draw-text* pane (human-time (entry-mtime entry)) x-time text-y :align-y :top)
+               (when places
+                 (clim:draw-text* pane (format nil "open in ~a" (where-text places)) x-where text-y
+                                  :align-y :top :ink clim:+dark-cyan+))))
+    (setf (clim:stream-cursor-position pane)
+          (values 0 (+ top (* (length entries) row-h) 6)))))
 
-(defun display-plan (frame pane)
+(defmethod clim:redisplay-frame-panes :after ((frame esploro) &key force-p)
+  (declare (ignore force-p))
+  ;; After the keys move the cursor, scroll so its row is in view: once
+  ;; every pane is drawn, as the list's new size is known only then.
+  (when (and (scroll-wanted frame) (cursor frame))
+    (setf (scroll-wanted frame) nil)
+    (let* ((pane (clim:find-pane-named frame 'files))
+           (viewport (clim:pane-viewport-region pane))
+           (y (+ (rows-top frame) (* (cursor frame) (row-height frame))))
+           (bottom (+ y (row-height frame))))
+      (clim:with-bounding-rectangle* (vx vy vx2 vy2) viewport
+        (declare (ignore vx2))
+        (cond ((< y vy) (clim:scroll-extent pane vx (max 0 (- y (row-height frame)))))
+              ((> bottom vy2) (clim:scroll-extent pane vx (+ (- bottom (- vy2 vy)) (row-height frame)))))))))
+
+;;; --- The preview ---------------------------------------------------------------------
+
+(defun preview-pattern (frame png)
+  "PNG as a McCLIM pattern, read once."
+  (or (gethash png (patterns frame))
+      (setf (gethash png (patterns frame))
+            (ignore-errors (clim:make-pattern-from-bitmap-file (native png) :format :png)))))
+
+(defun display-preview (frame pane)
   (when (help-shown frame)
-    (return-from display-plan (display-help pane)))
-  (clim:with-text-style (pane (clim:make-text-style nil :bold nil))
-    (write-string "Plan" pane))
-  (terpri pane)
-  (cond ((null (plan frame))
-         (write-string "Nothing planned. Right-click a file for what can be done with it; changes wait here until applied. " pane)
+    (return-from display-preview (display-help pane)))
+  (let ((selected (selected frame)))
+    (case (length selected)
+      (0 (clim:with-text-face (pane :italic)
+           (write-string "Select a file to see it here: click it, or the arrow keys. " pane))
          (clim:present '(com-help) 'clim:command :stream pane)
          (write-string " (or ?) shows what Esploro can do." pane)
+         (terpri pane))
+      (1 (preview-file frame pane (first selected)))
+      (t (let ((sizes (loop for p in selected
+                            for e = (find p (entries frame) :key #'entry-path :test #'string=)
+                            when (and e (entry-size e)) sum (entry-size e))))
+           (clim:with-text-face (pane :bold)
+             (format pane "~d selected" (length selected)))
+           (format pane ", ~a in files~%~%" (human-size sizes))
+           (loop for p in selected repeat 40 do (format pane "~a~%" (path-name p)))
+           (when (> (length selected) 40) (format pane "...~%")))))))
+
+(defun preview-file (frame pane path)
+  (let ((entry (find path (entries frame) :key #'entry-path :test #'string=))
+        (kind (path-kind path)))
+    (clim:with-text-style (pane (clim:make-text-style nil :bold :normal))
+      (write-string (path-name path) pane))
+    (terpri pane)
+    (when entry
+      (format pane "~(~a~)~:[~;, ~:*~a~]  ·  ~a~%" kind (and (entry-size entry) (human-size (entry-size entry)))
+              (human-time (entry-mtime entry))))
+    (let ((places (file-where path (where frame))))
+      (when places
+        (clim:with-drawing-options (pane :ink clim:+dark-cyan+)
+          (format pane "open in ~a~%" (where-text places)))))
+    (terpri pane)
+    (case kind
+      (:folder
+       (let ((inside (ignore-errors (list-folder path :hidden (show-hidden frame)))))
+         (format pane "~d item~:p~%~%" (length inside))
+         (loop for e in inside repeat 50
+               do (clim:with-drawing-options (pane :ink (kind-ink (entry-kind e)))
+                    (format pane "~a~%" (entry-label e))))))
+      ((:image :pdf :video)
+       (let* ((png (thumbnail path))
+              (pattern (and png (preview-pattern frame png))))
+         (if pattern
+             (multiple-value-bind (x y) (clim:stream-cursor-position pane)
+               (declare (ignore x))
+               (clim:draw-pattern* pane pattern 6 y)
+               (setf (clim:stream-cursor-position pane)
+                     (values 0 (+ y (clim:pattern-height pattern) 6))))
+             (format pane "(no preview: ~a)~%" (or (file-description path) "unknown")))))
+      ((:text :lisp)
+       (let ((lines (text-head path)))
+         (clim:with-text-style (pane (clim:make-text-style :fix :roman :small))
+           (dolist (line lines) (write-string line pane) (terpri pane)))))
+      (t (format pane "~a~%" (or (file-description path) ""))
+         (let ((lines (text-head path :lines 30)))
+           (when lines
+             (terpri pane)
+             (clim:with-text-style (pane (clim:make-text-style :fix :roman :small))
+               (dolist (line lines) (write-string line pane) (terpri pane)))))))))
+
+;;; --- The plan -----------------------------------------------------------------------
+
+(defun display-plan (frame pane)
+  (clim:with-text-face (pane :bold) (write-string "Plan" pane))
+  (terpri pane)
+  (cond ((null (plan frame))
+         (write-string "Nothing planned. Changes (right-click, Delete, F2, typed commands) wait here until applied." pane)
          (terpri pane))
         (t
          (let ((problems (check-plan (plan frame))))
            (loop for step in (plan frame)
                  for n from 1
                  do (format pane "~d. ~a~%" n (describe-step step (folder frame))))
-           (terpri pane)
            (when problems
              (clim:with-drawing-options (pane :ink clim:+dark-red+)
                (format pane "~{~a~%~}" problems)))
-           (terpri pane)
            (unless problems
              (clim:present '(com-apply-plan) 'clim:command :stream pane)
              (write-string "   " pane))
@@ -146,64 +346,175 @@
            (write-string "   " pane)
            (clim:present '(com-clear-plan) 'clim:command :stream pane)
            (terpri pane))))
-  (terpri pane)
   (let ((last (find-if-not (lambda (e) (getf (cdr e) :undone)) (journal-entries))))
     (when last
+      (terpri pane)
       (format pane "Last applied (~a):~%~{  ~a~%~}" (getf (cdr last) :time)
               (mapcar (lambda (step) (describe-step step (folder frame))) (getf (cdr last) :steps)))
       (clim:present '(com-undo) 'clim:command :stream pane)
       (terpri pane))))
 
-;;; --- What's marked ------------------------------------------------------------
+;;; --- Opening ---------------------------------------------------------------------------
 
-(defun marked (frame)
-  (loop for entry in (entries frame)
-        when (gethash (entry-path entry) (marks frame)) collect (entry-path entry)))
-
-(defun targets (frame entry)
-  "The files a command on ENTRY acts on: all marked ones when ENTRY is one
-of them, otherwise ENTRY alone."
-  (let ((marked (marked frame)))
-    (if (member (entry-path entry) marked :test #'string=) marked (list (entry-path entry)))))
-
-(defun add-to-plan (frame steps)
-  (setf (plan frame) (append (plan frame) steps)))
-
-(defun resolve (frame text)
-  "TEXT typed by someone as a path: ~ is home, relative is from the folder."
-  (let ((text (string-trim " " text)))
-    (normalize-path
-     (cond ((string= text "~") (home-folder))
-           ((and (> (length text) 1) (string= "~/" text :end2 2)) (join-path (home-folder) (subseq text 2)))
-           ((and (plusp (length text)) (char= (char text 0) #\/)) text)
-           (t (join-path (folder frame) text))))))
-
-;;; --- Commands ---------------------------------------------------------------------
+(defun open-entry (frame entry)
+  (if (eq (entry-kind entry) :folder)
+      (go-to frame (entry-path entry))
+      (let ((window (open-path (entry-path entry))))
+        (setf (note frame) (and window (format nil "~a is open in ~a: went there"
+                                               (entry-name entry) (window-class window)))))))
 
 (define-esploro-command (com-open :name t) ((entry 'file-entry))
-  (let ((frame clim:*application-frame*))
-    (if (eq (entry-kind entry) :folder)
-        (go-to frame (entry-path entry))
-        (let ((window (open-path (entry-path entry))))
-          (setf (note frame) (and window (format nil "~a is open in ~a: went there"
-                                                 (entry-name entry) (where-text (file-where (entry-path entry) (where frame))))))))))
+  (open-entry clim:*application-frame* entry))
 
-(clim:define-presentation-to-command-translator open-entry
-    (file-entry com-open esploro :gesture :select :documentation "Open")
+(define-esploro-command (com-open-current :name nil :keystroke (:down :meta)) ()
+  (let* ((frame clim:*application-frame*)
+         (entry (cursor-entry frame)))
+    (when entry (open-entry frame entry))))
+
+;;; Return on an empty command line opens the file under the cursor. (As a
+;;; key of its own, Return couldn't also end a typed command.)
+(defmethod clim:read-frame-command :around ((frame esploro) &key stream)
+  (declare (ignore stream))
+  (let ((command (call-next-method)))
+    (if (and (null command) (cursor-entry frame))
+        '(com-open-current)
+        command)))
+
+;;; --- The mouse --------------------------------------------------------------------------
+
+(defparameter *double-click-time* 0.45)
+
+(define-esploro-command (com-click :name nil) ((entry 'file-entry))
+  ;; A click selects; a second click on the same file soon after opens it.
+  (let* ((frame clim:*application-frame*)
+         (i (position entry (entries frame)))
+         (now (/ (get-internal-real-time) internal-time-units-per-second))
+         (last (last-click frame)))
+    (setf (last-click frame) (cons entry now))
+    (cond ((and last (eq (car last) entry) (< (- now (cdr last)) *double-click-time*))
+           (setf (last-click frame) nil)
+           (open-entry frame entry))
+          (i (select-only frame i)))))
+
+(clim:define-presentation-to-command-translator click-entry
+    (file-entry com-click esploro :gesture :select :documentation "Select (twice: open)")
     (object)
   (list object))
 
-(define-esploro-command (com-up :name t :keystroke (:up :meta)) ()
-  (let ((frame clim:*application-frame*))
-    (go-to frame (path-parent (folder frame)))))
+(define-esploro-command (com-click-toggle :name nil) ((entry 'file-entry))
+  (let* ((frame clim:*application-frame*)
+         (i (position entry (entries frame))))
+    (when i (toggle-select frame i))))
+
+(clim:define-presentation-to-command-translator toggle-entry
+    (file-entry com-click-toggle esploro :gesture :toggle-select :documentation "Add to the selection, or take out")
+    (object)
+  (list object))
+
+(define-esploro-command (com-click-extend :name nil) ((entry 'file-entry))
+  (let* ((frame clim:*application-frame*)
+         (i (position entry (entries frame))))
+    (when i (select-range frame i))))
+
+(clim:define-presentation-to-command-translator extend-entry
+    (file-entry com-click-extend esploro :gesture :extend-select :documentation "Select up to here")
+    (object)
+  (list object))
 
 (define-esploro-command (com-go-up-to :name nil) ((folder 'folder-up))
-  (go-to clim:*application-frame* folder))
+  (let ((frame clim:*application-frame*))
+    (go-to frame folder :cursor-on (folder frame))))
 
 (clim:define-presentation-to-command-translator go-up
     (folder-up com-go-up-to esploro :gesture :select :documentation "Up")
     (object)
   (list object))
+
+(define-esploro-command (com-file-menu :name nil) ((entry 'file-entry))
+  (let* ((frame clim:*application-frame*)
+         (i (position entry (entries frame))))
+    ;; Right-click on something not selected selects it, as elsewhere.
+    (when (and i (not (gethash (entry-path entry) (selection frame))))
+      (select-only frame i))
+    (let* ((paths (targets frame entry))
+           (choice (clim:menu-choose
+                    (append
+                     (loop for command in (commands-for paths)
+                           collect (list (format nil "~a~:[~; (plan)~]" (file-command-label command)
+                                                 (file-command-changes command))
+                                         :value command
+                                         :documentation (file-command-doc command)))
+                     (list (list "Rename..." :value :rename)
+                           (list "Move to..." :value :move)
+                           (list "Copy to..." :value :copy)))
+                    :label (if (rest paths) (format nil "~d selected" (length paths)) (entry-name entry)))))
+      (case choice
+        ((nil))
+        (:rename (com-rename entry (clim:accept 'string :prompt "new name" :default (entry-name entry)
+                                                        :insert-default t)))
+        (:move (com-move-to paths (clim:accept 'string :prompt "move to")))
+        (:copy (com-copy-to paths (clim:accept 'string :prompt "copy to")))
+        (t (add-to-plan frame (run-file-command choice paths)))))))
+
+(clim:define-presentation-to-command-translator entry-menu
+    (file-entry com-file-menu esploro :gesture :menu :documentation "What can be done with it")
+    (object)
+  (list object))
+
+;;; --- The keys ----------------------------------------------------------------------------
+;;;
+;;; Keys like these work anywhere on the command line, so they can't be
+;;; used for typing in it; none of them is a letter for that reason.
+
+(defparameter *page* 15)
+
+(defmacro define-cursor-key (name keystroke delta how)
+  `(define-esploro-command (,name :name nil :keystroke ,keystroke) ()
+     (move-cursor clim:*application-frame* ,delta ,how)))
+
+(define-cursor-key com-cursor-down (:down) 1 :only)
+(define-cursor-key com-cursor-up (:up) -1 :only)
+(define-cursor-key com-extend-down (:down :shift) 1 :extend)
+(define-cursor-key com-extend-up (:up :shift) -1 :extend)
+(define-cursor-key com-move-down (:down :control) 1 :keep)
+(define-cursor-key com-move-up (:up :control) -1 :keep)
+(define-cursor-key com-page-down (:next) *page* :only)
+(define-cursor-key com-page-up (:prior) (- *page*) :only)
+(define-cursor-key com-extend-page-down (:next :shift) *page* :extend)
+(define-cursor-key com-extend-page-up (:prior :shift) (- *page*) :extend)
+(define-cursor-key com-first (:home :control) most-negative-fixnum :only)
+(define-cursor-key com-last (:end :control) most-positive-fixnum :only)
+(define-cursor-key com-extend-first (:home :control :shift) most-negative-fixnum :extend)
+(define-cursor-key com-extend-last (:end :control :shift) most-positive-fixnum :extend)
+
+(define-esploro-command (com-toggle-current :name nil :keystroke (#\Space :control)) ()
+  (let ((frame clim:*application-frame*))
+    (quiet-command-line frame)
+    (when (cursor frame) (toggle-select frame (cursor frame)))))
+
+(define-esploro-command (com-select-all :name t :keystroke (#\a :control)) ()
+  (let ((frame clim:*application-frame*))
+    (dolist (entry (entries frame)) (setf (gethash (entry-path entry) (selection frame)) t))))
+
+(define-esploro-command (com-select-none :name t :keystroke (:escape)) ()
+  (clrhash (selection clim:*application-frame*)))
+
+(define-esploro-command (com-trash-selected :name t :keystroke (:delete)) ()
+  (let ((frame clim:*application-frame*))
+    (add-to-plan frame (loop for path in (selected frame) collect (list :trash path)))))
+
+(define-esploro-command (com-rename-current :name nil :keystroke (:f2)) ()
+  (let* ((frame clim:*application-frame*)
+         (entry (cursor-entry frame)))
+    (when entry
+      (com-rename entry (clim:accept 'string :prompt "new name" :default (entry-name entry)
+                                             :insert-default t)))))
+
+;;; --- Typed commands -------------------------------------------------------------------
+
+(define-esploro-command (com-up :name t :keystroke (:up :meta)) ()
+  (let ((frame clim:*application-frame*))
+    (go-to frame (path-parent (folder frame)) :cursor-on (folder frame))))
 
 (define-esploro-command (com-go :name t) ((place 'string :prompt "folder"))
   (let* ((frame clim:*application-frame*)
@@ -211,46 +522,6 @@ of them, otherwise ENTRY alone."
     (if (and path (directory-p path))
         (go-to frame path)
         (setf (note frame) (format nil "~a isn't a folder" place)))))
-
-(define-esploro-command (com-toggle-mark :name t) ((entry 'file-entry))
-  (let ((marks (marks clim:*application-frame*))
-        (path (entry-path entry)))
-    (if (gethash path marks) (remhash path marks) (setf (gethash path marks) t))))
-
-(clim:define-presentation-to-command-translator mark-entry
-    (file-entry com-toggle-mark esploro :gesture :mark :documentation "Mark")
-    (object)
-  (list object))
-
-(define-esploro-command (com-unmark-all :name t) ()
-  (clrhash (marks clim:*application-frame*)))
-
-(define-esploro-command (com-file-menu :name nil) ((entry 'file-entry))
-  (let* ((frame clim:*application-frame*)
-         (paths (targets frame entry))
-         (choice (clim:menu-choose
-                  (append
-                   (loop for command in (commands-for paths)
-                         collect (list (format nil "~a~:[~; (plan)~]" (file-command-label command)
-                                               (file-command-changes command))
-                                       :value command
-                                       :documentation (file-command-doc command)))
-                   (list (list "Rename..." :value :rename)
-                         (list "Move to..." :value :move)
-                         (list "Copy to..." :value :copy)))
-                  :label (if (rest paths) (format nil "~d marked" (length paths)) (entry-name entry)))))
-    (case choice
-      ((nil))
-      (:rename (com-rename entry (clim:accept 'string :prompt "new name" :default (entry-name entry)
-                                                      :insert-default t)))
-      (:move (com-move-to paths (clim:accept 'string :prompt "move to")))
-      (:copy (com-copy-to paths (clim:accept 'string :prompt "copy to")))
-      (t (add-to-plan frame (run-file-command choice paths))))))
-
-(clim:define-presentation-to-command-translator entry-menu
-    (file-entry com-file-menu esploro :gesture :menu :documentation "What can be done with it")
-    (object)
-  (list object))
 
 (defun into (frame paths target-text)
   "Steps taking PATHS to TARGET-TEXT: into it when it's a folder (or ends
@@ -274,15 +545,11 @@ in /), else, for one file, to that path."
                              for (to) in (into frame paths target)
                              collect (list :copy path to)))))
 
-(define-esploro-command (com-move-marked :name t) ((target 'string :prompt "to"))
-  (com-move-to (marked clim:*application-frame*) target))
+(define-esploro-command (com-move-selected :name t) ((target 'string :prompt "to"))
+  (com-move-to (selected clim:*application-frame*) target))
 
-(define-esploro-command (com-copy-marked :name t) ((target 'string :prompt "to"))
-  (com-copy-to (marked clim:*application-frame*) target))
-
-(define-esploro-command (com-trash-marked :name t) ()
-  (let ((frame clim:*application-frame*))
-    (add-to-plan frame (loop for path in (marked frame) collect (list :trash path)))))
+(define-esploro-command (com-copy-selected :name t) ((target 'string :prompt "to"))
+  (com-copy-to (selected clim:*application-frame*) target))
 
 (define-esploro-command (com-rename :name t) ((entry 'file-entry) (name 'string :prompt "new name"))
   (add-to-plan clim:*application-frame* (list (list :rename (entry-path entry) name))))
@@ -343,7 +610,7 @@ in /), else, for one file, to that path."
 (define-esploro-command (com-refresh :name t :keystroke (:f5)) ()
   (refresh clim:*application-frame*))
 
-(define-esploro-command (com-toggle-hidden :name t) ()
+(define-esploro-command (com-toggle-hidden :name t :keystroke (#\h :control)) ()
   (let ((frame clim:*application-frame*))
     (setf (show-hidden frame) (not (show-hidden frame)))
     (refresh frame)))
@@ -355,33 +622,34 @@ in /), else, for one file, to that path."
 
 (defparameter *help*
   '(("Mouse"
-     ("click" "open it: a folder goes in; a file open in a window goes to that window")
-     ("shift-click" "mark it (or unmark)")
-     ("right-click" "what can be done with it; with all the marked ones when it's marked"))
+     ("click" "select it, and see it on the right")
+     ("double-click" "open it: a folder goes in; a file open in a window goes to that window")
+     ("Ctrl+click" "add it to the selection, or take it out")
+     ("Shift+click" "select everything from the last one clicked to here")
+     ("right-click" "what can be done with it (with all of the selection when it's in it)"))
     ("Keys"
-     ("? or F1" "this help")
+     ("Up, Down" "select the one above or below")
+     ("Shift+Up, Shift+Down" "select more, up or down")
+     ("Ctrl+Up, Ctrl+Down" "move without selecting; Ctrl+Space then adds or takes out")
+     ("Page Up, Page Down" "a page at a time; Ctrl+Home, Ctrl+End to the first or last")
+     ("Return, Alt+Down" "open it (Return when nothing is typed below)")
      ("Alt+Up" "the folder above")
-     ("F5" "read the folder again")
+     ("Ctrl+a, Escape" "select everything, nothing")
+     ("Delete" "plan putting the selection in the Trash")
+     ("F2" "plan a new name")
      ("Ctrl+z" "undo the last applied plan")
-     ("Tab" "completes a command's name as you type it")
-     ("Ctrl+?" "what can be typed here"))
+     ("Ctrl+h" "show or hide files starting with a dot")
+     ("F5" "read the folder again")
+     ("? or F1" "this help"))
     ("Commands (type them on the Command: line; Tab completes)"
      ("Go FOLDER" "go to a folder: ~, ~/src, or a name in this one")
-     ("Up" "the folder above")
      ("New Folder NAME" "plan a new folder here")
-     ("Rename FILE NAME" "plan a new name (click the file when it asks)")
-     ("Move Marked TO" "plan moving the marked files into a folder (end it with / for a new one)")
-     ("Copy Marked TO" "the same, copying")
-     ("Trash Marked" "plan putting the marked files in the Trash")
-     ("Unmark All" "")
+     ("Move Selected TO" "plan moving the selection into a folder (end it with / for a new one)")
+     ("Copy Selected TO" "the same, copying")
      ("Apply Plan" "do the plan; nothing changes before this")
      ("Edit Plan" "the plan as text in Emacs; save, then C-x # brings it back")
      ("Clear Plan" "forget the plan")
-     ("Undo" "put back the last applied plan")
-     ("Toggle Hidden" "show or hide files starting with a dot")
-     ("Refresh" "read the folder again")
-     ("Help" "this")
-     ("Quit" ""))))
+     ("Up, Undo, Refresh, Select All, Select None, Trash Selected, Toggle Hidden, Quit" ""))))
 
 (define-esploro-command (com-help :name t :keystroke (:f1)) ()
   (let ((frame clim:*application-frame*))
@@ -399,15 +667,14 @@ in /), else, for one file, to that path."
   (write-string " again hides this." pane)
   (terpri pane))
 
-;;; "?" is help too. A key like this works anywhere on the command line,
-;;; so a "?" can't be typed into a name there: rename such a file in the
-;;; plan's text (Edit Plan) instead.
+;;; "?" is help too; so a "?" can't be typed into a name on the command
+;;; line: rename such a file in the plan's text (Edit Plan) instead.
 (dolist (key '((#\?) (#\? :shift)))   ; X sends ? with shift held
   (clim:add-keystroke-to-command-table 'esploro key :command '(com-help) :errorp nil))
 
 ;;; --- Starting --------------------------------------------------------------------
 
 (defun run (&optional (folder (home-folder)))
-  (let ((frame (clim:make-application-frame 'esploro :folder folder :width 1100 :height 700)))
+  (let ((frame (clim:make-application-frame 'esploro :folder folder :width 1200 :height 760)))
     (refresh frame)
     (clim:run-frame-top-level frame)))
