@@ -1,0 +1,11 @@
+name: test
+on: [push, pull_request]
+jobs:
+  core:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: sbcl
+        run: sudo apt-get update -q && sudo apt-get install -y --no-install-recommends sbcl
+      - name: the core's tests (no X, no McCLIM)
+        run: make test

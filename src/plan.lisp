@@ -1,0 +1,391 @@
+;;;; plan.lisp — plan, then apply.
+;;;;
+;;;; Nothing is moved, copied, renamed or deleted at once. Each change is a
+;;;; step in a plan, a plain list:
+;;;;
+;;;;   (:move "/from" "/to")      move (and rename) a file or folder
+;;;;   (:copy "/from" "/to")      copy one, folders whole
+;;;;   (:rename "/path" "name")   a new name in the same folder
+;;;;   (:mkdir "/path")           a new folder
+;;;;   (:trash "/path")           to the Trash (the freedesktop one)
+;;;;
+;;;; A plan can be looked at, edited as text, handed over by an agent, and
+;;;; is checked whole before anything changes: any other step is refused,
+;;;; whoever wrote it. Every applied plan is kept in a journal with its
+;;;; inverse, which UNDO-LAST applies.
+
+(in-package #:esploro)
+
+(defparameter *plan-operations* '(:move :copy :rename :mkdir :trash)
+  "What a plan may do. The journal's inverses also use :rmdir and :restore,
+which only undo applies.")
+
+(defparameter *undo-operations* (append *plan-operations* '(:rmdir :restore)))
+
+;;; --- Where things are kept -------------------------------------------------
+
+(defun env-folder (variable fallback)
+  (or (normalize-path (sb-posix:getenv variable))
+      (join-path (home-folder) fallback)))
+
+(defun trash-folder ()
+  (join-path (env-folder "XDG_DATA_HOME" ".local/share") "Trash"))
+
+(defun state-folder ()
+  (join-path (env-folder "XDG_STATE_HOME" ".local/state") "esploro"))
+
+(defun ensure-folder (folder)
+  (unless (directory-p folder)
+    (ensure-folder (path-parent folder))
+    (sb-posix:mkdir folder #o700))
+  folder)
+
+;;; --- Steps -----------------------------------------------------------------
+
+(defun valid-name-p (name)
+  (and (stringp name) (plusp (length name))
+       (not (find #\/ name)) (not (member name '("." "..") :test #'string=))))
+
+(defun valid-path-p (path)
+  (and (stringp path) (equal (normalize-path path) path)))
+
+(defun step-shape-problem (step allowed)
+  "Why STEP isn't a step at all (its operation or its arguments), or NIL."
+  (if (not (and (consp step) (keywordp (first step))))
+      (format nil "~s isn't a step: a step is a list like (:move \"/from\" \"/to\")" step)
+      (destructuring-bind (op &rest args) step
+        (flet ((args-are (&rest checks)
+                 (and (= (length args) (length checks))
+                      (every #'funcall checks args))))
+          (cond ((not (member op allowed))
+                 (format nil "~(~s~) isn't something a plan can do (only ~{~(~s~)~^, ~})" op allowed))
+                ((case op
+                   ((:move :copy) (args-are #'valid-path-p #'valid-path-p))
+                   (:rename (args-are #'valid-path-p #'valid-name-p))
+                   ((:mkdir :trash :rmdir) (args-are #'valid-path-p))
+                   (:restore (args-are #'valid-name-p #'valid-path-p)))
+                 nil)
+                (t (format nil "~(~s~) wasn't given the right things: ~s (paths are absolute, without . or ..)"
+                           op step)))))))
+
+(defun step-target (step)
+  "The path a :rename step makes."
+  (join-path (path-parent (second step)) (third step)))
+
+(defun short-path (path &optional folder)
+  "PATH as short as it can be said: from FOLDER when it's in it, else from ~."
+  (let ((home (home-folder)))
+    (cond ((and folder (path-inside-p path folder)) (subseq path (1+ (if (string= folder "/") 0 (length folder)))))
+          ((string= path home) "~")
+          ((path-inside-p path home) (concatenate 'string "~" (subseq path (length home))))
+          (t path))))
+
+(defun describe-step (step &optional folder)
+  "STEP in a few words, for people; paths in FOLDER by their names alone."
+  (flet ((s (path) (short-path path folder)))
+    (destructuring-bind (op a &optional b) step
+      (case op
+        (:move (format nil "move ~a to ~a" (s a) (s b)))
+        (:copy (format nil "copy ~a to ~a" (s a) (s b)))
+        (:rename (format nil "rename ~a to ~a" (s a) b))
+        (:mkdir (format nil "make the folder ~a" (s a)))
+        (:trash (format nil "put ~a in the Trash" (s a)))
+        (:rmdir (format nil "remove the empty folder ~a" (s a)))
+        (:restore (format nil "bring ~a back from the Trash" (s b)))
+        (t (format nil "~s" step))))))
+
+;;; --- Checking a whole plan --------------------------------------------------
+;;;
+;;; The plan is played through on paper first: an overlay says what each
+;;; step has done to the paths it touched (gone, now holding what a real
+;;; path holds, a new empty folder), so step 3 is checked against the
+;;; files as steps 1 and 2 will have left them.
+
+(defun overlay-resolve (path overlay)
+  "What PATH holds once the overlay's steps are done: (:real REAL-PATH),
+:new-folder, or NIL for nothing."
+  (let ((at path) (below '()))
+    (loop
+      (let ((state (gethash at overlay)))
+        (cond ((eq state :gone) (return nil))
+              ((eq state :new-folder) (return (if below nil :new-folder)))
+              ((consp state)
+               (let ((real (apply #'join-path (second state) below)))
+                 (return (and (path-exists-p real) (list :real real)))))
+              ((string= at "/")
+               (return (and (path-exists-p path) (list :real path))))))
+      (push (path-name at) below)
+      (setf at (path-parent at)))))
+
+(defun overlay-folder-p (path overlay)
+  (let ((what (overlay-resolve path overlay)))
+    (or (eq what :new-folder)
+        (and (consp what) (directory-p (second what))))))
+
+(defun check-step (step overlay)
+  "The problem with STEP, given the overlay, or NIL after recording what
+STEP does in it."
+  (flet ((exists (p) (overlay-resolve p overlay))
+         (folder (p) (overlay-folder-p p overlay)))
+    (macrolet ((need (test &rest message)
+                 `(unless ,test (return-from check-step (format nil ,@message)))))
+      (destructuring-bind (op a &optional b) step
+        (case op
+          ((:move :copy :rename)
+           (let ((to (if (eq op :rename) (step-target step) b)))
+             (need (exists a) "~a isn't there" a)
+             (need (not (exists to)) "~a is already there" to)
+             (need (folder (path-parent to)) "~a isn't a folder" (path-parent to))
+             (need (not (path-inside-p to a)) "~a can't go inside itself" a)
+             (setf (gethash to overlay) (let ((what (exists a)))
+                                          (if (eq what :new-folder) :new-folder (list :real (second what)))))
+             (unless (eq op :copy)
+               (setf (gethash a overlay) :gone))))
+          (:mkdir
+           (need (not (exists a)) "~a is already there" a)
+           (need (folder (path-parent a)) "~a isn't a folder" (path-parent a))
+           (setf (gethash a overlay) :new-folder))
+          (:trash
+           (need (exists a) "~a isn't there" a)
+           (need (not (or (string= a "/") (string= a (home-folder))
+                          (path-inside-p (home-folder) a)))
+                 "~a holds your home folder: not put in the Trash" a)
+           (need (not (or (string= a (trash-folder)) (path-inside-p a (trash-folder))))
+                 "~a is already in the Trash" a)
+           (setf (gethash a overlay) :gone))
+          (:rmdir
+           (need (folder a) "~a isn't a folder" a)
+           (setf (gethash a overlay) :gone))
+          (:restore
+           (let ((in-trash (join-path (trash-folder) "files" a)))
+             (need (path-exists-p in-trash) "~a isn't in the Trash any more" a)
+             (need (not (exists b)) "~a is already there" b)
+             (need (folder (path-parent b)) "~a isn't a folder" (path-parent b))
+             (setf (gethash b overlay) (list :real in-trash)))))
+        nil))))
+
+(defun check-plan (steps &key (allowed *plan-operations*))
+  "Everything wrong with the plan STEPS, as sentences (\"step 2: ...\");
+NIL when it can be applied."
+  (if (not (listp steps))
+      (list "a plan is a list of steps")
+      (let ((overlay (make-hash-table :test 'equal)))
+        (loop for step in steps
+              for n from 1
+              for problem = (or (step-shape-problem step allowed)
+                                (check-step step overlay))
+              when problem collect (format nil "step ~d: ~a" n problem)))))
+
+;;; --- Doing a step -------------------------------------------------------------
+
+(define-condition plan-refused (error)
+  ((problems :initarg :problems :reader plan-refused-problems))
+  (:report (lambda (c s)
+             (format s "The plan wasn't applied; nothing changed:~{~%  ~a~}"
+                     (plan-refused-problems c)))))
+
+(define-condition step-failed (error)
+  ((step :initarg :step :reader step-failed-step)
+   (reason :initarg :reason :reader step-failed-reason))
+  (:report (lambda (c s)
+             (format s "Couldn't ~a: ~a" (describe-step (step-failed-step c))
+                     (step-failed-reason c)))))
+
+(defun syscall-reason (e)
+  (handler-case (sb-int:strerror (sb-posix:syscall-errno e))
+    (error () (princ-to-string e))))
+
+(defun run-tool (step &rest command)
+  "Run COMMAND (mv, cp) for STEP; a failure is the step's."
+  (let ((code (sb-ext:process-exit-code
+               (sb-ext:run-program (first command) (rest command)
+                                   :search t :output nil :error nil :wait t))))
+    (unless (eql code 0)
+      (error 'step-failed :step step
+                          :reason (format nil "~a failed (exit ~a)" (first command) code)))))
+
+(defun move-path (step from to)
+  (when (path-exists-p to)
+    (error 'step-failed :step step :reason (format nil "~a is there now" to)))
+  (handler-case (sb-posix:rename from to)
+    (sb-posix:syscall-error (e)
+      (if (= (sb-posix:syscall-errno e) sb-posix:exdev)
+          ;; Another disk: rename(2) can't, mv copies then deletes.
+          (run-tool step "mv" "-T" "--" from to)
+          (error 'step-failed :step step :reason (syscall-reason e))))))
+
+(defun percent-encode (path)
+  (with-output-to-string (out)
+    (loop for byte across (sb-ext:string-to-octets path :external-format :utf-8)
+          for char = (code-char byte)
+          do (if (or (char<= #\a char #\z) (char<= #\A char #\Z) (char<= #\0 char #\9)
+                     (find char "/-_.~"))
+                 (write-char char out)
+                 (format out "%~2,'0X" byte)))))
+
+(defun timestamp (&optional (time (get-universal-time)) (date-separator "-") (separator "T"))
+  (multiple-value-bind (s m h day month year) (decode-universal-time time)
+    (format nil "~d~a~2,'0d~a~2,'0d~a~2,'0d:~2,'0d:~2,'0d"
+            year date-separator month date-separator day separator h m s)))
+
+(defun native (path)
+  "PATH for CL's file functions, read as it is: no wildcards in [ or *."
+  (sb-ext:parse-native-namestring path))
+
+(defun write-trash-info (info-file path)
+  "Write the .trashinfo for PATH; NIL when INFO-FILE is taken meanwhile."
+  (with-open-file (out (native info-file) :direction :output :if-exists nil
+                                          :if-does-not-exist :create :external-format :utf-8)
+    (when out
+      (format out "[Trash Info]~%Path=~a~%DeletionDate=~a~%" (percent-encode path) (timestamp))
+      t)))
+
+(defun trash-path (step path)
+  "Put PATH in the Trash as the freedesktop spec says (files/ and a
+.trashinfo in info/), so file managers and `gio trash` see it too. Returns
+the name it has there."
+  (let* ((trash (trash-folder))
+         (files (ensure-folder (join-path trash "files")))
+         (info (ensure-folder (join-path trash "info")))
+         (base (path-name path)))
+    (loop for n from 1
+          for name = (if (= n 1) base (format nil "~a.~d" base n))
+          for file = (join-path files name)
+          for info-file = (join-path info (concatenate 'string name ".trashinfo"))
+          do (unless (or (path-exists-p file) (path-exists-p info-file))
+               (when (write-trash-info info-file path)
+                 (handler-bind ((error (lambda (e)
+                                         (declare (ignore e))
+                                         (ignore-errors (sb-posix:unlink info-file)))))
+                   (move-path step path file))
+                 (return name))))))
+
+(defun restore-path (step name to)
+  (let ((trash (trash-folder)))
+    (move-path step (join-path trash "files" name) to)
+    (ignore-errors (sb-posix:unlink (join-path trash "info" (concatenate 'string name ".trashinfo"))))))
+
+(defun do-step (step)
+  "Do STEP and return its inverse."
+  (destructuring-bind (op a &optional b) step
+    (handler-case
+        (ecase op
+          (:move (move-path step a b) (list :move b a))
+          (:rename (move-path step a (step-target step))
+           (list :rename (step-target step) (path-name a)))
+          (:copy (when (path-exists-p b)
+                   (error 'step-failed :step step :reason (format nil "~a is there now" b)))
+           (run-tool step "cp" "-a" "-T" "--" a b)
+           (list :trash b))
+          (:mkdir (sb-posix:mkdir a #o777) (list :rmdir a))
+          (:trash (list :restore (trash-path step a) a))
+          (:rmdir (sb-posix:rmdir a) (list :mkdir a))
+          (:restore (restore-path step a b) (list :trash b)))
+      (sb-posix:syscall-error (e)
+        (error 'step-failed :step step :reason (syscall-reason e))))))
+
+;;; --- Applying a plan, and the journal ----------------------------------------------
+
+(defun journal-folder ()
+  (join-path (state-folder) "journal"))
+
+(defun write-forms (path forms &key comment)
+  (ensure-folder (path-parent path))
+  (with-open-file (out (native path) :direction :output :if-exists :supersede :external-format :utf-8)
+    (with-standard-io-syntax
+      (let ((*print-case* :downcase) (*print-readably* nil))
+        (when comment (format out "~a~%" comment))
+        (dolist (form forms) (prin1 form out) (terpri out)))))
+  path)
+
+(defun read-forms (stream)
+  (with-standard-io-syntax
+    (let ((*read-eval* nil) (*package* (find-package '#:esploro.read)))
+      (loop for form = (read stream nil stream)
+            until (eq form stream) collect form))))
+
+(defun read-plan (text)
+  "The steps in TEXT (a plan's text); it may hold anything, which
+CHECK-PLAN then judges."
+  (with-input-from-string (in text) (read-forms in)))
+
+(defun read-plan-file (path)
+  (with-open-file (in (native path) :external-format :utf-8) (read-forms in)))
+
+(defparameter *plan-file-comment*
+  ";; An Esploro plan: one step a line, applied in order, nothing until you apply it.
+;;   (:move \"/from\" \"/to\")   (:copy \"/from\" \"/to\")   (:rename \"/path\" \"new name\")
+;;   (:mkdir \"/path\")          (:trash \"/path\")
+;; Change, add or delete lines, save, and close (C-x # in Emacs).")
+
+(defun write-plan (steps path)
+  (write-forms path steps :comment *plan-file-comment*))
+
+(defvar *journal-counter* 0)
+
+(defun write-journal (steps inverse)
+  (let ((path (join-path (journal-folder)
+                         (format nil "~a-~d.lisp"
+                                 (remove #\: (timestamp (get-universal-time) "" "-"))
+                                 (incf *journal-counter*)))))
+    (write-forms path (list (list :applied :time (timestamp) :steps steps :inverse inverse :undone nil)))))
+
+(defun journal-entries ()
+  "The applied plans, newest first, as (PATH . PLIST)."
+  (let ((folder (journal-folder)))
+    (when (directory-p folder)
+      (let ((files (sort (remove-if-not (lambda (n) (let ((l (length n))) (and (> l 5) (string= ".lisp" n :start2 (- l 5)))))
+                                        (folder-names folder))
+                         #'string>)))
+        (loop for name in files
+              for path = (join-path folder name)
+              for form = (ignore-errors (first (with-open-file (in (native path)) (read-forms in))))
+              when (and (consp form) (eq (first form) :applied))
+                collect (cons path (rest form)))))))
+
+(defun apply-plan (steps &key (allowed *plan-operations*) (journal t))
+  "Check the plan STEPS whole, then do it step by step; PLAN-REFUSED, with
+nothing changed, when the check finds a problem. A step that fails
+signals STEP-FAILED with restarts: RETRY-STEP, SKIP-STEP, STOP-HERE (keep
+what's done) and UNDO-DONE (put back what's done). What was done goes in
+the journal, so UNDO-LAST can take it back. Returns the steps done."
+  (let ((problems (check-plan steps :allowed allowed)))
+    (when problems (error 'plan-refused :problems problems)))
+  (let ((done '()) (inverse '()))
+    (unwind-protect
+         (block steps
+           (dolist (step steps)
+             (loop
+               (restart-case
+                   (progn (push (do-step step) inverse)
+                          (push step done)
+                          (return))
+                 (retry-step ()
+                   :report "Try this step again")
+                 (skip-step ()
+                   :report "Skip this step and go on"
+                   (return))
+                 (stop-here ()
+                   :report "Stop here, keeping what's done"
+                   (return-from steps))
+                 (undo-done ()
+                   :report "Stop, and put back what's done"
+                   (let ((back inverse))
+                     (setf done '() inverse '())
+                     (dolist (step back) (ignore-errors (do-step step))))
+                   (return-from steps))))))
+      (when (and journal done)
+        (write-journal (reverse done) inverse)))
+    (reverse done)))
+
+(defun undo-last ()
+  "Undo the newest applied plan not yet undone. Returns its steps, or NIL
+when there's nothing to undo. Refused (PLAN-REFUSED) when the files have
+changed since so that it can't be undone whole."
+  (let ((entry (find-if-not (lambda (e) (getf (cdr e) :undone)) (journal-entries))))
+    (when entry
+      (destructuring-bind (path &rest plist) entry
+        (apply-plan (getf plist :inverse) :allowed *undo-operations* :journal nil)
+        (setf (getf plist :undone) (timestamp))
+        (write-forms path (list (cons :applied plist)))
+        (getf plist :steps)))))

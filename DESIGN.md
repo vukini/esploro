@@ -14,7 +14,7 @@ It shouldn't try to out-list dired: Emacs already lists, marks and renames (wdir
 
 1. **It knows which window has a file open.** StumpWM knows the windows; `/proc` knows each process's open files, its arguments and (for a shell) its folder; Emacs knows its buffers. So a file shows where it's open ("in Emacs on workspace 2", "in mpv"), and opening a file that's already open jumps to that window instead of starting a second copy. The other way too: from any window, reveal the file behind it.
 2. **Workspace means project.** Esploro opens in the folder of the workspace you're on. Dropping a file on a workspace opens it there. Closing a project lists the files it still has open, unsaved ones first.
-3. **Plan, then apply.** Moving, renaming, copying and deleting don't happen at once. Each becomes a Lisp form in a plan, `(:move #p"…" #p"…")`. You look at the plan, edit it in Emacs as text (wdired, but for every operation), then apply it. Deleting goes to the Trash, and every applied plan keeps its inverse, so `undo` puts things back. Agents use the same road: they never touch files, they propose a plan, which you read, and whose steps are checked against a short list of what a plan may do.
+3. **Plan, then apply.** Moving, renaming, copying and deleting don't happen at once. Each becomes a Lisp form in a plan, `(:move "/from" "/to")` (paths as plain strings: CL pathnames trip on names with `*` or `[`). You look at the plan, edit it in Emacs as text (wdired, but for every operation), then apply it. Deleting goes to the Trash, and every applied plan keeps its inverse, so `undo` puts things back. Agents use the same road: they never touch files, they propose a plan, which you read, and whose steps are checked against a short list of what a plan may do.
 4. **Define a command once, and it's everywhere.** `(define-file-command shrink ((f image)) …)` shows up in Esploro's menu for images (McCLIM presentations know the thing on screen is an image), in a rofi menu, in Emacs (embark on a file name), on a StumpWM key, and in the MCP server as a tool for agents. Other file managers have plugins that work only inside them.
 5. **Folders can be queries.** A "folder" can be a saved s-expression, `(and (type image) (modified this-week) (in-project "vikix"))`, that updates live, can be edited and combined. Spotlight has smart folders; none can be opened up, edited, or used in a rule.
 6. **The selection is a shared value.** The selection is a Lisp list that StumpWM, Emacs and agents can read. Select files in Esploro and `(mapc #'shrink *selection*)` in the REPL; mark files in dired and they're selected in Esploro. "These files" means the same everywhere.
@@ -33,6 +33,12 @@ The core is a library with no window, `esploro/core`, needing only SBCL (UIOP an
 - `where.lisp`: where each file is open. Windows come from StumpWM, each with its process (`_NET_WM_PID`); the process and its children give their open files, arguments and folders; Emacs gives its buffers' files through `emacsclient`. Focusing a window goes back through StumpWM.
 
 Then the window, `esploro` (McCLIM): the folder's list, each entry a presentation of its file, so the right-click menu is the commands for its kind; marks; the plan in a pane beside it, applied with one key, edited in Emacs with another; "open in" shown beside each open file; Enter on an open file goes to its window. Built as one program with `make` (`save-lisp-and-die`), so it opens at once. In Vikix, `vikix lisp-apps setup` builds it, and it's `esploro` on the command line and in Super+d.
+
+## Where it is (2026-10-01)
+
+Phase 0's core is done and tested (`make test`, 63 checks): folders, plans checked on paper then applied with restarts when a step fails (retry, skip, stop, put back), the freedesktop Trash, the journal and undo, the Swank client, the window map (StumpWM + `/proc` + Emacs), and `define-file-command` with the first commands (open in Emacs, terminal here, open with default, duplicate, trash). The window lists a folder with presentations, marks, the plan pane with Apply / Edit / Clear / Undo, "open in" beside open files, and the restarts as a menu when a step fails. `esploro --where` answers from the command line.
+
+Not yet: tried by hand at length (it was driven by a script so far), the theme, keys for the common commands, Vikix installing it.
 
 ## Later
 
