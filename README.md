@@ -1,30 +1,37 @@
 # Esploro
 
-A file explorer in Common Lisp, for desktops that are Lisp themselves: [StumpWM](https://stumpwm.github.io/), with Emacs beside it. *Esploro* is Esperanto for "exploration".
+A file explorer for desktops that are Lisp themselves: [StumpWM](https://stumpwm.github.io/), with Emacs beside it. Its window is a frame of Emacs, built on dired; its core, which does every change to files, is Common Lisp. *Esploro* is Esperanto for "exploration".
 
-It doesn't try to out-list dired. It does what a file manager can't when the window manager, the editor and the explorer all speak one language:
+It does what a file manager can't when the window manager, the editor and the explorer all speak one language:
 
 - **It knows which window has a file open.** Beside each file, the windows that have it ("open in Emacs on 2 (unsaved)"); opening a file that's already open goes to its window instead of opening it twice. From StumpWM (the windows and their processes), `/proc` (what they hold open, were started on, are working in) and Emacs (its buffers).
-- **Plan, then apply.** Moving, copying, renaming and deleting go into a plan first, a list of Lisp forms you can read, edit in Emacs, and apply in one go. Deleting goes to the Trash (the freedesktop one), and every applied plan can be undone. A plan is checked whole before anything changes, and may only do those five things, whoever wrote it, you or an agent.
-- **A command is defined once.** `define-file-command` names the kinds of file it's for; McCLIM's presentations then offer it on those files' menus. The same commands are meant for rofi, Emacs, StumpWM keys and agents next.
+- **Every change can be undone.** Copying, moving, pasting, renaming, a new folder, the Trash and files dropped in are each a plan, a list of Lisp forms, checked whole before anything changes and done in the background. The Trash is the freedesktop one, and every plan is kept in a journal, so undo puts things back. A plan may only do those few things, whoever wrote it, you or an agent.
+- **A command is defined once.** `define-file-command` names the kinds of file it's for; the same commands are meant for the window's menus, rofi, StumpWM keys and agents next.
 
-The ideas, and what comes later, are in [DESIGN.md](DESIGN.md).
+And what a file manager is expected to do, with the mouse as much as the keys: a menu bar and a tool bar, right-click menus, click to select and double-click to open, Ctrl+click and Shift+click, dragging files out to other programs and dropping them in, places down the side (home, your folders, drives, GTK's bookmarks, the Trash), back and forward, sorting, a filter, finding below, the Trash to look in and restore from, and copy and paste that other file managers understand.
+
+The ideas, and what comes later, are in [DESIGN.md](DESIGN.md). The first window, in McCLIM, is kept on the branch `mcclim`.
 
 ## Running it
 
-Needs SBCL and [Quicklisp](https://www.quicklisp.org/) (for McCLIM, fetched the first time).
+The core needs SBCL alone; the window, Emacs 29 or later (and `fd` to find below, `xclip` for copy and paste with other programs).
 
 ```sh
-make                 # builds ./esploro, one program that opens at once
-./esploro [FOLDER]   # the window
-./esploro --where [PATH]   # which windows have PATH open, or every open file
+make                 # builds ./esploro, the core's command (seconds)
 make install         # into ~/.local/bin
-make test            # the core's tests: SBCL alone, no X
+make test            # the core's tests (SBCL) and the window's (Emacs in batch)
 ```
 
-In the window, `?` or F1 shows help. Selecting works as in other file managers: click, Ctrl+click and Shift+click, or the arrows with Shift (select more) and Ctrl (move, then Ctrl+Space). The one file selected is previewed on the right: pictures, PDFs and videos as thumbnails (ImageMagick, pdftoppm, ffmpegthumbnailer, when there), text by its first lines, a folder by what's in it. Double-click or Return opens (a file open in a window goes to that window); Alt+Up goes up; Delete and F2 plan trashing and renaming; right-click shows what else can be done. Changes collect in the plan on the right, applied or edited in Emacs with a click; the bottom line takes commands by name (`Go ~/src`, `New Folder`, `Move Marked`, `Undo`, `Toggle Hidden`).
+Then, in Emacs:
 
-It knows the windows when StumpWM runs Swank (on 127.0.0.1:4004; `ESPLORO_SWANK_PORT` changes it, and the password in `~/.slime-secret` is sent when there is one), and Emacs's buffers when Emacs runs its server. Without them it is a plain explorer. [Vikix](https://vikix.dev) sets both up.
+```elisp
+(add-to-list 'load-path "~/src/esploro/emacs")
+(require 'esploro)
+```
+
+`M-x esploro` opens its frame; `esploro FOLDER` from a shell or a key does the same through Emacs's server. In it, `?` shows the keys and the mouse. `esploro --where [PATH]` says which windows have a file open.
+
+It knows the windows when StumpWM runs Swank (on 127.0.0.1:4004; `ESPLORO_SWANK_PORT` changes it, and the password in `~/.slime-secret` is sent when there is one). Without it, it is a plain explorer. [Vikix](https://vikix.dev) sets it all up.
 
 ## Writing a command
 
@@ -38,7 +45,7 @@ It knows the windows when StumpWM runs Swank (on 127.0.0.1:4004; `ESPLORO_SWANK_
   (esploro:launch "nsxiv" path))
 ```
 
-Kinds: `:folder`, `:image`, `:video`, `:audio`, `:pdf`, `:text`, `:lisp` (also `:text`), `:archive`, `:file` (anything but a folder), `t` (anything). A command with `:changes t` returns plan steps instead of touching files.
+Commands live in the core; the window's menus offering them is the next step. Kinds: `:folder`, `:image`, `:video`, `:audio`, `:pdf`, `:text`, `:lisp` (also `:text`), `:archive`, `:file` (anything but a folder), `t` (anything). A command with `:changes t` returns plan steps instead of touching files.
 
 ## Licence
 

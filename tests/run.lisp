@@ -11,7 +11,7 @@
 (defvar *here* (make-pathname :name nil :type nil :defaults *load-truename*))
 (asdf:load-asd (merge-pathnames "../esploro.asd" *here*))
 (handler-bind ((warning #'muffle-warning))
-  (asdf:load-system "esploro/core" :verbose nil))
+  (asdf:load-system "esploro" :verbose nil))
 
 (defpackage #:esploro.tests (:use #:cl #:esploro))
 (in-package #:esploro.tests)
@@ -284,6 +284,65 @@
          (make-file (p "long.txt") "changed, and longer than before")
          (string/= before (esploro::thumbnail-path (p "long.txt")))))
 (check "nothing to make a thumbnail of a text" (null (thumbnail (p "long.txt"))))
+
+;;; --- The Trash, to look in, restore from and empty ------------------------------------
+
+(check "a path percent-encoded comes back as it was"
+       (let ((odd "/tmp/a b/ünï%code [x].txt"))
+         (string= (esploro::percent-decode (esploro::percent-encode odd)) odd)))
+(make-file (p "to-bin one.txt") "one")
+(make-file (p "to-bin two.txt") "two")
+(apply-plan (list (list :trash (p "to-bin one.txt")) (list :trash (p "to-bin two.txt"))))
+(let ((entries (trash-entries)))
+  (check "the Trash lists what went in, with where it came from"
+         (equal (sort (mapcar #'second (remove-if-not (lambda (e) (search "to-bin" (first e))) entries))
+                      #'string<)
+                (list (p "to-bin one.txt") (p "to-bin two.txt"))))
+  (check "each with when it went"
+         (every (lambda (e) (plusp (length (third e)))) entries)))
+(check "restoring puts it back where it was"
+       (progn (restore-from-trash (list "to-bin one.txt"))
+              (and (path-exists-p (p "to-bin one.txt"))
+                   (not (find "to-bin one.txt" (trash-entries) :key #'first :test #'string=)))))
+(check "and undo puts it in the Trash again"
+       (progn (undo-last)
+              (and (not (path-exists-p (p "to-bin one.txt")))
+                   (find "to-bin one.txt" (trash-entries) :key #'first :test #'string=))))
+(check "restoring over a file that's there now is refused, with nothing changed"
+       (progn (make-file (p "to-bin two.txt") "a new one")
+              (and (signals plan-refused (restore-from-trash (list "to-bin two.txt")))
+                   (find "to-bin two.txt" (trash-entries) :key #'first :test #'string=))))
+(check "emptying the Trash deletes what's in it"
+       (and (plusp (empty-trash))
+            (null (trash-entries))
+            (null (esploro::folder-names (esploro::join-path (trash-folder) "files")))))
+
+;;; --- The command: what the window reads --------------------------------------------
+
+(defun run-cli (args &optional (input ""))
+  "ARGS through the command, INPUT on its standard input: (CODE . what it printed)."
+  (let* ((code nil)
+         (out (with-output-to-string (*standard-output*)
+                (with-input-from-string (*standard-input* input)
+                  (setf code (esploro::main-1 args))))))
+    (cons code (let ((*package* (find-package '#:esploro.read))) (read-from-string out nil)))))
+
+(make-file (p "cli.txt") "cli")
+(check "apply reads a plan on its standard input, and says how many steps were done"
+       (equal (run-cli (list "apply") (format nil "(:copy ~s ~s)" (p "cli.txt") (p "cli copy.txt")))
+              (list 0 :done 1)))
+(check "a refused plan says why, with nothing changed"
+       (let ((r (run-cli (list "apply") (format nil "(:copy ~s ~s)" (p "cli.txt") (p "cli copy.txt")))))
+         (and (eql (car r) 1) (eq (second r) :refused) (consp (third r)))))
+(check "undo says what it undid"
+       (let ((r (run-cli (list "undo"))))
+         (and (eql (car r) 0) (eq (second r) :undone) (not (path-exists-p (p "cli copy.txt"))))))
+(check "a step no plan may do is refused"
+       (eq (second (run-cli (list "apply") (format nil "(:delete-forever ~s)" (p "cli.txt")))) :refused))
+(check "where answers a list for the folder"
+       (listp (cdr (run-cli (list "where" *home*)))))
+(check "trash-list answers a list"
+       (listp (cdr (run-cli (list "trash-list")))))
 
 ;;; --- The end -------------------------------------------------------------------------
 

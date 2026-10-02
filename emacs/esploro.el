@@ -1,0 +1,919 @@
+;;; esploro.el --- Esploro's window: a file explorer in Emacs, on dired  -*- lexical-binding: t -*-
+
+;; Author: Vid <vukini@gmail.com>
+;; URL: https://github.com/vukini/esploro
+;; Package-Requires: ((emacs "29.1"))
+;; License: MIT
+
+;;; Commentary:
+
+;; Esploro's window is a frame of its own, showing one folder at a time in
+;; dired, with what a file manager needs on top: a menu bar and a tool bar,
+;; right-click menus, click to select and double-click to open, dragging
+;; files out to other programs and dropping them in, places down the side
+;; (home, your folders, drives, bookmarks, the Trash), back and forward,
+;; sorting, a filter, finding below, and the Trash to look in.
+;;
+;; Every change to files (copy, move, paste, rename, a new folder, the
+;; Trash, a drop) goes through the esploro command (the Common Lisp core,
+;; github.com/vukini/esploro) as a plan: checked whole first, done in the
+;; background, journaled, so `esploro-undo' puts it back.  Beside each
+;; file, the windows that have it open ("open in Emacs on 2").
+;;
+;;   M-x esploro   (or: esploro FOLDER, from a shell or a key)
+;;
+;; In it, ? shows the keys.  Dired's own keys still work, but its
+;; operations (C, R, D...) go around the journal; Esploro's are on the
+;; menus, the tool bar and the keys below.
+
+;;; Code:
+
+(require 'dired)
+(require 'dnd)
+(require 'seq)
+(require 'subr-x)
+(require 'url-util)
+
+(defgroup esploro nil
+  "A file explorer on dired, for Lisp desktops."
+  :group 'files
+  :prefix "esploro-")
+
+(defcustom esploro-program "esploro"
+  "The esploro command: the core that does every change to files."
+  :type 'string)
+
+(defcustom esploro-places
+  '(("Home" . "~") ("Documents" . "~/Documents") ("Downloads" . "~/Downloads")
+    ("Pictures" . "~/Pictures") ("Music" . "~/Music") ("Videos" . "~/Videos")
+    ("Projects" . "~/src") ("Dropbox" . "~/Dropbox"))
+  "Places down the side: (NAME . FOLDER), each shown when the folder is there."
+  :type '(alist :key-type string :value-type directory))
+
+(defcustom esploro-frame-parameters
+  '((name . "Esploro") (width . 130) (height . 42) (menu-bar-lines . 1) (tool-bar-lines . 1))
+  "Esploro's frame.
+Its menu bar and tool bar are on even when they're off elsewhere."
+  :type '(alist :key-type symbol :value-type sexp))
+
+(defcustom esploro-find-limit 5000
+  "The most files finding below shows."
+  :type 'integer)
+
+(defface esploro-where '((t :inherit font-lock-comment-face))
+  "\"open in Emacs on 2\" beside a file.")
+
+;;; --- State: one Esploro, so it lives here, not in the buffer -------------------------
+
+(defvar esploro--back '() "Folders to go back to, newest first.")
+(defvar esploro--forward '() "Folders to go forward to, after going back.")
+(defvar esploro--sort 'name "How the folder is sorted: name, size, time or kind.")
+(defvar esploro--reverse nil "Non-nil: the sort the other way round.")
+(defvar esploro--hidden nil "Non-nil: files starting with a dot are shown.")
+(defvar esploro--filter nil "Only names holding this text are shown, until refreshed.")
+(defvar esploro--clipboard nil "(copy . FILES) or (cut . FILES), from Esploro's own copy or cut.")
+(defvar esploro--dropped '() "Steps from files dropped in, applied together.")
+(defvar esploro--wait nil "Non-nil: wait for the core's answers (the tests).")
+
+(defconst esploro-buffer-name "*Esploro*")
+(defconst esploro-places-buffer-name "*Esploro places*")
+(defvar esploro-file-menu)
+(defvar esploro-folder-menu)
+
+;;; --- The core ---------------------------------------------------------------------
+
+(defun esploro--read-answer (text)
+  "The s-expression the core printed, or (:error TEXT)."
+  (condition-case nil
+      (car (read-from-string text))
+    (error (list :error (string-trim text)))))
+
+(defun esploro--call (args &optional input then sync)
+  "Run the core with ARGS, INPUT on its standard input; THEN gets its answer.
+In the background, so a long copy never stops Emacs; SYNC waits (tests)."
+  (if (not (executable-find esploro-program))
+      (message "Esploro: the esploro command isn't installed (vikix add esploro)")
+    (let ((out (generate-new-buffer " *esploro-out*")))
+      (if (or sync esploro--wait)
+          (let ((answer (with-current-buffer out
+                          (when input (insert input))
+                          (apply #'call-process-region (point-min) (point-max)
+                                 esploro-program t t nil args)
+                          (esploro--read-answer (buffer-string)))))
+            (kill-buffer out)
+            (when then (funcall then answer))
+            answer)
+        (let ((process (make-process
+                        :name "esploro" :buffer out :command (cons esploro-program args)
+                        :connection-type 'pipe :noquery t
+                        :sentinel (lambda (process _event)
+                                    (unless (process-live-p process)
+                                      (let ((answer (with-current-buffer (process-buffer process)
+                                                      (esploro--read-answer (buffer-string)))))
+                                        (kill-buffer (process-buffer process))
+                                        (when then (funcall then answer))))))))
+          (when input (process-send-string process input))
+          (process-send-eof process)
+          process)))))
+
+(defun esploro--say (answer what)
+  "Tell what the core's ANSWER means, about WHAT was asked."
+  (pcase answer
+    (`(:done ,n) (message "Esploro: %s (%d %s)" what n (if (= n 1) "step" "steps")))
+    (`(:undone ,steps) (message "Esploro: undone: %s" (string-join steps "; ")))
+    (`(:nothing) (message "Esploro: nothing to undo"))
+    (`(:refused ,problems) (message "Esploro: not done, nothing changed: %s" (string-join problems "; ")))
+    (`(:failed ,step ,reason . ,_) (message "Esploro: stopped at %s: %s (what was done before stays)" step reason))
+    (`(:emptied ,n) (message "Esploro: the Trash is empty (%d deleted)" n))
+    (`(:error ,text) (message "Esploro: %s" text))
+    (_ (message "Esploro: %s" what))))
+
+(defun esploro--plan-text (steps)
+  "STEPS as the core reads them: one form a line."
+  (let ((print-escape-newlines nil) (print-length nil) (print-level nil))
+    (mapconcat #'prin1-to-string steps "\n")))
+
+(defun esploro--apply (steps what &optional sync)
+  "Apply STEPS through the core, then show the folder again.
+WHAT says what it was, for the message after.  SYNC waits (tests)."
+  (when steps
+    (message "Esploro: %s..." what)
+    (esploro--call (list "apply") (esploro--plan-text steps)
+                   (lambda (answer) (esploro--say answer what) (esploro--refresh))
+                   sync)))
+
+;;; --- Showing a folder -------------------------------------------------------------
+
+(defun esploro--switches ()
+  "ls's switches for the sort, the order and hidden files.
+No owner or group (-g -G): size, time and name are what a file manager shows."
+  (concat "-lhgG --group-directories-first --time-style=long-iso -"
+          (if esploro--hidden "a" "")
+          (pcase esploro--sort ('size "S") ('time "t") ('kind "X") (_ "v"))
+          (if esploro--reverse "r" "")))
+
+(defun esploro--buffer ()
+  (get-buffer-create esploro-buffer-name))
+
+(defun esploro--show (what &optional file)
+  "Show WHAT in the Esploro buffer: a folder, or (TITLE . FILES) for a list.
+Point goes to FILE when given."
+  (with-current-buffer (esploro--buffer)
+    (let ((inhibit-read-only t)
+          (dir (if (consp what) (car what) (file-name-as-directory (expand-file-name what)))))
+      (setq esploro--filter nil)
+      (erase-buffer)
+      ;; As dired-internal-noselect does, in a buffer of Esploro's own, so a
+      ;; dired of the same folder elsewhere is left alone.
+      (dired-mode (if (consp what) what dir) (esploro--switches))
+      (setq default-directory (if (consp what) (file-name-as-directory (car what)) dir))
+      (esploro-mode 1)
+      (dired-readin)
+      (goto-char (point-min))
+      (or (and file (dired-goto-file (expand-file-name file)))
+          (dired-initial-position dir)))
+    (current-buffer)))
+
+(defun esploro--dir ()
+  "The folder Esploro shows."
+  (with-current-buffer (esploro--buffer) (expand-file-name default-directory)))
+
+(defun esploro--refresh ()
+  (when-let* ((buffer (get-buffer esploro-buffer-name)))
+    (with-current-buffer buffer
+      (when (derived-mode-p 'dired-mode)
+        (setq esploro--filter nil)
+        (revert-buffer)))))
+
+(defun esploro--frame ()
+  (seq-find (lambda (f) (and (frame-live-p f) (frame-parameter f 'esploro))) (frame-list)))
+
+(defun esploro--main-window (frame)
+  "FRAME's window for the folder: any but the places down the side."
+  (or (seq-find (lambda (w) (not (window-parameter w 'window-side))) (window-list frame 'no-minibuf))
+      (frame-first-window frame)))
+
+;;;###autoload
+(defun esploro (&optional dir)
+  "Show DIR in Esploro's frame (made the first time), and go there."
+  (interactive (list default-directory))
+  (let* ((dir (expand-file-name (or dir default-directory)))
+         (frame (or (esploro--frame)
+                    (make-frame (append esploro-frame-parameters
+                                        `((esploro . t)
+                                          ,@(when-let* ((display (or (car (x-display-list)) (getenv "DISPLAY"))))
+                                              `((display . ,display)))))))))
+    (select-frame-set-input-focus frame)
+    (with-selected-frame frame
+      (select-window (esploro--main-window frame))
+      (esploro-go dir)
+      (esploro-places-show))
+    frame))
+
+(defun esploro-go (dir &optional file no-history)
+  "Show DIR, remembering where we were for Back; point on FILE when given."
+  (let ((dir (file-name-as-directory (expand-file-name dir))))
+    (unless (file-directory-p dir) (user-error "%s isn't a folder" dir))
+    (let ((here (and (get-buffer esploro-buffer-name) (esploro--dir))))
+      (unless (or no-history (null here) (equal here dir))
+        (push here esploro--back)
+        (setq esploro--forward '())))
+    (let ((buffer (esploro--show dir file)))
+      (unless (eq (window-buffer) buffer)
+        (switch-to-buffer buffer nil t)))
+    (when (get-buffer esploro-places-buffer-name) (esploro-places-refresh))
+    dir))
+
+;;; --- Moving around ------------------------------------------------------------------
+
+(defun esploro-back ()
+  "Back to the folder before."
+  (interactive)
+  (if (null esploro--back) (message "Esploro: nothing to go back to")
+    (let ((here (esploro--dir)))
+      (push here esploro--forward)
+      ;; Point on the folder just left, when it's in the one gone back to.
+      (esploro-go (pop esploro--back) (directory-file-name here) t))))
+
+(defun esploro-forward ()
+  "Forward again, after going back."
+  (interactive)
+  (if (null esploro--forward) (message "Esploro: nothing to go forward to")
+    (let ((here (esploro--dir)))
+      (push here esploro--back)
+      (esploro-go (pop esploro--forward) (directory-file-name here) t))))
+
+(defun esploro-up ()
+  "The folder above, with point on the one just left."
+  (interactive)
+  (let* ((here (directory-file-name (esploro--dir)))
+         (up (file-name-directory here)))
+    (if (equal (file-name-as-directory here) up) (message "Esploro: this is the top")
+      (esploro-go up here))))
+
+(defun esploro-home ()
+  "Your home folder."
+  (interactive)
+  (esploro-go "~"))
+
+(defun esploro-go-to (dir)
+  "Go to the folder DIR, typed, with completion."
+  (interactive (list (read-directory-name "Go to: " (esploro--dir) nil t)))
+  (esploro-go dir))
+
+(defun esploro--file-at (&optional event)
+  "The file at EVENT's position or at point; nil on . and .. or no file."
+  (save-excursion
+    (when event (goto-char (posn-point (event-start event))))
+    (let ((file (dired-get-filename nil t)))
+      (and file (not (member (file-name-nondirectory (directory-file-name file)) '("." "..")))
+           file))))
+
+(defun esploro--selection ()
+  "The marked files, or the one at point."
+  (let ((marked (dired-get-marked-files nil nil nil t)))
+    ;; With nothing marked, dired gives the file at point, or (t FILE) for one mark.
+    (seq-remove (lambda (f) (or (eq f t) (member (file-name-nondirectory (directory-file-name f)) '("." ".."))))
+                (if (eq (car marked) t) (cdr marked) marked))))
+
+;;; --- Opening ------------------------------------------------------------------------
+
+(defun esploro--other-frame ()
+  "An Emacs frame to show a file in: a visible one that isn't Esploro's."
+  (seq-find (lambda (f) (and (frame-visible-p f) (not (frame-parameter f 'esploro))
+                             (display-graphic-p f)))
+            (frame-list)))
+
+(defun esploro--visit (file)
+  "FILE in Emacs, in a frame other than Esploro's (a new one if there's none)."
+  (let ((frame (esploro--other-frame)))
+    (if (not frame)
+        (find-file-other-frame file)
+      (select-frame-set-input-focus frame)
+      (find-file file))))
+
+(defun esploro-open (&optional file)
+  "Open FILE (the one at point): a folder here; a file that a window has goes to
+that window; text in Emacs; anything else in its usual program."
+  (interactive)
+  (let ((file (or file (esploro--file-at) (user-error "No file here"))))
+    (if (file-directory-p file)
+        (esploro-go file)
+      (if (executable-find esploro-program)
+          (esploro--call (list "open" file) nil
+                         (lambda (answer)
+                           (pcase answer
+                             (`(:emacs) (esploro--visit file))
+                             (`(:window ,class) (message "Esploro: %s has it: went there" class))
+                             (`(:error ,text) (message "Esploro: %s" text)))))
+        (call-process "xdg-open" nil 0 nil file)))))
+
+(defun esploro-open-with (program)
+  "Open the selection with PROGRAM, a command you type."
+  (interactive (list (read-shell-command "Open with: ")))
+  (let ((files (or (esploro--selection) (user-error "Nothing selected"))))
+    (apply #'call-process "setsid" nil 0 nil "-f" (append (split-string-and-unquote program) files))))
+
+(defun esploro-terminal-here ()
+  "A terminal in this folder."
+  (interactive)
+  (let ((default-directory (esploro--dir)))
+    (call-process "setsid" nil 0 nil "-f" (or (getenv "TERMINAL") "alacritty"))))
+
+;;; --- Changes, through the core -----------------------------------------------------
+
+(defun esploro--free-name (path suffix)
+  "PATH, or a free name beside it: \"notes copy.org\", \"notes copy 2.org\"..."
+  (if (not (file-exists-p path)) path
+    (let* ((dir (file-name-directory path))
+           (name (file-name-nondirectory path))
+           (dot (string-match-p "\\.[^.]+\\'" name))
+           (dot (and dot (> dot 0) dot))
+           (stem (substring name 0 dot))
+           (type (if dot (substring name dot) "")))
+      (seq-find (lambda (p) (not (file-exists-p p)))
+                (cons (concat dir stem suffix type)
+                      (mapcar (lambda (n) (format "%s%s%s %d%s" dir stem suffix n type))
+                              (number-sequence 2 9999)))))))
+
+(defun esploro--paste-steps (op files dir)
+  "The steps putting FILES into DIR: OP copy or cut (a move)."
+  (let ((dir (file-name-as-directory (expand-file-name dir))))
+    (delq nil
+          (mapcar (lambda (file)
+                    (let* ((file (directory-file-name (expand-file-name file)))
+                           (same (equal (file-name-directory file) dir))
+                           (target (concat dir (file-name-nondirectory file))))
+                      (cond ((and same (eq op 'cut)) nil)   ; already here
+                            ((string-prefix-p (file-name-as-directory file) dir) nil) ; into itself
+                            (t (list (if (eq op 'cut) :move :copy) file
+                                     (esploro--free-name target (if same " copy" "")))))))
+                  files))))
+
+(defun esploro--uri (file)
+  (concat "file://" (url-hexify-string (expand-file-name file) url-path-allowed-chars)))
+
+(defun esploro--uri-file (uri)
+  "The file a file:// URI names; nil for any other."
+  (when (string-match "\\`file://\\(?:localhost\\)?\\(/.*\\)\\'" uri)
+    (decode-coding-string (url-unhex-string (match-string 1 uri)) 'utf-8)))
+
+(defun esploro--parse-copied (text)
+  "(copy . FILES) or (cut . FILES) from x-special/gnome-copied-files or a URI list."
+  (when (and text (not (string-empty-p text)))
+    (let* ((lines (split-string text "[\r\n]+" t "[ \t]+"))
+           (op (cond ((equal (car lines) "cut") 'cut) ((equal (car lines) "copy") 'copy)))
+           (files (delq nil (mapcar #'esploro--uri-file (if op (cdr lines) lines)))))
+      (when files (cons (or op 'copy) files)))))
+
+(defun esploro--publish (op files)
+  "Offer OP and FILES on the clipboard, so other file managers can paste them."
+  (when (and (executable-find "xclip") (display-graphic-p))
+    (with-temp-buffer
+      (insert (symbol-name op) "\n" (mapconcat #'esploro--uri files "\n"))
+      ;; xclip stays to answer for the clipboard; 0: don't wait for it.
+      (call-process-region (point-min) (point-max) "xclip" nil 0 nil
+                           "-selection" "clipboard" "-t" "x-special/gnome-copied-files"))))
+
+(defun esploro--clipboard ()
+  "What's to paste, as (copy . FILES) or (cut . FILES).
+From the clipboard (another program, or Esploro), else Esploro's own."
+  (or (and (display-graphic-p)
+           (or (esploro--parse-copied (ignore-errors (gui-get-selection 'CLIPBOARD 'x-special/gnome-copied-files)))
+               (esploro--parse-copied (ignore-errors (gui-get-selection 'CLIPBOARD 'text/uri-list)))))
+      esploro--clipboard))
+
+(defun esploro-copy ()
+  "Copy the selection, to paste in another folder."
+  (interactive)
+  (let ((files (or (esploro--selection) (user-error "Nothing selected"))))
+    (setq esploro--clipboard (cons 'copy files))
+    (esploro--publish 'copy files)
+    (message "Esploro: %d copied: paste where they should go" (length files))))
+
+(defun esploro-cut ()
+  "Cut the selection: pasting moves it."
+  (interactive)
+  (let ((files (or (esploro--selection) (user-error "Nothing selected"))))
+    (setq esploro--clipboard (cons 'cut files))
+    (esploro--publish 'cut files)
+    (message "Esploro: %d cut: paste where they should go" (length files))))
+
+(defun esploro-paste ()
+  "Paste what was copied or cut into this folder."
+  (interactive)
+  (pcase-let ((`(,op . ,files) (or (esploro--clipboard) (user-error "Nothing copied or cut"))))
+    (let ((steps (esploro--paste-steps op files (esploro--dir))))
+      (if (null steps) (message "Esploro: nothing to paste here")
+        (when (eq op 'cut) (setq esploro--clipboard nil))
+        (esploro--apply steps (if (eq op 'cut) "moved" "copied"))))))
+
+(defun esploro-trash ()
+  "Put the selection in the Trash (undo puts it back)."
+  (interactive)
+  (let ((files (or (esploro--selection) (user-error "Nothing selected"))))
+    (esploro--apply (mapcar (lambda (f) (list :trash (directory-file-name f))) files)
+                    (format "%d to the Trash" (length files)))))
+
+(defun esploro-rename (file name)
+  "Give FILE a new NAME."
+  (interactive (let ((file (or (esploro--file-at) (user-error "No file here"))))
+                 (list file (read-string "New name: " (file-name-nondirectory (directory-file-name file))))))
+  (unless (equal name (file-name-nondirectory (directory-file-name file)))
+    (esploro--apply (list (list :rename (directory-file-name file) name)) "renamed")))
+
+(defun esploro-new-folder (name)
+  "A new folder called NAME here."
+  (interactive (list (read-string "New folder: ")))
+  (esploro--apply (list (list :mkdir (directory-file-name (expand-file-name name (esploro--dir)))))
+                  "folder made"))
+
+(defun esploro-duplicate ()
+  "A copy of each selected file beside it."
+  (interactive)
+  (let ((files (or (esploro--selection) (user-error "Nothing selected"))))
+    (esploro--apply (esploro--paste-steps 'copy files (esploro--dir)) "duplicated")))
+
+(defun esploro-move-to (dir)
+  "Move the selection into DIR."
+  (interactive (list (read-directory-name "Move to: " nil nil t)))
+  (esploro--apply (esploro--paste-steps 'cut (esploro--selection) dir) "moved"))
+
+(defun esploro-copy-to (dir)
+  "Copy the selection into DIR."
+  (interactive (list (read-directory-name "Copy to: " nil nil t)))
+  (esploro--apply (esploro--paste-steps 'copy (esploro--selection) dir) "copied"))
+
+(defun esploro-undo ()
+  "Undo the last change Esploro applied."
+  (interactive)
+  (esploro--call (list "undo") nil (lambda (answer) (esploro--say answer "undone") (esploro--refresh))))
+
+;;; --- The Trash ----------------------------------------------------------------------
+
+(defun esploro--trash-dir ()
+  (expand-file-name "Trash/files/" (or (getenv "XDG_DATA_HOME") "~/.local/share")))
+
+(defun esploro--in-trash-p ()
+  (equal (esploro--dir) (expand-file-name (esploro--trash-dir))))
+
+(defun esploro-show-trash ()
+  "What's in the Trash: restore from it, or empty it."
+  (interactive)
+  (make-directory (esploro--trash-dir) t)
+  (esploro-go (esploro--trash-dir)))
+
+(defun esploro-restore ()
+  "Put the selection back where it was before the Trash."
+  (interactive)
+  (unless (esploro--in-trash-p) (user-error "Not in the Trash"))
+  (let ((names (mapcar (lambda (f) (file-name-nondirectory (directory-file-name f)))
+                       (or (esploro--selection) (user-error "Nothing selected")))))
+    (message "Esploro: restoring...")
+    (esploro--call (cons "restore" names) nil
+                   (lambda (answer) (esploro--say answer "restored") (esploro--refresh)))))
+
+(defun esploro-empty-trash ()
+  "Delete everything in the Trash, for good: this can't be undone."
+  (interactive)
+  (when (yes-or-no-p "Delete everything in the Trash for good? This can't be undone. ")
+    (esploro--call (list "empty-trash") nil
+                   (lambda (answer) (esploro--say answer "emptied") (esploro--refresh)))))
+
+;;; --- Looking: sort, hidden, filter, find --------------------------------------------
+
+(defun esploro-sort (how)
+  "Sort by HOW: name, size (largest first), time (newest first) or kind.
+The same again turns it round."
+  (interactive (list (intern (completing-read "Sort by: " '("name" "size" "time" "kind") nil t))))
+  (if (eq how esploro--sort)
+      (setq esploro--reverse (not esploro--reverse))
+    (setq esploro--sort how esploro--reverse nil))
+  (with-current-buffer (esploro--buffer)
+    (dired-sort-other (esploro--switches))))
+
+(defun esploro-sort-cycle ()
+  "The next sort: name, time, size, kind."
+  (interactive)
+  (setq esploro--reverse nil)
+  (esploro-sort (pcase esploro--sort ('name 'time) ('time 'size) ('size 'kind) (_ 'name)))
+  (message "Esploro: sorted by %s" esploro--sort))
+
+(defun esploro-toggle-hidden ()
+  "Show or hide files whose names start with a dot."
+  (interactive)
+  (setq esploro--hidden (not esploro--hidden))
+  (with-current-buffer (esploro--buffer)
+    (dired-sort-other (esploro--switches)))
+  (message "Esploro: hidden files %s" (if esploro--hidden "shown" "hidden")))
+
+(defun esploro-filter (text)
+  "Show only the names holding TEXT (any case), until refreshed (g, F5)."
+  (interactive (list (read-string "Show names with: ")))
+  (with-current-buffer (esploro--buffer)
+    (revert-buffer)
+    (unless (string-empty-p text)
+      (setq esploro--filter text)
+      (let ((inhibit-read-only t) (case-fold-search t))
+        (save-excursion
+          (goto-char (point-min))
+          (while (not (eobp))
+            (let ((name (dired-get-filename 'no-dir t)))
+              (if (and name (not (member name '("." "..")))
+                       (not (string-match-p (regexp-quote text) name)))
+                  (delete-region (line-beginning-position) (min (point-max) (1+ (line-end-position))))
+                (forward-line 1))))))
+      (force-mode-line-update))))
+
+(defun esploro-find (pattern)
+  "Find files below this folder whose names match PATTERN (fd)."
+  (interactive (list (read-string "Find below: ")))
+  (let* ((dir (esploro--dir))
+         (files (let ((default-directory dir))
+                  (seq-take (ignore-errors
+                              (process-lines "fd" "--hidden" "--exclude" ".git" "--color" "never"
+                                             "--strip-cwd-prefix" "--" pattern))
+                            esploro-find-limit))))
+    (if (null files) (message "Esploro: nothing below matches %s" pattern)
+      (push dir esploro--back)
+      (setq esploro--forward '())
+      (switch-to-buffer (esploro--show (cons dir files)) nil t)
+      (message "Esploro: %d found%s" (length files)
+               (if (= (length files) esploro-find-limit) " (the first ones)" "")))))
+
+(defun esploro-properties ()
+  "Size, permissions and owner of the file at point."
+  (interactive)
+  (let* ((file (or (esploro--file-at) (esploro--dir)))
+         (attrs (file-attributes file 'string))
+         (size (if (file-directory-p file)
+                   (car (split-string (or (ignore-errors (car (process-lines "du" "-sh" "--" file))) "?")))
+                 (file-size-human-readable (file-attribute-size attrs)))))
+    (message "%s: %s, %s, %s:%s, changed %s"
+             (abbreviate-file-name file) size (file-attribute-modes attrs)
+             (file-attribute-user-id attrs) (file-attribute-group-id attrs)
+             (format-time-string "%Y-%m-%d %H:%M" (file-attribute-modification-time attrs)))))
+
+;;; --- Where files are open ---------------------------------------------------------------
+
+(defun esploro--annotate ()
+  "Beside each file that a window has open, which one: asked in the background."
+  (let ((buffer (current-buffer))
+        (dir default-directory))
+    (when (and (executable-find esploro-program) (not (consp dired-directory)))
+      (esploro--call (list "where" dir) nil
+                     (lambda (answer)
+                       (when (and (buffer-live-p buffer) (listp answer) (not (keywordp (car answer))))
+                         (with-current-buffer buffer
+                           (remove-overlays (point-min) (point-max) 'esploro-where t)
+                           (dolist (place answer)
+                             (save-excursion
+                               (when (and (consp place)
+                                          (dired-goto-file (expand-file-name (car place) dir)))
+                                 (let ((o (make-overlay (line-end-position) (line-end-position))))
+                                   (overlay-put o 'esploro-where t)
+                                   (overlay-put o 'after-string
+                                                (propertize (concat "   open in " (cdr place))
+                                                            'face 'esploro-where)))))))))))))
+
+;;; --- The mouse ----------------------------------------------------------------------------
+
+(defun esploro-mouse-open (event)
+  "Open what was double-clicked."
+  (interactive "e")
+  (mouse-set-point event)
+  (when-let* ((file (esploro--file-at event)))
+    (esploro-open file)))
+
+(defun esploro-mouse-toggle (event)
+  "Ctrl+click: mark the file clicked, or unmark it."
+  (interactive "e")
+  (mouse-set-point event)
+  (when (esploro--file-at)
+    (save-excursion
+      (beginning-of-line)
+      (if (eq (char-after) dired-marker-char) (dired-unmark 1) (dired-mark 1)))))
+
+(defun esploro-mouse-extend (event)
+  "Shift+click: mark every file from point to the one clicked."
+  (interactive "e")
+  (let ((from (line-number-at-pos)))
+    (mouse-set-point event)
+    (let ((to (line-number-at-pos)))
+      (save-excursion
+        (goto-char (point-min))
+        (forward-line (1- (min from to)))
+        (dotimes (_ (1+ (abs (- to from))))
+          (when (esploro--file-at) (dired-mark 1) (forward-line -1))
+          (forward-line 1))))))
+
+(defun esploro-context-menu (event)
+  "Right-click: what can be done with the file clicked, or with the folder."
+  (interactive "e")
+  (mouse-set-point event)
+  (let ((file (esploro--file-at)))
+    (when (and file (not (member file (dired-get-marked-files nil nil nil t))))
+      (dired-unmark-all-marks))
+    (popup-menu (if file esploro-file-menu esploro-folder-menu) event)))
+
+;;; --- Dropping files in ------------------------------------------------------------------
+
+(defun esploro--dnd-file (uri action)
+  "A file dropped on Esploro, at URI: copied in, or moved when ACTION says so.
+Through the core, so undo takes it back."
+  (when-let* ((file (or (esploro--uri-file uri) (dnd-get-local-file-name uri t))))
+    (let ((op (if (eq action 'move) 'cut 'copy)))
+      (setq esploro--dropped (append esploro--dropped (list (cons op file))))
+      ;; A drop of many files calls this once each: apply them together.
+      (run-at-time 0.2 nil #'esploro--apply-dropped (esploro--dir)))
+    action))
+
+(defun esploro--apply-dropped (dir)
+  (when esploro--dropped
+    (let* ((dropped esploro--dropped)
+           (steps (append (esploro--paste-steps 'copy (mapcar #'cdr (seq-filter (lambda (d) (eq (car d) 'copy)) dropped)) dir)
+                          (esploro--paste-steps 'cut (mapcar #'cdr (seq-filter (lambda (d) (eq (car d) 'cut)) dropped)) dir))))
+      (setq esploro--dropped '())
+      (esploro--apply steps "dropped in"))))
+
+;;; --- Menus, the tool bar and the keys -------------------------------------------------------
+
+(defvar-keymap esploro-mode-map
+  :doc "Esploro's keys, on top of dired's."
+  "RET" #'esploro-open
+  "f" #'esploro-open
+  "^" #'esploro-up
+  "M-<up>" #'esploro-up
+  "M-<left>" #'esploro-back
+  "M-<right>" #'esploro-forward
+  "M-<home>" #'esploro-home
+  "C-l" #'esploro-go-to
+  "M-w" #'esploro-copy
+  "C-w" #'esploro-cut
+  "C-y" #'esploro-paste
+  "<delete>" #'esploro-trash
+  "<f2>" #'esploro-rename
+  "+" #'esploro-new-folder
+  "C-/" #'esploro-undo
+  "C-_" #'esploro-undo
+  "s" #'esploro-sort-cycle
+  "." #'esploro-toggle-hidden
+  "/" #'esploro-filter
+  "M-s f" #'esploro-find
+  "<f5>" #'revert-buffer
+  "<f9>" #'esploro-places-toggle
+  "?" #'esploro-help
+  "<mouse-2>" #'esploro-mouse-open
+  "C-<down-mouse-1>" #'ignore
+  "C-<mouse-1>" #'esploro-mouse-toggle
+  "S-<down-mouse-1>" #'ignore
+  "S-<mouse-1>" #'esploro-mouse-extend
+  "<down-mouse-3>" #'ignore
+  "<mouse-3>" #'esploro-context-menu)
+
+(defun esploro--marked-or-point-p ()
+  (and (derived-mode-p 'dired-mode) (or (esploro--file-at) (dired-get-marked-files nil nil nil t))))
+
+(easy-menu-define esploro-menu esploro-mode-map
+  "Esploro's menu."
+  `("Esploro"
+    ["Open" esploro-open :active (esploro--file-at)]
+    ["Open With..." esploro-open-with :active (esploro--marked-or-point-p)]
+    ["Terminal Here" esploro-terminal-here]
+    "---"
+    ["Copy" esploro-copy :keys "M-w" :active (esploro--marked-or-point-p)]
+    ["Cut" esploro-cut :keys "C-w" :active (esploro--marked-or-point-p)]
+    ["Paste" esploro-paste :keys "C-y"]
+    ["Duplicate" esploro-duplicate :active (esploro--marked-or-point-p)]
+    ["Copy To..." esploro-copy-to :active (esploro--marked-or-point-p)]
+    ["Move To..." esploro-move-to :active (esploro--marked-or-point-p)]
+    ["Rename..." esploro-rename :keys "F2" :active (esploro--file-at)]
+    ["New Folder..." esploro-new-folder :keys "+"]
+    ["Move to Trash" esploro-trash :keys "Delete" :active (esploro--marked-or-point-p)]
+    ["Undo" esploro-undo :keys "C-/"]
+    ["Properties" esploro-properties]
+    "---"
+    ("Go"
+     ["Back" esploro-back :keys "M-<left>" :active esploro--back]
+     ["Forward" esploro-forward :keys "M-<right>" :active esploro--forward]
+     ["Up" esploro-up :keys "M-<up>"]
+     ["Home" esploro-home]
+     ["Go to Folder..." esploro-go-to :keys "C-l"]
+     ["Places" esploro-places-toggle :keys "F9"])
+    ("View"
+     ["Sort by Name" (esploro-sort 'name) :style radio :selected (eq esploro--sort 'name)]
+     ["Sort by Size" (esploro-sort 'size) :style radio :selected (eq esploro--sort 'size)]
+     ["Sort by Time" (esploro-sort 'time) :style radio :selected (eq esploro--sort 'time)]
+     ["Sort by Kind" (esploro-sort 'kind) :style radio :selected (eq esploro--sort 'kind)]
+     ["The Other Way Round" (esploro-sort esploro--sort) :style toggle :selected esploro--reverse]
+     "---"
+     ["Hidden Files" esploro-toggle-hidden :style toggle :selected esploro--hidden]
+     ["Filter..." esploro-filter :keys "/"]
+     ["Find Below..." esploro-find :keys "M-s f"]
+     ["Refresh" revert-buffer :keys "F5"])
+    ("Trash"
+     ["Show the Trash" esploro-show-trash]
+     ["Restore" esploro-restore :active (esploro--in-trash-p)]
+     ["Empty the Trash..." esploro-empty-trash])
+    "---"
+    ["Keys and Mouse" esploro-help :keys "?"]))
+
+(easy-menu-define esploro-file-menu nil
+  "Right-click on a file."
+  '("File"
+    ["Open" esploro-open]
+    ["Open With..." esploro-open-with]
+    "---"
+    ["Copy" esploro-copy]
+    ["Cut" esploro-cut]
+    ["Duplicate" esploro-duplicate]
+    ["Rename..." esploro-rename]
+    ["Move To..." esploro-move-to]
+    ["Copy To..." esploro-copy-to]
+    "---"
+    ["Move to Trash" esploro-trash :visible (not (esploro--in-trash-p))]
+    ["Restore" esploro-restore :visible (esploro--in-trash-p)]
+    ["Properties" esploro-properties]))
+
+(easy-menu-define esploro-folder-menu nil
+  "Right-click on the folder (no file under the mouse)."
+  '("Folder"
+    ["Paste" esploro-paste]
+    ["New Folder..." esploro-new-folder]
+    ["Terminal Here" esploro-terminal-here]
+    "---"
+    ["Hidden Files" esploro-toggle-hidden :style toggle :selected esploro--hidden]
+    ["Sort by Name" (esploro-sort 'name) :style radio :selected (eq esploro--sort 'name)]
+    ["Sort by Time" (esploro-sort 'time) :style radio :selected (eq esploro--sort 'time)]
+    ["Sort by Size" (esploro-sort 'size) :style radio :selected (eq esploro--sort 'size)]
+    ["Refresh" revert-buffer]
+    "---"
+    ["Empty the Trash..." esploro-empty-trash :visible (esploro--in-trash-p)]
+    ["Undo" esploro-undo]))
+
+(defvar esploro-tool-bar-map
+  (let ((map (make-sparse-keymap)))
+    (dolist (item '((esploro-back "left-arrow" "Back")
+                    (esploro-forward "right-arrow" "Forward")
+                    (esploro-up "up-arrow" "Up")
+                    (esploro-home "home" "Home")
+                    (esploro-places-toggle "index" "Places")
+                    nil
+                    (esploro-new-folder "new" "New Folder")
+                    (esploro-copy "copy" "Copy")
+                    (esploro-cut "cut" "Cut")
+                    (esploro-paste "paste" "Paste")
+                    (esploro-trash "delete" "Trash")
+                    (esploro-undo "undo" "Undo")
+                    nil
+                    (esploro-find "search" "Find")
+                    (revert-buffer "refresh" "Refresh")
+                    (esploro-help "help" "Help")))
+      (if (null item)
+          (define-key-after map (vector (gensym "sep")) menu-bar-separator)
+        (tool-bar-local-item (nth 1 item) (nth 0 item) (nth 0 item) map
+                             :label (nth 2 item) :help (nth 2 item))))
+    map)
+  "Esploro's tool bar.")
+
+(defun esploro--header ()
+  (concat " " (abbreviate-file-name (esploro--dir))
+          (format "   sorted by %s%s" esploro--sort (if esploro--reverse ", the other way" ""))
+          (if esploro--hidden "   hidden shown" "")
+          (if esploro--filter (format "   only \"%s\" (F5: all)" esploro--filter) "")
+          (if (esploro--in-trash-p) "   the Trash: Restore and Empty on the menus" "")))
+
+(define-minor-mode esploro-mode
+  "Esploro, on a dired buffer: menus, the tool bar, the mouse, and changes
+through the core, journaled so they can be undone."
+  :lighter " Esploro"
+  :keymap esploro-mode-map
+  (when esploro-mode
+    ;; A double click opens; one click only selects.
+    (setq-local mouse-1-click-follows-link 'double)
+    ;; Dragging a name out gives the file to the program it's dropped on.
+    (setq-local dired-mouse-drag-files t)
+    (setq-local dnd-protocol-alist (cons '("^file:" . esploro--dnd-file) dnd-protocol-alist))
+    (setq-local tool-bar-map esploro-tool-bar-map)
+    (setq-local header-line-format '(:eval (esploro--header)))
+    (add-hook 'dired-after-readin-hook #'esploro--annotate nil t)))
+
+;;; --- Places, down the side --------------------------------------------------------------
+
+(defun esploro--bookmarks ()
+  "GTK's bookmarks, as other file managers keep them: (NAME . FOLDER)."
+  (let ((file (expand-file-name "gtk-3.0/bookmarks" (or (getenv "XDG_CONFIG_HOME") "~/.config"))))
+    (when (file-readable-p file)
+      (with-temp-buffer
+        (insert-file-contents file)
+        (delq nil (mapcar (lambda (line)
+                            (when-let* ((uri (car (split-string line " ")))
+                                        (dir (esploro--uri-file uri)))
+                              (cons (if (string-match " \\(.+\\)\\'" line) (match-string 1 line)
+                                      (file-name-nondirectory (directory-file-name dir)))
+                                    dir)))
+                          (split-string (buffer-string) "\n" t)))))))
+
+(defun esploro--drives ()
+  "Mounted drives (udiskie mounts them in /run/media/USER): (NAME . FOLDER)."
+  (let ((media (format "/run/media/%s" user-login-name)))
+    (when (file-directory-p media)
+      (mapcar (lambda (d) (cons (file-name-nondirectory d) d))
+              (directory-files media t "\\`[^.]")))))
+
+(defun esploro--places ()
+  "Everything down the side, in groups: ((GROUP (NAME . FOLDER)...)...)."
+  (seq-filter #'cdr
+              (list (cons "Places" (seq-filter (lambda (p) (file-directory-p (cdr p)))
+                                               (mapcar (lambda (p) (cons (car p) (expand-file-name (cdr p))))
+                                                       esploro-places)))
+                    (cons "Drives" (esploro--drives))
+                    (cons "Bookmarks" (esploro--bookmarks))
+                    (cons "" (list (cons "Trash" (esploro--trash-dir)))))))
+
+(define-derived-mode esploro-places-mode special-mode "Places"
+  "Esploro's places: click one, or RET on it."
+  (setq-local cursor-type nil)
+  (setq-local mode-line-format nil))
+
+(defun esploro-places-refresh ()
+  (when-let* ((buffer (get-buffer esploro-places-buffer-name)))
+    (with-current-buffer buffer
+      (let ((inhibit-read-only t)
+            (here (and (get-buffer esploro-buffer-name) (esploro--dir))))
+        (erase-buffer)
+        (dolist (group (esploro--places))
+          (unless (string-empty-p (car group))
+            (insert (propertize (car group) 'face 'bold) "\n"))
+          (dolist (place (cdr group))
+            (insert "  ")
+            (insert-text-button (car place)
+                                'action (lambda (_) (esploro--from-places (cdr place)))
+                                'follow-link t
+                                'help-echo (abbreviate-file-name (cdr place))
+                                'face (if (equal (file-name-as-directory (cdr place)) here) 'highlight 'default))
+            (insert "\n"))
+          (insert "\n"))
+        (goto-char (point-min))))))
+
+(defun esploro--from-places (dir)
+  (let ((frame (esploro--frame)))
+    (when frame
+      (with-selected-frame frame
+        (select-window (esploro--main-window frame))
+        (esploro-go dir)))))
+
+(defun esploro-places-show ()
+  "Places down the side of Esploro's frame."
+  (interactive)
+  (let ((buffer (get-buffer-create esploro-places-buffer-name)))
+    (with-current-buffer buffer (unless (derived-mode-p 'esploro-places-mode) (esploro-places-mode)))
+    (esploro-places-refresh)
+    (display-buffer-in-side-window buffer '((side . left) (slot . 0) (window-width . 22)
+                                            (preserve-size . (t . nil))
+                                            (window-parameters (no-delete-other-windows . t)
+                                                               (no-other-window . t))))))
+
+(defun esploro-places-toggle ()
+  "Show or hide the places down the side."
+  (interactive)
+  (let ((window (get-buffer-window esploro-places-buffer-name)))
+    (if window (delete-window window) (esploro-places-show))))
+
+;;; --- Help -----------------------------------------------------------------------------------
+
+(defun esploro-help ()
+  "Esploro's keys, and what the mouse does."
+  (interactive)
+  (with-help-window "*Esploro help*"
+    (princ "Esploro: a file explorer in Emacs. Everything is also on the menus,
+the tool bar and the right-click menus.
+
+The mouse
+  click                 select it
+  double-click          open it (a folder goes in)
+  Ctrl+click            add it to the selection, or take it out
+  Shift+click           select everything from the last one to here
+  right-click           what can be done with it, or with the folder
+  drag a name out       give the file to another program
+  drop files in         copy them here (a move when the program says so)
+
+Keys
+  RET                   open
+  M-Left, M-Right       back, forward       M-Up or ^   the folder above
+  C-l                   go to a folder (typed, with completion)
+  M-w, C-w, C-y         copy, cut, paste (other file managers paste them too)
+  Delete                to the Trash        F2          rename
+  +                     new folder          C-/         undo the last change
+  s                     sort: name, time, size, kind (again turns it round on the menu)
+  .                     hidden files        /           only names with...
+  M-s f                 find below          F5          refresh
+  F9                    places              ?           this
+  m, u, U               mark, unmark, unmark all (dired's)
+
+Every change (copy, move, paste, rename, a new folder, the Trash, a drop)
+is checked whole first, done in the background, and kept in a journal,
+so undo puts it back. Dired's own C, R and D work too, but around it.")))
+
+(provide 'esploro)
+;;; esploro.el ends here

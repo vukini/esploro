@@ -1,8 +1,9 @@
 ;;;; esploro.asd — Esploro, a file explorer for Lisp desktops.
 ;;;;
-;;;; Two systems: esploro/core has no window and needs only SBCL (so its
-;;;; tests run anywhere, without X or McCLIM); esploro is the window,
-;;;; with McCLIM from Quicklisp.
+;;;; Two systems, both needing only SBCL: esploro/core (folders, plans,
+;;;; where files are open, commands) and esploro, the command the window
+;;;; calls. The window is in Emacs (emacs/esploro.el); the McCLIM window
+;;;; it had first is kept on the branch mcclim.
 
 (defsystem "esploro/core"
   :description "Esploro without its window: folders, plans, commands, and where files are open."
@@ -21,12 +22,11 @@
                (:file "preview")))
 
 (defsystem "esploro"
-  :description "A file explorer in Common Lisp for Lisp desktops: StumpWM, with Emacs beside it."
+  :description "A file explorer for Lisp desktops: StumpWM, with Emacs beside it. This is its command; the window is in Emacs (emacs/esploro.el)."
   :author "Vid <vukini@gmail.com>"
   :license "MIT"
-  :version "0.1.0"
-  :depends-on ("esploro/core" "mcclim")
+  :version "0.2.0"
+  :depends-on ("esploro/core")
   :pathname "src/"
   :serial t
-  :components ((:file "ui")
-               (:file "main")))
+  :components ((:file "main")))

@@ -395,3 +395,64 @@ changed since so that it can't be undone whole."
         (write-forms path (list (cons :applied plist)))
         (incf *journal-version*)
         (getf plist :steps)))))
+
+;;; --- The Trash, to look in, restore from and empty --------------------------------
+
+(defun percent-decode (string)
+  "PERCENT-ENCODE undone: %XX bytes, read as UTF-8."
+  (let ((bytes (make-array (length string) :element-type '(unsigned-byte 8) :fill-pointer 0)))
+    (loop with i = 0
+          while (< i (length string))
+          do (let ((c (char string i)))
+               (if (and (char= c #\%) (<= (+ i 3) (length string))
+                        (digit-char-p (char string (+ i 1)) 16) (digit-char-p (char string (+ i 2)) 16))
+                   (progn (vector-push (parse-integer string :start (+ i 1) :end (+ i 3) :radix 16) bytes)
+                          (incf i 3))
+                   (progn (loop for b across (sb-ext:string-to-octets (string c) :external-format :utf-8)
+                                do (vector-push b bytes))
+                          (incf i)))))
+    (sb-ext:octets-to-string (coerce bytes '(vector (unsigned-byte 8))) :external-format :utf-8)))
+
+(defun trash-entries ()
+  "What's in the Trash, newest first, as (NAME ORIGINAL-PATH DELETION-DATE):
+NAME in its files/, from the .trashinfo beside it in info/."
+  (let* ((trash (trash-folder))
+         (info (join-path trash "info"))
+         (entries '()))
+    (when (directory-p info)
+      (dolist (file (folder-names info))
+        (let ((l (length file)))
+          (when (and (> l 10) (string= ".trashinfo" file :start2 (- l 10)))
+            (let ((name (subseq file 0 (- l 10))) path date)
+              (with-open-file (in (native (join-path info file)) :external-format :utf-8 :if-does-not-exist nil)
+                (when in
+                  (loop for line = (read-line in nil)
+                        while line
+                        do (cond ((and (> (length line) 5) (string= "Path=" line :end2 5))
+                                  (setf path (percent-decode (subseq line 5))))
+                                 ((and (> (length line) 13) (string= "DeletionDate=" line :end2 13))
+                                  (setf date (subseq line 13)))))))
+              (when (and path (path-exists-p (join-path trash "files" name)))
+                (push (list name path (or date "")) entries)))))))
+    (sort entries #'string> :key #'third)))
+
+(defun restore-from-trash (names)
+  "Put NAMES (as TRASH-ENTRIES calls them) back where they were, as a plan:
+checked whole first, journaled, so undo puts them back in the Trash."
+  (let ((entries (trash-entries)))
+    (apply-plan (loop for name in names
+                      for entry = (find name entries :key #'first :test #'string=)
+                      collect (list :restore name (if entry (second entry) "")))
+                :allowed *undo-operations*)))
+
+(defun empty-trash ()
+  "Delete everything in the Trash, for good. Returns how many were there."
+  (let* ((trash (trash-folder))
+         (n (length (trash-entries))))
+    (dolist (sub '("files" "info"))
+      (let ((folder (join-path trash sub)))
+        (when (directory-p folder)
+          (dolist (name (folder-names folder))
+            (sb-ext:run-program "rm" (list "-rf" "--" (join-path folder name))
+                                :search t :output nil :error nil)))))
+    n))

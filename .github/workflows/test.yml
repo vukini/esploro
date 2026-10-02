@@ -5,7 +5,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: sbcl
-        run: sudo apt-get update -q && sudo apt-get install -y --no-install-recommends sbcl
-      - name: the core's tests (no X, no McCLIM)
+      - name: sbcl, and Emacs for the window's tests
+        run: sudo apt-get update -q && sudo apt-get install -y --no-install-recommends sbcl emacs-nox
+      - name: the core's tests (SBCL) and the window's (Emacs in batch, no X)
         run: make test

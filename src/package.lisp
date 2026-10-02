@@ -27,8 +27,10 @@
    #:open-path #:open-default
    ;; Previews
    #:thumbnail #:text-head #:file-description
-   ;; The window
-   #:run #:main))
+   ;; The Trash
+   #:trash-entries #:restore-from-trash #:empty-trash
+   ;; The command (the window is in Emacs: emacs/esploro.el)
+   #:main))
 
 ;;; Text read from elsewhere (Swank's replies, Emacs's answers, a plan
 ;;; edited by hand) is read in here, so whatever symbols it holds land in
