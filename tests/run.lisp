@@ -548,6 +548,72 @@
               (eq (second (run-cli (list "recipe" "add" "Bad" "(:rename-by \"\" \"x\")"))) :error)))
   (run-cli (list "recipe" "forget" "Pics")))
 
+;;; --- Sorting by kind into several folders ------------------------------------------------
+
+(esploro::ensure-folder (p "srt/Images"))
+(esploro::ensure-folder (p "srt/deep/Images"))
+(esploro::ensure-folder (p "srt/sub"))
+(dolist (n '("a.jpg" "b.png" "c.pdf" "d.docx" "e.lisp" "f.zip" "Images/a.jpg" "Images/z.png" "deep/g.jpg"
+             "deep/Images/h.jpg"))
+  (make-file (p "srt" n) n))
+(flet ((srt (&rest names) (mapcar (lambda (n) (p "srt" n)) names))
+       (short (steps) (mapcar (lambda (s) (cons (first s) (mapcar (lambda (x) (esploro::short-path x (p "srt"))) (rest s))))
+                             steps)))
+  (multiple-value-bind (steps problems why)
+      (esploro::sort-by-kind-plan esploro::*kind-folders*
+                                  (srt "a.jpg" "b.png" "c.pdf" "d.docx" "e.lisp" "f.zip" "sub" "Images/z.png"
+                                       "deep/g.jpg" "deep/Images/h.jpg"))
+    (check "sorted by kind into several folders, each made once, beside the files"
+           (and (null problems)
+                (equal (short steps)
+                       '((:move "a.jpg" "Images/a 2.jpg") (:move "b.png" "Images/b.png")
+                         (:mkdir "Documents") (:move "c.pdf" "Documents/c.pdf")
+                         (:mkdir "Text") (:move "e.lisp" "Text/e.lisp")
+                         (:mkdir "Archives") (:move "f.zip" "Archives/f.zip")
+                         (:move "deep/g.jpg" "deep/Images/g.jpg")))))
+    (check "the review says where they go, what stays and why, and which got another name"
+           (and (search "2 into ~/srt/Images" why) (search "d.docx (of no kind named)" why)
+                (search "sub (folders)" why) (search "z.png, h.jpg (already in their folder)" why)
+                (search "a.jpg as a 2.jpg" why))))
+  (check "two files of one name into one folder: the second gets a free name"
+         (equal (short (esploro::sort-by-kind-plan '((:image "/tmp-nowhere-esploro")) (srt "a.jpg" "Images/a.jpg")))
+                '((:mkdir "/tmp-nowhere-esploro") (:move "a.jpg" "/tmp-nowhere-esploro/a.jpg")
+                  (:move "Images/a.jpg" "/tmp-nowhere-esploro/a 2.jpg"))))
+  (check "a folder whole, its missing folders above made first; the first kind that fits wins"
+         (equal (short (esploro::sort-by-kind-plan '((:lisp "Code/Lisp") (:text "Text") (:file "Other"))
+                                                   (srt "e.lisp" "d.docx")))
+                '((:mkdir "Code") (:mkdir "Code/Lisp") (:move "e.lisp" "Code/Lisp/e.lisp")
+                  (:mkdir "Other") (:move "d.docx" "Other/d.docx"))))
+  (make-file (p "srt/Text") "a file")
+  (multiple-value-bind (steps problems) (esploro::sort-by-kind-plan esploro::*kind-folders* (srt "e.lisp" "c.pdf"))
+    (check "a folder that's a file: refused, no steps"
+           (and (null steps) (equal problems (list (format nil "e.lisp can't go into ~a: that's a file, not a folder"
+                                                           (esploro::short-path (p "srt/Text"))))))))
+  (sb-posix:unlink (p "srt/Text"))
+  (check "esploro sort-by-kind --plan: kept for the window, nothing moved"
+         (destructuring-bind (code what file why n recipe) (run-cli (list* "sort-by-kind" "--plan" (srt "c.pdf" "f.zip")))
+           (declare (ignore why))
+           (and (eql code 0) (eq what :plan) (= n 4) (eq (first recipe) :sort-by-kind)
+                (= 4 (length (read-plan-file file))) (path-exists-p (p "srt/c.pdf")))))
+  (check "nothing to sort: nothing to do" (eq (second (run-cli (list "sort-by-kind" "--plan" (p "srt/d.docx")))) :none))
+  (check "your own kinds and folders, kept as a recipe"
+         (equal (run-cli (list "recipe" "add" "Media" "(:sort-by-kind (:image \"Pics\") (:video \"/media/v\"))"))
+                (list 0 :saved "Media" "sort by kind into Pics, /media/v")))
+  (check "a sorting with a kind it doesn't know, or a folder going up, isn't kept"
+         (and (eq (second (run-cli (list "recipe" "add" "X" "(:sort-by-kind (:spreadsheet \"S\"))"))) :error)
+              (eq (second (run-cli (list "recipe" "add" "X" "(:sort-by-kind (:image \"../up\"))"))) :error)
+              (eq (second (run-cli (list "recipe" "add" "X" "(:sort-by-kind)"))) :error)))
+  (check "run, it's a plan to review"
+         (let ((r (run-cli (list* "recipe" "run" "--plan" "Media" (srt "b.png")))))
+           (and (eq (second r) :plan)
+                (equal (short (read-plan-file (third r))) '((:mkdir "Pics") (:move "b.png" "Pics/b.png"))))))
+  (check "applied, undo puts it all back"
+         (let ((steps (esploro::sort-by-kind-plan esploro::*kind-folders* (srt "c.pdf" "f.zip"))))
+           (apply-plan steps)
+           (and (path-exists-p (p "srt/Documents/c.pdf"))
+                (progn (undo-last) (and (path-exists-p (p "srt/c.pdf")) (not (path-exists-p (p "srt/Documents"))))))))
+  (run-cli (list "recipe" "forget" "Media")))
+
 ;;; --- Searches: folders that are questions ---------------------------------------------
 
 (check "words are a query" (equal (esploro::parse-query "report kind:pdf newer:7 larger:1M -draft")

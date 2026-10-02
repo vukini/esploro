@@ -26,6 +26,10 @@ esploro rename-by [--plan] FROM TO FILE...   rename FILE... by a pattern, as a p
                             #1, #2... in TO give them back, #n numbers them, ## is #;
                             FROM without * or ? is text to replace. Never two files
                             to one name, nor onto a name that's taken
+esploro sort-by-kind [--plan] FILE...   FILE... into folders by kind, beside them
+                            (Images, Videos, Audio, Documents, Text, Archives), as a
+                            plan for your review; your own kinds and folders, as a
+                            recipe: (:sort-by-kind (:image \"Pictures\") (:pdf \"/x/Docs\"))
 esploro query [--lines] TEXT [FOLDER]   the files below FOLDER (the one you're in)
                             that match TEXT: words a name holds, *.pdf, kind:pdf,
                             newer:7 or older:30 (days), larger:10M, smaller:1k,
@@ -330,6 +334,14 @@ changes files, its steps go to Esploro for your review."
                    (cli-apply "-"))))))
           (t (answer (list :error "esploro recipe last | list | save NAME | add NAME RECIPE | forget NAME | run [--plan] NAME FILE...")) 2))))
 
+(defun cli-sort-by-kind (args)
+  "esploro sort-by-kind [--plan] FILE...: into Images, Documents... beside them."
+  (let* ((plan-only (equal (first args) "--plan"))
+         (args (if plan-only (rest args) args)))
+    (if (null args)
+        (progn (answer (list :error "esploro sort-by-kind [--plan] FILE...")) 2)
+        (offer-plan (cons :sort-by-kind *kind-folders*) (mapcar #'absolute args) plan-only))))
+
 (defun answer-found (query root lines)
   (multiple-value-bind (paths more) (run-query query root)
     (if lines
@@ -430,6 +442,7 @@ changes files, its steps go to Esploro for your review."
           ((equal command "run") (cli-run (second args) (cddr args)))
           ((equal command "recipe") (cli-recipe (rest args)))
           ((equal command "rename-by") (cli-rename-by (rest args)))
+          ((equal command "sort-by-kind") (cli-sort-by-kind (rest args)))
           ((equal command "query") (cli-query (rest args)))
           ((equal command "search") (cli-search (rest args)))
           ((equal command "selection") (cli-selection (rest args)))

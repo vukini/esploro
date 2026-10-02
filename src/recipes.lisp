@@ -9,7 +9,9 @@
 ;;;;
 ;;;; Some recipes send each file its own way, and their plans wait for
 ;;;; your review before anything changes: (:rename-by FROM TO), names
-;;;; changed by a pattern. They're written, not learnt from the journal.
+;;;; changed by a pattern, and (:sort-by-kind (KIND FOLDER)...), files
+;;;; into several folders by kind. They're written, not learnt from the
+;;;; journal.
 
 (in-package #:esploro)
 
@@ -35,6 +37,9 @@ thing to one folder (renames, or moves into several)."
     (:move-into (format nil "move into ~a" (short-path (second recipe))))
     (:copy-into (format nil "copy into ~a" (short-path (second recipe))))
     (:rename-by (format nil "rename ~a to ~a" (second recipe) (third recipe)))
+    (:sort-by-kind (format nil "sort by kind into ~{~a~^, ~}"
+                           (remove-duplicates (mapcar (lambda (e) (short-path (second e))) (rest recipe))
+                                              :test #'string= :from-end t)))
     (t (format nil "~s" recipe))))
 
 (defun recipe-valid-p (recipe)
@@ -44,13 +49,18 @@ thing to one folder (renames, or moves into several)."
          (:trash (null (rest recipe)))
          ((:move-into :copy-into) (and (= (length recipe) 2) (valid-path-p (second recipe))))
          (:rename-by (and (= (length recipe) 3) (stringp (second recipe)) (plusp (length (second recipe)))
-                          (stringp (third recipe)))))))
+                          (stringp (third recipe))))
+         (:sort-by-kind (and (rest recipe)
+                             (every (lambda (entry)
+                                      (and (consp entry) (= (length entry) 2) (member (first entry) *sort-kinds*)
+                                           (kind-folder-valid-p (second entry))))
+                                    (rest recipe)))))))
 
 (defun reviewed-recipe-p (recipe)
   "Whether RECIPE's plan waits for your review, rather than being done at
 once: a rename by a pattern, or a sorting, where each file goes its own
 way. (Moving into one folder is done at once, and undone with undo.)"
-  (member (first recipe) '(:rename-by)))
+  (member (first recipe) '(:rename-by :sort-by-kind)))
 
 (defun recipe-steps (recipe paths)
   "The plan RECIPE makes for PATHS. A file already in the folder is left be;
@@ -88,7 +98,9 @@ one whose name is taken there gets a free one (\"notes 2.txt\")."
                :comment ";; Esploro's recipes: changes kept to do again, by name (Recipes, on the right-click menu).
 ;; (:recipe \"NAME\" (:move-into \"/folder\")), (:copy-into \"/folder\") or (:trash);
 ;; (:rename-by \"IMG_*.jpg\" \"Holiday #n.jpg\"): * and ? take parts of a name, #1 #2 give them back,
-;; #n is a number, ## a #.")
+;; #n is a number, ## a #. (:sort-by-kind (:image \"Images\") (:pdf \"/home/me/Documents\") ...):
+;; each kind to its folder, beside the file or a whole path; kinds :image :video :audio :pdf
+;; :lisp :text :archive, :file (anything else) and :folder.")
   recipes)
 
 (defun save-recipe (name recipe)
@@ -234,11 +246,104 @@ can't do (if anything, there are no steps), and in words what it does."
                 (format nil "Rename ~s to ~s: ~[nothing to rename~:;~:*~d file~:p~]~@[; left as they are, not fitting: ~a~]"
                         from to (length steps) (and unfit (some-names unfit))))))))
 
+;;; --- Sorting by kind into several folders ---------------------------------------------
+;;;
+;;; (:sort-by-kind (:image "Images") (:pdf "Documents") ...): each file
+;;; goes to the folder for the first kind it is (:lisp is a :text too,
+;;; :file is anything but a folder, :folder a folder). A folder named
+;;; without a / at the start is beside the file ("Images" in the file's
+;;; own folder, so sorting a search's files sorts each in its place); a
+;;; whole path gathers them. A folder that isn't there is made. A name
+;;; taken there gets a free one ("notes 2.txt"), said in the review; a
+;;; file of no kind named, or already in its folder, stays.
+
+(defparameter *sort-kinds* '(:image :video :audio :pdf :lisp :text :archive :file :folder)
+  "The kinds a sorting can name.")
+
+(defparameter *kind-folders*
+  '((:image "Images") (:video "Videos") (:audio "Audio") (:pdf "Documents")
+    (:text "Text") (:archive "Archives"))
+  "Where Sort by Kind sends each kind, unless a recipe says otherwise.")
+
+(defun kind-folder-valid-p (folder)
+  "Whether FOLDER can be a sorting's folder: a whole path, or a name (or
+names with /) below the file's folder."
+  (and (stringp folder) (plusp (length folder))
+       (if (char= (char folder 0) #\/)
+           (valid-path-p folder)
+           (every #'valid-name-p (split-path folder)))))
+
+(defun kind-folder-for (kind kinds)
+  (second (find-if (lambda (entry) (kind-is kind (first entry))) kinds)))
+
+(defun free-path-in (folder name taken)
+  "FOLDER/NAME, or when that's there or in TAKEN (a table), \"NAME 2\",
+\"NAME 3\"... with its type kept: the first that's free."
+  (let* ((dot (position #\. name :from-end t))
+         (dot (and dot (plusp dot) dot))
+         (stem (subseq name 0 dot))
+         (type (if dot (subseq name dot) "")))
+    (loop for n from 1
+          for candidate = (join-path folder (if (= n 1) name (format nil "~a ~d~a" stem n type)))
+          unless (or (path-exists-p candidate) (gethash candidate taken)) return candidate)))
+
+(defun sort-by-kind-plan (kinds paths)
+  "The plan sorting PATHS into folders by kind, as KINDS says: its steps,
+the problems that stop it, and in words what it does (where they go,
+what stays and why, which got another name)."
+  (let ((steps '()) (problems '()) (stays '()) (renamed '())
+        (counts '()) (made (make-hash-table :test 'equal)) (taken (make-hash-table :test 'equal)))
+    (labels ((make-folder (folder)
+               ;; Made once, its missing folders above it first.
+               (unless (or (gethash folder made) (directory-p folder))
+                 (make-folder (path-parent folder))
+                 (setf (gethash folder made) t)
+                 (push (list :mkdir folder) steps)))
+             (stay (path why) (push (cons why path) stays)))
+      (dolist (path paths)
+        (let* ((kind (path-kind path))
+               (name (and kind (kind-folder-for kind kinds)))
+               (folder (and name (normalize-path (if (char= (char name 0) #\/) name
+                                                     (join-path (path-parent path) name))))))
+          (cond ((null kind) (stay path "not there"))
+                ((null name) (stay path (if (eq kind :folder) "folders" "of no kind named")))
+                ((or (string= (path-parent path) folder)
+                     ;; In an Images of its own already, found below (a search).
+                     (and (char/= (char name 0) #\/)
+                          (let ((tail (concatenate 'string "/" (string-right-trim "/" name))))
+                            (string-equal tail (path-parent path)
+                                          :start2 (max 0 (- (length (path-parent path)) (length tail)))))))
+                 (stay path "already in their folder"))
+                ((or (string= folder path) (path-inside-p folder path)) (stay path "the folder itself"))
+                ((and (path-exists-p folder) (not (directory-p folder)))
+                 (push (format nil "~a can't go into ~a: that's a file, not a folder"
+                               (path-name path) (short-path folder))
+                       problems))
+                (t (make-folder folder)
+                   (let ((to (free-path-in folder (path-name path) taken)))
+                     (setf (gethash to taken) t)
+                     (unless (string= (path-name to) (path-name path))
+                       (push (format nil "~a as ~a" (path-name path) (path-name to)) renamed))
+                     (push (list :move path to) steps)
+                     (let ((count (assoc folder counts :test #'string=)))
+                       (if count (incf (cdr count)) (push (cons folder 1) counts)))))))))
+    (setf steps (nreverse steps))
+    (values (if problems '() steps)
+            (or (nreverse problems) (and steps (check-plan steps)))
+            (format nil "Sort by kind: ~:[nothing to move~;~:*~{~a~^, ~}~]~@[. Staying where they are: ~{~a~^; ~}~]~@[. Given another name, theirs being taken there: ~{~a~^, ~}~]"
+                    (loop for (folder . n) in (reverse counts)
+                          collect (format nil "~d into ~a" n (short-path folder)))
+                    (loop for why in (remove-duplicates (mapcar #'car (reverse stays)) :test #'string= :from-end t)
+                          for these = (reverse (mapcar #'cdr (remove why stays :key #'car :test-not #'string=)))
+                          collect (format nil "~a (~a)" (some-names these) why))
+                    (reverse renamed)))))
+
 (defun recipe-plan (recipe paths)
   "The plan RECIPE makes for PATHS: its steps, the problems that stop it
 (then there are no steps to do), and in words what it does."
   (case (first recipe)
     (:rename-by (rename-by-plan (second recipe) (third recipe) paths))
+    (:sort-by-kind (sort-by-kind-plan (rest recipe) paths))
     (t (let ((steps (recipe-steps recipe paths)))
          (values steps (and steps (check-plan steps)) (describe-recipe recipe))))))
 
@@ -248,6 +353,6 @@ it isn't one."
   (let ((forms (handler-case (read-plan text)
                  (error () (error "~a can't be read as an s-expression" text)))))
     (unless (and (= (length forms) 1) (recipe-valid-p (first forms)))
-      (error "~a isn't a recipe: (:move-into \"/folder\"), (:copy-into \"/folder\"), (:trash) or (:rename-by \"FROM\" \"TO\")"
+      (error "~a isn't a recipe: (:move-into \"/folder\"), (:copy-into \"/folder\"), (:trash) (:rename-by \"FROM\" \"TO\") or (:sort-by-kind (:image \"Images\") ...)"
              text))
     (first forms)))
