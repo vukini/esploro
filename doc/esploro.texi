@@ -43,6 +43,7 @@ anything happens, done in the background, and kept in a journal.
 * Looking around::         Sorting, hidden files, a filter, finding below.
 * The Trash::              Looking in it, restoring, emptying.
 * Where files are open::   ``open in Emacs on 2'' beside a file.
+* Plans from agents::      Changes an agent proposes, for you to apply.
 * Keys and mouse::         Everything, on one page.
 * The command line::       The esploro command.
 * Writing commands::       Commands of your own, in Lisp.
@@ -59,6 +60,12 @@ opens PCManFM instead.
 
 @item @kbd{Super+Alt+Shift+e}
 A new Esploro window, even where one is open.
+
+@item @kbd{Super+Alt+r}
+Reveals the file behind the window you're in: what an Emacs frame
+shows, the document a viewer has open, the file a terminal's program
+was started on, or the folder a terminal is in; selected, in its
+folder.
 
 @item @code{esploro @var{folder}}
 From a shell, the launcher, or a program opening a folder: @var{folder}
@@ -254,6 +261,10 @@ The places and the tool bar act on the pane used last.
 @chapter Windows and workspaces
 
 Each workspace can have its own Esploro window, at its own folder.
+A new one opens in the workspace's project: the folder most of its
+windows are about (a terminal's folder, Emacs's files, a viewer's
+document), taken up to its project, the nearest folder with a
+@file{.git} or a @file{log.md}; your home on an empty workspace.
 @kbd{Super+e} goes to the one on the workspace you're on, or opens one
 there; one on another workspace stays where it is.  To have two on the
 same workspace, use @kbd{Super+Alt+Shift+e}, File, New Window
@@ -305,6 +316,16 @@ windows and their programs, @file{/proc} for what those hold open or
 were started on, and Emacs for its buffers.  Opening such a file goes to
 its window instead of opening it again.
 
+@node Plans from agents
+@chapter Plans from agents
+
+An agent (Claude Code, through Vikix's @code{vikix mcp}) never moves,
+copies, renames or deletes your files itself.  It proposes a plan,
+which the core checks whole (one with a problem goes back to the agent),
+and Esploro shows it to you, on your workspace: why, and each step.
+@samp{Apply} makes the changes, journaled, so undo takes them back;
+@samp{Cancel} drops the plan, and nothing changes.
+
 @node Keys and mouse
 @chapter Keys and mouse
 
@@ -355,6 +376,10 @@ A new Esploro window.
 The file's folder, with @var{file} selected.
 @item esploro --where [@var{path}@dots{}]
 Which windows have @var{path} open, or every file that's open.
+@item esploro reveal
+The file behind the window you're in, selected in its folder.
+@item esploro propose @var{file} [@var{why}]
+A plan for you to review in Esploro (what an agent's proposal runs).
 @item esploro --dbus
 Makes the running Emacs answer @code{org.freedesktop.FileManager1},
 the file manager's name on D-Bus that browsers call for ``Show in

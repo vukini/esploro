@@ -38,6 +38,7 @@ and kept in a journal.
 * Looking around::         Sorting, hidden files, a filter, finding below.
 * The Trash::              Looking in it, restoring, emptying.
 * Where files are open::   "open in Emacs on 2" beside a file.
+* Plans from agents::      Changes an agent proposes, for you to apply.
 * Keys and mouse::         Everything, on one page.
 * The command line::       The esploro command.
 * Writing commands::       Commands of your own, in Lisp.
@@ -55,6 +56,12 @@ File: esploro.info,  Node: Opening Esploro,  Next: The window,  Prev: Top,  Up: 
 
 ‘Super+Alt+Shift+e’
      A new Esploro window, even where one is open.
+
+‘Super+Alt+r’
+     Reveals the file behind the window you're in: what an Emacs
+     frame shows, the document a viewer has open, the file a
+     terminal's program was started on, or the folder a terminal
+     is in; selected, in its folder.
 
 ‘esploro FOLDER’
      From a shell, the launcher, or a program opening a folder:
@@ -275,10 +282,15 @@ File: esploro.info,  Node: Windows and workspaces,  Next: Looking around,  Prev:
 ************************
 
 Each workspace can have its own Esploro window, at its own
-folder.  ‘Super+e’ goes to the one on the workspace you're on,
-or opens one there; one on another workspace stays where it is.
-To have two on the same workspace, use ‘Super+Alt+Shift+e’,
-File, New Window (‘C-x 5 2’), or ‘esploro --new’.
+folder.  A new one opens in the workspace's project: the folder
+most of its windows are about (a terminal's folder, Emacs's
+files, a viewer's document), taken up to its project, the
+nearest folder with a ‘.git’ or a ‘log.md’; your home on an
+empty workspace.  ‘Super+e’ goes to the one on the workspace
+you're on, or opens one there; one on another workspace stays
+where it is.  To have two on the same workspace, use
+‘Super+Alt+Shift+e’, File, New Window (‘C-x 5 2’), or ‘esploro
+--new’.
 
    Esploro knows which window is on which workspace by asking
 StumpWM. Without StumpWM, ‘esploro FOLDER’ uses any Esploro
@@ -325,7 +337,7 @@ again.  Empty the Trash deletes everything in it, for good,
 after asking: that one can't be undone.
 
 
-File: esploro.info,  Node: Where files are open,  Next: Keys and mouse,  Prev: The Trash,  Up: Top
+File: esploro.info,  Node: Where files are open,  Next: Plans from agents,  Prev: The Trash,  Up: Top
 
 11 Where files are open
 ***********************
@@ -337,9 +349,23 @@ open or were started on, and Emacs for its buffers.  Opening
 such a file goes to its window instead of opening it again.
 
 
-File: esploro.info,  Node: Keys and mouse,  Next: The command line,  Prev: Where files are open,  Up: Top
+File: esploro.info,  Node: Plans from agents,  Next: Keys and mouse,  Prev: Where files are open,  Up: Top
 
-12 Keys and mouse
+12 Plans from agents
+********************
+
+An agent (Claude Code, through Vikix's ‘vikix mcp’) never moves,
+copies, renames or deletes your files itself.  It proposes a
+plan, which the core checks whole (one with a problem goes back
+to the agent), and Esploro shows it to you, on your workspace:
+why, and each step.  ‘Apply’ makes the changes, journaled, so
+undo takes them back; ‘Cancel’ drops the plan, and nothing
+changes.
+
+
+File: esploro.info,  Node: Keys and mouse,  Next: The command line,  Prev: Plans from agents,  Up: Top
+
+13 Keys and mouse
 *****************
 
 Mouse
@@ -381,7 +407,7 @@ m, u, U                   mark, unmark, unmark all (dired's)
 
 File: esploro.info,  Node: The command line,  Next: Writing commands,  Prev: Keys and mouse,  Up: Top
 
-13 The command line
+14 The command line
 *******************
 
 ‘esploro [FOLDER]’
@@ -393,6 +419,12 @@ File: esploro.info,  Node: The command line,  Next: Writing commands,  Prev: Key
      The file's folder, with FILE selected.
 ‘esploro --where [PATH...]’
      Which windows have PATH open, or every file that's open.
+‘esploro reveal’
+     The file behind the window you're in, selected in its
+     folder.
+‘esploro propose FILE [WHY]’
+     A plan for you to review in Esploro (what an agent's
+     proposal runs).
 ‘esploro --dbus’
      Makes the running Emacs answer
      ‘org.freedesktop.FileManager1’, the file manager's name on
@@ -424,7 +456,7 @@ File: esploro.info,  Node: The command line,  Next: Writing commands,  Prev: Key
 
 File: esploro.info,  Node: Writing commands,  Prev: The command line,  Up: Top
 
-14 Writing commands
+15 Writing commands
 *******************
 
 The core defines commands once, for the kinds of file they're
@@ -444,20 +476,21 @@ the next step.
 
 Tag Table:
 Node: Top276
-Node: Opening Esploro1764
-Node: The window3333
-Node: Selecting and opening4360
-Node: Changing files5413
-Node: Drag and drop6926
-Node: The preview7659
-Node: Two panes8773
-Node: Windows and workspaces9346
-Node: Looking around9949
-Node: The Trash10789
-Node: Where files are open11270
-Node: Keys and mouse11738
-Node: The command line13421
-Node: Writing commands14961
+Node: Opening Esploro1836
+Node: The window3652
+Node: Selecting and opening4679
+Node: Changing files5732
+Node: Drag and drop7245
+Node: The preview7978
+Node: Two panes9092
+Node: Windows and workspaces9665
+Node: Looking around10528
+Node: The Trash11368
+Node: Where files are open11849
+Node: Plans from agents12320
+Node: Keys and mouse12869
+Node: The command line14549
+Node: Writing commands16294
 
 End Tag Table
 

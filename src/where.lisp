@@ -206,3 +206,88 @@ or program working in it), :buffer or :modified-buffer (in Emacs)."
                    (push (cons path (cdr place)) files))))
              map)
     (sort files #'string< :key #'car)))
+
+;;; --- The workspace: what's here, and its project -----------------------------------------
+
+(defun scratch-path-p (path)
+  "A program's own temporary, cache or state file (a terminal's log)."
+  (let ((home (home-folder)))
+    (or (path-inside-p path "/tmp") (path-inside-p path "/run") (path-inside-p path "/var")
+        (some (lambda (d) (path-inside-p path (join-path home d))) '(".cache" ".local/state" ".local/share")))))
+
+(defun program-file-p (path)
+  "True for an executable file: a program among a process's arguments (an
+MCP server, a script run), not a document it has."
+  (and (not (directory-p path))
+       (ignore-errors (zerop (sb-posix:access path sb-posix:x-ok)))))
+
+(defun stumpwm-here ()
+  "StumpWM's current workspace and its focused window's id: (VALUES GROUP ID),
+NIL when StumpWM can't be asked."
+  (handler-case
+      (destructuring-bind (&optional group id)
+          (stumpwm-eval "(list (group-name (current-group))
+                               (and (current-window) (xlib:window-id (window-xwin (current-window)))))")
+        (values group id))
+    (stumpwm-unreachable () nil)))
+
+(defun project-root (path)
+  "The project PATH is in: the nearest folder above it (itself, for a
+folder) with a .git (a repository) or a log.md (vikix project's mark); NIL
+when there's none below home."
+  (let ((home (home-folder)))
+    (loop for dir = (if (directory-p path) path (path-parent path)) then (path-parent dir)
+          while (and dir (path-inside-p dir home))
+          when (or (path-exists-p (join-path dir ".git")) (path-exists-p (join-path dir "log.md")))
+            return dir)))
+
+(defun workspace-folder (&key (windows (stumpwm-windows)) group (map nil map-p))
+  "The folder the workspace GROUP (the current one) is about: the project
+most of its windows' files and folders are in (a terminal's folder, Emacs's
+files, a viewer's document), or the folder they're in when there's no
+project; NIL when its windows say nothing (an empty workspace)."
+  (let* ((group (or group (stumpwm-here)))
+         (here (remove-if-not (lambda (w) (and (equal (window-group w) group)
+                                                (not (equal (window-title w) "Esploro"))))
+                              windows))
+         (map (if map-p map (scan-where :windows here)))
+         (counts (make-hash-table :test 'equal)))
+    (when here
+      (maphash (lambda (path places)
+                 (dolist (place places)
+                   (when (and (member (car place) here)
+                              (not (and (eq (cdr place) :argument) (program-file-p path))))
+                     (let* ((folder (if (eq (cdr place) :folder) path (path-parent path)))
+                            (key (or (project-root path) folder)))
+                       (when (and key (string/= key (home-folder)) (directory-p key))
+                         (incf (gethash key counts 0)))))))
+               map)
+      (let ((best nil) (n 0))
+        (maphash (lambda (k v) (when (or (> v n) (and (= v n) best (string< k best))) (setf best k n v)))
+                 counts)
+        best))))
+
+(defun reveal-target (&key (windows (stumpwm-windows)) id)
+  "The file behind the focused window (or window ID): what an Emacs frame
+shows, else what the window's program was started on, holds open, or works
+in; NIL when there's none."
+  (let* ((id (or id (nth-value 1 (stumpwm-here))))
+         (window (find id windows :key #'window-id)))
+    (when window
+      (or (and (equal (window-class window) "Emacs")
+               (let ((file (emacs-ask (format nil "(let ((f (seq-find (lambda (f) (equal (frame-parameter f 'outer-window-id) ~s)) (frame-list))))
+                                                      (and f (with-current-buffer (window-buffer (frame-selected-window f))
+                                                               (let ((x (or buffer-file-name (and (derived-mode-p 'dired-mode) default-directory)))) (and x (expand-file-name x))))))"
+                                              (princ-to-string id)))))
+                 (and (stringp file) (normalize-path file))))
+          (let* ((files (window-files id (scan-where :windows (list window))))
+                 (by (lambda (how) (find-if (lambda (f) (and (eq (cdr f) how) (path-exists-p (car f))
+                                                              (or (eq how :folder)
+                                                                  (and (not (directory-p (car f)))
+                                                                       (not (program-file-p (car f)))))))
+                                            files))))
+            ;; What it was started on (a document in a viewer, vim's file),
+            ;; else where it works (a terminal's shell), else what it
+            ;; holds open, not counting a program's own logs and caches.
+            (car (or (funcall by :argument) (funcall by :folder)
+                     (find-if (lambda (f) (and (eq (cdr f) :file) (not (scratch-path-p (car f))))) files))))))))

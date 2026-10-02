@@ -346,4 +346,26 @@
        (delete-window (esploro--preview-window))
        (kill-buffer preview)))))
 
+(ert-deftest esploro-review-a-proposed-plan ()
+  (skip-unless (file-executable-p (expand-file-name "../esploro" (file-name-directory (locate-library "esploro")))))
+  (esploro-tests--world
+   (let ((plan (esploro-tests--path "plan.lisp"))
+         (steps (list (list :mkdir (esploro-tests--path "made")))))
+     (with-temp-file plan (insert (esploro--plan-text steps) "\n"))
+     (should (equal (esploro--read-plan plan) steps))
+     (should (string-match-p "make the folder .*made" (esploro--describe-step (car steps))))
+     (should (equal (esploro--describe-step (list :rename "/a/b.txt" "c.txt")) "rename /a/b.txt to c.txt"))
+     ;; Cancel: nothing happens, the proposal goes.
+     (let ((buffer (generate-new-buffer "review")))
+       (esploro--review-done buffer plan steps nil)
+       (should-not (file-exists-p (esploro-tests--path "made")))
+       (should-not (file-exists-p plan)))
+     ;; Apply: through the core, so undo takes it back.
+     (with-temp-file plan (insert (esploro--plan-text steps) "\n"))
+     (let ((buffer (generate-new-buffer "review")))
+       (esploro--review-done buffer plan steps t)
+       (should (file-directory-p (esploro-tests--path "made")))
+       (esploro-undo)
+       (should-not (file-directory-p (esploro-tests--path "made")))))))
+
 ;;; esploro-tests.el ends here

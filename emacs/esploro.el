@@ -100,7 +100,11 @@ Its menu bar and tool bar are on even when they're off elsewhere."
 In the background, so a long copy never stops Emacs; SYNC waits (tests)."
   (if (not (executable-find esploro-program))
       (message "Esploro: the esploro command isn't installed (vikix add esploro)")
-    (let ((out (generate-new-buffer " *esploro-out*")))
+    ;; From /: the core is given whole paths, and the folder Emacs happens
+    ;; to be in may be gone.
+    (let ((out (generate-new-buffer " *esploro-out*"))
+          (default-directory "/"))
+      (with-current-buffer out (setq default-directory "/"))
       (if (or sync esploro--wait)
           (let ((answer (with-current-buffer out
                           (when input (insert input))
@@ -1452,6 +1456,88 @@ ShowItems and ShowItemProperties open Esploro there."
   (when (called-interactively-p 'any)
     (message "Esploro answers Show in folder (%s)" esploro--dbus-name))
   t)
+
+;;; --- Plans to review: an agent's proposals ---------------------------------------------
+
+;; An agent never changes files itself: it proposes a plan (vikix mcp's
+;; propose_file_changes, which runs esploro propose), the core checks it,
+;; and it waits here for you. Apply runs it through the core, journaled,
+;; so undo takes it back; Cancel drops it.
+
+(defun esploro--describe-step (step)
+  (let ((short #'abbreviate-file-name))
+    (pcase step
+      (`(:copy ,a ,b) (format "copy %s to %s" (funcall short a) (funcall short b)))
+      (`(:move ,a ,b) (format "move %s to %s" (funcall short a) (funcall short b)))
+      (`(:rename ,a ,b) (format "rename %s to %s" (funcall short a) b))
+      (`(:mkdir ,a) (format "make the folder %s" (funcall short a)))
+      (`(:trash ,a) (format "put %s in the Trash" (funcall short a)))
+      (_ (format "%S" step)))))
+
+(defun esploro--read-plan (file)
+  (with-temp-buffer
+    (insert-file-contents file)
+    (let (steps form)
+      (while (setq form (ignore-errors (read (current-buffer))))
+        (push form steps))
+      (nreverse steps))))
+
+(defvar-keymap esploro-review-mode-map
+  :doc "A plan to review: Esploro's menus."
+  :parent special-mode-map
+  "C-x C-c" #'esploro-close)
+(esploro--install-menu-bar esploro-review-mode-map)
+
+(defface esploro-button '((t :box (:line-width 2 :style released-button) :weight bold :inherit default))
+  "Apply and Cancel, under a plan to review.")
+
+(define-derived-mode esploro-review-mode special-mode "Plan"
+  "A plan proposed to you: Apply or Cancel."
+  (setq-local tool-bar-map esploro-tool-bar-map)
+  (visual-line-mode 1))
+
+(defun esploro-review-plan (file &optional why where)
+  "Show the plan in FILE (an agent's, checked by the core) in Esploro, on
+your workspace (WHERE, as `esploro' takes it), with Apply and Cancel."
+  (let* ((steps (esploro--read-plan file))
+         (first-path (cadr (car steps)))
+         (dir (if (and first-path (file-directory-p (file-name-directory first-path)))
+                  (file-name-directory first-path)
+                "~"))
+         (frame (esploro dir where))
+         (buffer (generate-new-buffer "*Esploro: a plan to review*")))
+    (with-current-buffer buffer
+      (esploro-review-mode)
+      (let ((inhibit-read-only t))
+        (insert (propertize "A plan for you to review" 'face 'bold) "\n")
+        (insert (propertize "An agent proposes these changes. Nothing happens until you apply them; undo takes them back after.\n" 'face 'shadow))
+        (when (and why (not (string-empty-p why)))
+          (insert "\nWhy: " why "\n"))
+        (insert "\n")
+        (let ((n 0))
+          (dolist (step steps)
+            (insert (format "%d. %s\n" (setq n (1+ n)) (esploro--describe-step step)))))
+        (insert "\n")
+        (insert-text-button " Apply " 'action (lambda (_) (esploro--review-done buffer file steps t))
+                            'follow-link t 'face 'esploro-button 'help-echo "Make these changes (undo takes them back)")
+        (insert "   ")
+        (insert-text-button " Cancel " 'action (lambda (_) (esploro--review-done buffer file steps nil))
+                            'follow-link t 'face 'esploro-button 'help-echo "Drop the plan: nothing changes")
+        (insert "\n")
+        (goto-char (point-min))))
+    (with-selected-frame frame
+      (select-window (display-buffer-in-side-window
+                      buffer '((side . bottom) (slot . 0) (window-height . 0.35)
+                               (window-parameters (no-delete-other-windows . t))))))
+    (message "Esploro: a plan of %d %s to review" (length steps) (if (= (length steps) 1) "step" "steps"))
+    buffer))
+
+(defun esploro--review-done (buffer file steps apply)
+  (when apply (esploro--apply steps "the proposed plan, applied"))
+  (unless apply (message "Esploro: the proposed plan was dropped; nothing changed"))
+  (ignore-errors (delete-file file))
+  (when-let* ((window (get-buffer-window buffer t))) (delete-window window))
+  (kill-buffer buffer))
 
 ;;; --- The manual ---------------------------------------------------------------------------
 

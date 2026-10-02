@@ -367,6 +367,52 @@
     (check "the same again is the same file, not made twice"
            (equal (third (run-cli (list "preview" (p "pic.png")))) (third r)))))
 
+;;; --- The workspace's project, and what's behind a window ----------------------------------
+
+(sb-posix:mkdir (p "proj") #o755)
+(sb-posix:mkdir (p "proj/.git") #o755)
+(sb-posix:mkdir (p "proj/src") #o755)
+(make-file (p "proj/src/a.c") "int main;")
+(sb-posix:mkdir (p "notes") #o755)
+(make-file (p "notes/log.md") "# Log")
+(make-file (p "notes/today.md"))
+(check "a file's project is the folder with .git above it" (equal (esploro::project-root (p "proj/src/a.c")) (p "proj")))
+(check "or the one with a log.md (vikix project's mark)" (equal (esploro::project-root (p "notes/today.md")) (p "notes")))
+(check "a file in no project has none" (null (esploro::project-root (p "long.txt"))))
+(make-file (p "run.sh") "#!/bin/sh")
+(sb-posix:chmod (p "run.sh") #o755)
+(check "a program among the arguments isn't a document" (esploro::program-file-p (p "run.sh")))
+(check "a document is" (not (esploro::program-file-p (p "proj/src/a.c"))))
+(check "a terminal's log is its own, not a file it's about"
+       (and (esploro::scratch-path-p "/tmp/Alacritty-1.log")
+            (esploro::scratch-path-p (p ".cache/x"))
+            ;; (The tests' home is under /tmp: a document elsewhere.)
+            (not (esploro::scratch-path-p "/srv/notes/today.md"))))
+(let* ((w1 (esploro::make-window :id 1 :class "Alacritty" :group "4"))
+       (w2 (esploro::make-window :id 2 :class "zathura" :group "4"))
+       (w3 (esploro::make-window :id 3 :class "Firefox" :group "5"))
+       (map (make-hash-table :test 'equal)))
+  (setf (gethash (p "proj/src") map) (list (cons w1 :folder))
+        (gethash (p "proj/src/a.c") map) (list (cons w2 :argument))
+        (gethash (p "notes/today.md") map) (list (cons w3 :argument)))
+  (check "the workspace's folder is the project its windows are in"
+         (equal (esploro::workspace-folder :windows (list w1 w2 w3) :group "4" :map map) (p "proj")))
+  (check "an empty workspace says nothing"
+         (null (esploro::workspace-folder :windows (list w1 w2 w3) :group "9" :map map))))
+
+;;; propose: a plan with problems goes back to whoever proposed it, untouched.
+(with-open-file (out (p "bad-plan.lisp") :direction :output :if-exists :supersede)
+  (format out "(:copy ~s ~s)~%" (p "no-such-file") (p "x")))
+(let ((r (run-cli (list "propose" (p "bad-plan.lisp") "tidy up"))))
+  (check "a proposed plan with a problem is refused, with it" (and (eql (car r) 1) (eq (second r) :refused))))
+(with-open-file (out (p "good-plan.lisp") :direction :output :if-exists :supersede)
+  (format out "(:mkdir ~s)~%" (p "proposed-folder")))
+(let ((r (run-cli (list "propose" (p "good-plan.lisp")))))
+  ;; No Emacs here (its socket doesn't exist): the review can't be shown,
+  ;; and nothing is done either way.
+  (check "a sound plan goes to Emacs for review, and changes nothing by itself"
+         (and (eq (second r) :error) (not (path-exists-p (p "proposed-folder"))))))
+
 ;;; --- The end -------------------------------------------------------------------------
 
 (sb-ext:run-program "chmod" (list "-R" "u+w" *top*) :search t)

@@ -70,6 +70,8 @@ What PCManFM does today in Vikix (Super+e, folders by default, new drives, "Show
 
 **2. Vikix's file explorer.** Super+e, `inode/directory` in mimeapps.list, udiskie's `--file-manager`, and org.freedesktop.FileManager1 (the browsers' "Show in folder"). From the optional feature into the base install, with a migration, and PCManFM kept as the fallback for a release or two. The key card, the guides, the agents' guide, the tests, `vikix doctor`.
 
+**Step 3, begun 2026-10-02:** reveal (`esploro reveal`: the focused window's file, from what Emacs shows or what the window's program was started on, works in or holds open, programs and their own logs left out), workspace means project (`esploro` with no folder: the project root, a `.git` or a `log.md`, most of the workspace's windows are in), and plans from agents (`esploro propose`: checked, then shown for review with Apply and Cancel; vikix mcp's propose_file_changes). Still to do from it: closing a project, the other doors for commands (rofi, StumpWM keys, embark), the shared selection, folders as queries, recorded plans.
+
 **3. What only it does.** From any window, reveal its file; workspace means project (open in the workspace's folder; closing a project lists its open files, unsaved first); the commands' other doors (rofi, StumpWM keys, Emacs, `vikix mcp` for agents, which only ever propose plans); the shared selection with dired; folders as queries; a recorded plan as a named command.
 
 ## Later

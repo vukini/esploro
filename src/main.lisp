@@ -11,6 +11,10 @@
                             (StumpWM's), or in a new one when there's none there
 esploro --new [FOLDER]      a new Esploro window, wherever others are
 esploro FILE                its folder, with FILE selected
+esploro                     (no folder) the workspace's: the project its windows are in
+esploro reveal              the file behind the focused window, selected in its folder
+esploro propose FILE [WHY]  a plan for you to review in Esploro (an agent's): checked
+                            first; nothing happens until you choose Apply
 esploro --dbus              the running Emacs answers \"Show in folder\" (FileManager1)
 esploro --where [PATH...]   which windows have PATH open (or every file that's open)
 
@@ -148,6 +152,29 @@ else the one on this workspace (or a new one there)."
       (format *error-output* "esploro: its window is in Emacs, and Emacs's server isn't answering (M-x server-start, or emacs --daemon)~%"))
     code))
 
+(defun cli-propose (file why)
+  "An agent's plan, FILE: checked whole now (a plan with problems goes back
+to it, with them), then shown to you in Esploro, on your workspace, to apply
+or not. Nothing changes here."
+  (let* ((steps (read-plan-file (absolute file)))
+         (problems (check-plan steps)))
+    (cond (problems (answer (list :refused problems)) 1)
+          (t
+           ;; Its own copy: the agent's file may go before you decide.
+           (let* ((kept (join-path (state-folder) "proposed"
+                                   (format nil "~a.lisp" (remove #\: (timestamp (get-universal-time) "" "-")))))
+                  (code-file (window-code))
+                  (where (workspace-window))
+                  (form (format nil "(progn (unless (featurep 'esploro) ~:[(require 'esploro)~;~:*(load ~a nil t)~]) (esploro-review-plan ~a ~a ~a))"
+                                (and code-file (lisp-string code-file)) (lisp-string kept)
+                                (lisp-string (or why "")) (or where "nil"))))
+             (write-plan steps kept)
+             (if (zerop (sb-ext:process-exit-code
+                         (sb-ext:run-program "emacsclient" (list "-n" "-e" form)
+                                             :search t :input nil :output nil :error nil :wait t)))
+                 (progn (answer (list :proposed (length steps))) 0)
+                 (progn (answer (list :error "Esploro's window (Emacs's server) isn't answering")) 1)))))))
+
 (defun cli-dbus ()
   "Make the running Emacs answer org.freedesktop.FileManager1 (the browsers'
 \"Show in folder\"): what the session bus runs when it's first asked."
@@ -178,12 +205,20 @@ else the one on this workspace (or a new one there)."
              (plan-refused (e) (answer (list :refused (plan-refused-problems e))) 1)))
           ((equal command "empty-trash") (answer (list :emptied (empty-trash))) 0)
           ((equal command "--dbus") (cli-dbus))
+          ((equal command "propose") (cli-propose (second args) (third args)))
+          ((equal command "reveal")
+           ;; Nothing behind it (a shell at home): the workspace's folder, or home.
+           (let ((file (or (reveal-target) (ignore-errors (workspace-folder)) (home-folder))))
+             (if (directory-p file) (cli-show file) (cli-show (path-parent file) :file file))))
           ((equal command "--new")
            (let ((folder (absolute (or (second args) "."))))
              (if (and folder (directory-p folder)) (cli-show folder :new t)
                  (progn (format *error-output* "esploro: ~a isn't a folder~%" (second args)) 2))))
           ((and command (plusp (length command)) (char= (char command 0) #\-))
            (format *error-output* "esploro: what's ~a?~%~a~%" command *usage*) 2)
+          ((null command)
+           ;; No folder named (Super+e): the workspace's, else the one you're in.
+           (cli-show (or (ignore-errors (workspace-folder)) (current-folder))))
           (t
            (let ((folder (absolute (or command "."))))
              (cond ((and folder (directory-p folder)) (cli-show folder))
