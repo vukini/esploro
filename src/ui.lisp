@@ -35,18 +35,23 @@
   (:pretty-name "Esploro")
   (:menu-bar nil)
   (:panes
+   ;; Incremental redisplay: after a key, only what changed is drawn again
+   ;; (two rows for an arrow), not every pane from scratch, which flashed.
    (files :application
           :display-function 'display-files
+          :incremental-redisplay t
           :scroll-bars :both
           :end-of-line-action :allow
           :text-style (clim:make-text-style :sans-serif :roman :normal))
    (preview :application
             :display-function 'display-preview
+            :incremental-redisplay t
             :scroll-bars :vertical
             :end-of-line-action :wrap*
             :text-style (clim:make-text-style :sans-serif :roman :small))
    (plan-pane :application
               :display-function 'display-plan
+              :incremental-redisplay t
               :scroll-bars :vertical
               :end-of-line-action :wrap*
               :text-style (clim:make-text-style :sans-serif :roman :small))
@@ -199,14 +204,25 @@ in it, otherwise ENTRY alone."
   (values (clim:text-size pane string)))
 
 (defun display-files (frame pane)
-  (clim:with-text-style (pane (clim:make-text-style nil :bold :large))
-    (write-string (short-path (folder frame)) pane))
-  (terpri pane)
-  (when (note frame)
-    (clim:with-text-face (pane :italic)
-      (write-string (note frame) pane))
+  ;; Each part in an updating-output, remembered with what it showed (its
+  ;; cache value): one whose value is the same isn't drawn again.
+  (clim:updating-output (pane :unique-id 'header :cache-test #'equal
+                              :cache-value (list (folder frame) (note frame)))
+    (clim:with-text-style (pane (clim:make-text-style nil :bold :large))
+      (write-string (short-path (folder frame)) pane))
+    (terpri pane)
+    (when (note frame)
+      (clim:with-text-face (pane :italic)
+        (write-string (note frame) pane))
+      (terpri pane))
     (terpri pane))
-  (terpri pane)
+  (clim:updating-output (pane :unique-id 'up-row :cache-test #'equal
+                              :cache-value (list (folder frame) (eq (cursor frame) :up)
+                                                 (clim:bounding-rectangle-width (clim:sheet-region pane))))
+    (display-up-row frame pane))
+  (display-rows frame pane))
+
+(defun display-up-row (frame pane)
   (when (up-row-p frame)
     ;; Under the cursor (Up from the first file), it looks like a selected row.
     (when (eq (cursor frame) :up)
@@ -219,7 +235,9 @@ in it, otherwise ENTRY alone."
                                 :filled nil :ink *cursor-ink* :line-thickness 1))))
     (clim:with-output-as-presentation (pane (path-parent (folder frame)) 'folder-up)
       (write-string "..  (up)" pane))
-    (terpri pane))
+    (terpri pane)))
+
+(defun display-rows (frame pane)
   ;; Rows drawn by hand rather than as a table, so a selected row can have
   ;; its background across the whole width, and the keys know where rows are.
   (let* ((entries (entries frame))
@@ -244,12 +262,20 @@ in it, otherwise ENTRY alone."
           for y = (+ top (* i row-h))
           for text-y = (+ y 3)
           for places = (file-where (entry-path entry) (where frame))
-          do (clim:with-output-as-presentation (pane entry 'file-entry)
+          for selected = (gethash (entry-path entry) (selection frame))
+          for here = (eql i (cursor frame))
+          do (clim:updating-output
+                 (pane :unique-id (entry-path entry) :cache-test #'equal
+                       ;; All a row shows, and where: the same, it isn't redrawn.
+                       :cache-value (list (and selected t) here (entry-label entry) size
+                                          (entry-mtime entry) (entry-kind entry)
+                                          (and places (where-text places))
+                                          y width name-w size-w))
+             (clim:with-output-as-presentation (pane entry 'file-entry)
                ;; The whole row is the presentation, background included.
                (clim:draw-rectangle* pane 0 y width (+ y row-h)
-                                     :ink (if (gethash (entry-path entry) (selection frame))
-                                              *selected-ink* blank))
-               (when (eql i (cursor frame))
+                                     :ink (if selected *selected-ink* blank))
+               (when here
                  (clim:draw-rectangle* pane 1 (1+ y) (- width 2) (+ y row-h -1)
                                        :filled nil :ink *cursor-ink* :line-thickness 1))
                (clim:draw-text* pane (entry-label entry) x-name text-y
@@ -258,7 +284,7 @@ in it, otherwise ENTRY alone."
                (clim:draw-text* pane (human-time (entry-mtime entry)) x-time text-y :align-y :top)
                (when places
                  (clim:draw-text* pane (format nil "open in ~a" (where-text places)) x-where text-y
-                                  :align-y :top :ink clim:+dark-cyan+))))
+                                  :align-y :top :ink clim:+dark-cyan+)))))
     (setf (clim:stream-cursor-position pane)
           (values 0 (+ top (* (length entries) row-h) 6)))))
 
@@ -288,8 +314,16 @@ in it, otherwise ENTRY alone."
             (ignore-errors (clim:make-pattern-from-bitmap-file (native png) :format :png)))))
 
 (defun display-preview (frame pane)
+  ;; Drawn again only when what it shows changes: not for a key that moves
+  ;; the cursor without changing the selection.
+  (clim:updating-output (pane :unique-id 'preview :cache-test #'equal
+                              :cache-value (list (help-shown frame) (folder frame) (selected frame)
+                                                 (clim:bounding-rectangle-width (clim:sheet-region pane))))
+    (display-preview-1 frame pane)))
+
+(defun display-preview-1 (frame pane)
   (when (help-shown frame)
-    (return-from display-preview (display-help pane)))
+    (return-from display-preview-1 (display-help pane)))
   (let ((selected (selected frame)))
     (case (length selected)
       (0 (clim:with-text-face (pane :italic)
@@ -352,6 +386,13 @@ in it, otherwise ENTRY alone."
 ;;; --- The plan -----------------------------------------------------------------------
 
 (defun display-plan (frame pane)
+  ;; The journal is read from disk only when it has changed.
+  (clim:updating-output (pane :unique-id 'plan :cache-test #'equal
+                              :cache-value (list (copy-tree (plan frame)) (folder frame) *journal-version*
+                                                 (clim:bounding-rectangle-width (clim:sheet-region pane))))
+    (display-plan-1 frame pane)))
+
+(defun display-plan-1 (frame pane)
   (clim:with-text-face (pane :bold) (write-string "Plan" pane))
   (terpri pane)
   (cond ((null (plan frame))

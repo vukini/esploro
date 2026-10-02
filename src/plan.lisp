@@ -323,12 +323,17 @@ CHECK-PLAN then judges."
 
 (defvar *journal-counter* 0)
 
+(defvar *journal-version* 0
+  "Goes up each time the journal changes (a plan applied or undone), so the
+window reads it again only then.")
+
 (defun write-journal (steps inverse)
   (let ((path (join-path (journal-folder)
                          (format nil "~a-~d.lisp"
                                  (remove #\: (timestamp (get-universal-time) "" "-"))
                                  (incf *journal-counter*)))))
-    (write-forms path (list (list :applied :time (timestamp) :steps steps :inverse inverse :undone nil)))))
+    (write-forms path (list (list :applied :time (timestamp) :steps steps :inverse inverse :undone nil)))
+    (incf *journal-version*)))
 
 (defun journal-entries ()
   "The applied plans, newest first, as (PATH . PLIST)."
@@ -388,4 +393,5 @@ changed since so that it can't be undone whole."
         (apply-plan (getf plist :inverse) :allowed *undo-operations* :journal nil)
         (setf (getf plist :undone) (timestamp))
         (write-forms path (list (cons :applied plist)))
+        (incf *journal-version*)
         (getf plist :steps)))))
