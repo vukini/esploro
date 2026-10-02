@@ -289,4 +289,61 @@
          (should (= (length (esploro--view-windows)) 1))
          (should-not (buffer-live-p gone)))))))
 
+(ert-deftest esploro-preview ()
+  (skip-unless (file-executable-p (expand-file-name "../esploro" (file-name-directory (locate-library "esploro")))))
+  (esploro-tests--world
+   (let ((process-environment (cons (concat "XDG_CACHE_HOME=" esploro-tests--top "cache") process-environment)))
+     (esploro-tests--file "p/notes.el" "(defun hello () \"hi\")\n")
+     (esploro-tests--file "p/data.bin" (string 0 1 2 3))
+     (make-directory (esploro-tests--path "p/sub/inner") t)
+     (esploro-tests--file "p/sub/one.txt")
+     (should (eq (esploro--kind (esploro-tests--path "p/notes.el")) 'text))
+     (should (eq (esploro--kind (esploro-tests--path "p/data.bin")) 'other))
+     (should (eq (esploro--kind (esploro-tests--path "p/sub")) 'folder))
+     (should (eq (esploro--kind "/x/a.JPG") 'image))
+     (should (eq (esploro--kind "/x/a.mkv") 'video))
+     (esploro-go (esploro-tests--path "p"))
+     (esploro--preview-show)
+     (let ((preview (esploro--preview-buffer)))
+       (should (esploro--preview-window))
+       ;; Text: its first lines, in its mode's colours.
+       (with-current-buffer (esploro--view) (dired-goto-file (esploro-tests--path "p/notes.el")))
+       (esploro--preview-update)
+       (with-current-buffer preview
+         (should (string-match-p "notes.el" (buffer-string)))
+         (should (string-match-p "(defun hello" (buffer-string)))
+         (goto-char (point-min)) (search-forward "defun")
+         (should (get-text-property (1- (point)) 'face)))
+       ;; A folder: what's in it.
+       (with-current-buffer (esploro--view) (dired-goto-file (esploro-tests--path "p/sub")))
+       (esploro--preview-update)
+       (with-current-buffer preview
+         (should (string-match-p "a folder of 2" (buffer-string)))
+         (should (string-match-p "^inner/" (buffer-string))))
+       ;; Two selected: how many, and their size.
+       (with-current-buffer (esploro--view)
+         (dired-goto-file (esploro-tests--path "p/notes.el")) (dired-mark 1)
+         (dired-goto-file (esploro-tests--path "p/data.bin")) (dired-mark 1))
+       (esploro--preview-update)
+       (with-current-buffer preview (should (string-match-p "2 selected" (buffer-string))))
+       (with-current-buffer (esploro--view) (dired-unmark-all-marks))
+       ;; A picture too big to show as it is: the core's thumbnail, in place of the wait.
+       (when (executable-find "magick")
+         (call-process "magick" nil nil nil "-size" "300x200" "xc:red" (esploro-tests--path "p/big.tif"))
+         (esploro--refresh)
+         (with-current-buffer (esploro--view) (dired-goto-file (esploro-tests--path "p/big.tif")))
+         (esploro--preview-update)
+         (with-current-buffer preview
+           (should-not (string-match-p "making a preview" (buffer-string)))
+           (should (string-match-p "esploro/thumbs/.*\\.png" (buffer-string)))))
+       ;; F11: hidden, and hidden stays hidden; again, shown.
+       (esploro-preview-toggle)
+       (should-not (esploro--preview-window))
+       (should-not (esploro--preview-wanted-p))
+       (esploro-preview-toggle)
+       (should (esploro--preview-window))
+       (should (esploro--preview-wanted-p))
+       (delete-window (esploro--preview-window))
+       (kill-buffer preview)))))
+
 ;;; esploro-tests.el ends here

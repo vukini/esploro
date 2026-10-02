@@ -7,7 +7,7 @@
 
 (in-package #:esploro)
 
-(defparameter *thumbnail-size* 420
+(defparameter *thumbnail-size* 640
   "The longest side of a thumbnail, in pixels.")
 
 (defun cache-folder ()

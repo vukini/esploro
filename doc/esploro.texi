@@ -37,6 +37,7 @@ anything happens, done in the background, and kept in a journal.
 * Selecting and opening::  Click, double-click, the keys.
 * Changing files::         Copy, cut, paste, rename, the Trash, undo.
 * Drag and drop::          Files in from other programs, and out to them.
+* The preview::            The file under the cursor, beside the folder.
 * Two panes::              Two folders side by side.
 * Windows and workspaces:: One Esploro per workspace, or more.
 * Looking around::         Sorting, hidden files, a filter, finding below.
@@ -95,8 +96,8 @@ plugged in (in @file{/run/media}), the bookmarks GTK programs keep
 there.  @kbd{F9}, or View, Places, hides them or shows them again.
 
 @item The tool bar
-Back, Forward, Up, Home, Places, Two Panes, New Folder, Copy, Cut,
-Paste, Trash, Undo, Find, Refresh and Help.
+Back, Forward, Up, Home, Places, Two Panes, Preview, New Folder, Copy,
+Cut, Paste, Trash, Undo, Find, Refresh and Help.
 
 @item The menus
 File, Edit, View, Go and Help.  Esploro's frame shows only these; your
@@ -194,6 +195,36 @@ copied; hold @kbd{Shift} to move it.  Selected files go together.
 Drag from one pane to the other: the file is copied into that pane's
 folder.
 @end table
+
+@node The preview
+@chapter The preview
+
+Down the right of the window, the file under the cursor:
+
+@table @asis
+@item A picture
+The picture, scaled to fit.
+@item A PDF, a video
+The PDF's first page, or a frame of the video.  Esploro makes it once,
+in the background (``making a preview...'' while it does), and keeps it
+in @file{~/.cache/esploro}, so the next look is at once.
+@item Text, code
+Its first lines, in the colours its mode gives them.
+@item A folder
+How many things are in it, and their names.
+@item Anything else
+What it is, as @command{file} says.
+@item Several selected
+How many, their size together, and their names.
+@end table
+
+Below each: its size, when it last changed, and the windows that have
+it open.  The preview follows the cursor and the mouse once they rest,
+so holding an arrow key down stays quick.  With two panes, it shows the
+pane used last; each Esploro window has its own.
+
+@kbd{F11} (View, Preview, or the tool bar) hides it, or shows it again.
+Hidden stays hidden, in every Esploro window, until you turn it on.
 
 @node Two panes
 @chapter Two panes
@@ -295,6 +326,7 @@ its window instead of opening it again.
 @item M-s f @tab find below
 @item F5 @tab refresh
 @item F3 @tab two panes, or one
+@item F11 @tab the preview, or none
 @item C-c C-c, F6 @tab copy, move to the other pane
 @item F9 @tab places
 @item C-x 5 2 @tab another Esploro window
@@ -330,6 +362,8 @@ Undoes the last applied plan.
 The files in @var{folder} a window has open.
 @item esploro open @var{path}
 Goes to the window that has @var{path}, or opens it.
+@item esploro preview @var{path}
+A PNG of @var{path} (a picture, a PDF or a video), made once and kept.
 @item esploro trash-list
 @itemx esploro restore @var{name}@dots{}
 @itemx esploro empty-trash

@@ -354,6 +354,19 @@
 (check "trash-list answers a list"
        (listp (cdr (run-cli (list "trash-list")))))
 
+;;; preview: a thumbnail's path, or :none when there's no way to make one.
+(check "preview of text has no thumbnail"
+       (equal (run-cli (list "preview" (p "long.txt"))) (list 0 :none)))
+(when (esploro::program-p "magick")
+  (sb-ext:run-program "magick" (list "-size" "800x500" "xc:steelblue" (p "pic.png"))
+                      :search t :output nil :error nil)
+  (let ((r (run-cli (list "preview" (p "pic.png")))))
+    (check "preview of a picture makes a thumbnail, kept in the cache"
+           (and (eq (second r) :thumbnail) (path-exists-p (third r))
+                (search "/esploro/thumbs/" (third r))))
+    (check "the same again is the same file, not made twice"
+           (equal (third (run-cli (list "preview" (p "pic.png")))) (third r)))))
+
 ;;; --- The end -------------------------------------------------------------------------
 
 (sb-ext:run-program "chmod" (list "-R" "u+w" *top*) :search t)

@@ -17,6 +17,7 @@ esploro apply [FILE]        apply the plan in FILE (or read from standard input)
 esploro undo                undo the last applied plan
 esploro where FOLDER        the files in FOLDER that a window has open
 esploro open PATH           go to the window that has PATH, or open it
+esploro preview PATH        a PNG of PATH (a picture, PDF or video), made once and kept
 esploro trash-list          what's in the Trash
 esploro restore NAME...     put these back from the Trash (a plan: undo puts them back)
 esploro empty-trash         delete what's in the Trash, for good
@@ -154,6 +155,11 @@ else the one on this workspace (or a new one there)."
           ((equal command "where") (cli-where (or (second args) ".")))
           ((equal command "open") (cli-open (second args)))
           ((equal command "trash-list") (answer (trash-entries)) 0)
+          ((equal command "preview")
+           (let* ((path (absolute (or (second args) "")))
+                  (png (and path (path-exists-p path) (thumbnail path))))
+             (answer (if png (list :thumbnail png) (list :none)))
+             0))
           ((equal command "restore")
            (handler-case (progn (answer (list :done (length (restore-from-trash (rest args))))) 0)
              (plan-refused (e) (answer (list :refused (plan-refused-problems e))) 1)))

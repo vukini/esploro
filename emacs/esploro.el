@@ -280,7 +280,9 @@ one when it's gone."
     (with-selected-frame frame
       (select-window (esploro--main-window frame))
       (esploro-go dir)
-      (esploro-places-show))
+      (esploro-places-show)
+      (when (and (esploro--preview-wanted-p) (not (esploro--preview-window frame)))
+        (esploro--preview-show frame)))
     frame))
 
 (defun esploro-new-window ()
@@ -306,6 +308,7 @@ for Back; point on FILE when given."
       (switch-to-buffer buffer nil t))
     (esploro--note-window)
     (when (get-buffer esploro-places-buffer-name) (esploro-places-refresh))
+    (when (esploro--preview-window) (esploro--preview-update))
     dir))
 
 ;;; --- Moving around ------------------------------------------------------------------
@@ -777,7 +780,9 @@ Emacs's own quit would end all of Emacs."
           (t (delete-other-windows (esploro--main-window frame))
              (switch-to-buffer (other-buffer (current-buffer)))
              (set-frame-parameter frame 'esploro nil)))
-    ;; Its views go with it, unless another frame shows one.
+    (let ((preview (and frame (frame-parameter frame 'esploro-preview))))
+      (when (buffer-live-p preview) (setq views (cons preview views))))
+    ;; Its views (and its preview) go with it, unless another frame shows one.
     (dolist (buffer views)
       (unless (get-buffer-window buffer t) (kill-buffer buffer)))))
 
@@ -872,6 +877,7 @@ a dropped name kept its newline, named no file, and the drop was lost."
   "<f5>" #'revert-buffer
   "<f9>" #'esploro-places-toggle
   "<f3>" #'esploro-split
+  "<f11>" #'esploro-preview-toggle
   "<f6>" #'esploro-move-to-other-pane
   "C-c C-c" #'esploro-copy-to-other-pane
   "C-x 5 2" #'esploro-new-window
@@ -960,6 +966,7 @@ show the pane's sort and history even when the places are selected."
           ["Refresh" esploro--refresh :keys "F5"]
           "---"
           ["Two Panes" esploro-split :keys "F3" :style toggle :selected (esploro--two-panes-p)]
+          ["Preview" esploro-preview-toggle :keys "F11" :style toggle :selected (esploro--preview-window)]
           ["Places" esploro-places-toggle :keys "F9" :style toggle
            :selected (get-buffer-window esploro-places-buffer-name)])
     (go "Go"
@@ -1035,6 +1042,7 @@ show the pane's sort and history even when the places are selected."
                     (esploro-home "home" "Home")
                     (esploro-places-toggle "index" "Places")
                     (esploro-split "next-page" "Two Panes")
+                    (esploro-preview-toggle "show" "Preview")
                     nil
                     (esploro-new-folder "new" "New Folder")
                     (esploro-copy "copy" "Copy")
@@ -1074,6 +1082,7 @@ through the core, journaled so they can be undone."
     (setq-local tool-bar-map esploro-tool-bar-map)
     (setq-local header-line-format '(:eval (esploro--header)))
     (add-hook 'post-command-hook #'esploro--note-window nil t)
+    (add-hook 'post-command-hook #'esploro--preview-schedule nil t)
     (add-hook 'dired-after-readin-hook #'esploro--whole-row-drag nil t)
     (add-hook 'dired-after-readin-hook #'esploro--annotate nil t)))
 
@@ -1174,6 +1183,238 @@ through the core, journaled so they can be undone."
     (if window (delete-window window) (esploro-places-show))))
 
 ;;; --- Help -----------------------------------------------------------------------------------
+
+;;; --- The preview --------------------------------------------------------------------------
+
+;; Beside the folder, the file under the cursor: a picture, a PDF's first
+;; page or a frame of a video (the core makes the thumbnail once, in the
+;; background, and keeps it in ~/.cache/esploro), a text's first lines in
+;; their colours, what's in a folder, or what file(1) says, with the size,
+;; the time and the windows that have it. Each Esploro window has its own;
+;; F11 shows or hides it, and hidden stays hidden (a file in
+;; ~/.local/state/esploro says so).
+
+(defcustom esploro-preview-delay 0.15
+  "Seconds after the cursor stops before the preview follows it."
+  :type 'number)
+
+(defcustom esploro-preview-text-bytes 16384
+  "How much of a text file the preview shows."
+  :type 'integer)
+
+(defconst esploro--image-types
+  '("png" "jpg" "jpeg" "gif" "webp" "svg" "bmp" "tif" "tiff" "heic" "avif" "xpm" "ico"))
+(defconst esploro--video-types
+  '("mp4" "mkv" "webm" "mov" "avi" "m4v" "mpg" "mpeg" "wmv" "flv" "ogv" "3gp"))
+
+(defvar esploro--preview-timer nil)
+(defvar-local esploro--preview-shown nil "What the preview shows: (FILES . MTIMES), so it isn't redone.")
+
+(defun esploro--preview-off-file ()
+  (expand-file-name "esploro/preview-off" (or (getenv "XDG_STATE_HOME") "~/.local/state")))
+
+(defun esploro--preview-wanted-p ()
+  (not (file-exists-p (esploro--preview-off-file))))
+
+(defun esploro--preview-buffer (&optional frame)
+  "FRAME's preview buffer (each Esploro window has its own), made when asked."
+  (let* ((frame (or frame (selected-frame)))
+         (buffer (frame-parameter frame 'esploro-preview)))
+    (if (buffer-live-p buffer) buffer
+      (let ((buffer (generate-new-buffer "*Esploro preview*")))
+        (with-current-buffer buffer (esploro-preview-mode))
+        (set-frame-parameter frame 'esploro-preview buffer)
+        buffer))))
+
+(defun esploro--preview-window (&optional frame)
+  (let ((buffer (frame-parameter (or frame (selected-frame)) 'esploro-preview)))
+    (and (buffer-live-p buffer) (get-buffer-window buffer (or frame (selected-frame))))))
+
+(defun esploro--preview-show (&optional frame)
+  "The preview down the right of FRAME, following its pane used last."
+  (let ((frame (or frame (selected-frame))))
+    (with-selected-frame frame
+      (display-buffer-in-side-window (esploro--preview-buffer frame)
+                                     '((side . right) (slot . 1) (window-width . 0.35)
+                                       (preserve-size . (t . nil))
+                                       (window-parameters (no-delete-other-windows . t)
+                                                          (no-other-window . t))))
+      (with-current-buffer (esploro--preview-buffer frame) (setq esploro--preview-shown nil))
+      (esploro--preview-update frame))))
+
+(defun esploro-preview-toggle ()
+  "Show or hide the preview; hidden stays hidden, in every Esploro window."
+  (interactive)
+  (let ((window (esploro--preview-window)))
+    (make-directory (file-name-directory (esploro--preview-off-file)) t)
+    (if window
+        (progn (delete-window window)
+               (with-temp-file (esploro--preview-off-file) (insert "The preview is off: F11 in Esploro turns it on.\n")))
+      (when (file-exists-p (esploro--preview-off-file)) (delete-file (esploro--preview-off-file)))
+      (esploro--preview-show))))
+
+(defun esploro--preview-schedule ()
+  "After a command in a view: the preview follows, once the cursor rests."
+  (when (esploro--preview-window)
+    (when (timerp esploro--preview-timer) (cancel-timer esploro--preview-timer))
+    (setq esploro--preview-timer
+          (run-with-idle-timer esploro-preview-delay nil #'esploro--preview-update (selected-frame)))))
+
+(defun esploro--preview-target (frame)
+  "What to preview in FRAME: its pane's marked files, or the file at point,
+or the folder itself."
+  (when-let* ((view (esploro--view frame)))
+    (with-current-buffer view
+      (let ((marked (seq-remove (lambda (f) (eq f t)) (dired-get-marked-files nil nil nil t))))
+        (cond ((cdr marked) marked)
+              ((esploro--file-at) (list (esploro--file-at)))
+              (t (list (esploro--dir))))))))
+
+(defun esploro--kind (file)
+  (let ((ext (downcase (or (file-name-extension file) ""))))
+    (cond ((file-directory-p file) 'folder)
+          ((member ext esploro--image-types) 'image)
+          ((equal ext "pdf") 'pdf)
+          ((member ext esploro--video-types) 'video)
+          ((esploro--text-p file) 'text)
+          (t 'other))))
+
+(defun esploro--text-p (file)
+  "True when FILE's start holds no NUL byte: text, to show as text."
+  (and (file-readable-p file) (file-regular-p file)
+       (with-temp-buffer
+         (set-buffer-multibyte nil)
+         (ignore-errors (insert-file-contents-literally file nil 0 4096))
+         (not (search-forward "\0" nil t)))))
+
+(defun esploro--preview-update (&optional frame)
+  "Show in FRAME's preview what its pane has under the cursor."
+  (let* ((frame (or frame (selected-frame)))
+         (buffer (frame-parameter frame 'esploro-preview)))
+    (when (and (frame-live-p frame) (buffer-live-p buffer) (esploro--preview-window frame))
+      (let* ((files (esploro--preview-target frame))
+             (key (cons files (mapcar (lambda (f) (file-attribute-modification-time (file-attributes f))) files))))
+        (with-current-buffer buffer
+          (unless (equal key esploro--preview-shown)
+            (setq esploro--preview-shown key)
+            (let ((inhibit-read-only t))
+              (erase-buffer)
+              (cond ((null files))
+                    ((cdr files) (esploro--preview-many files))
+                    (t (esploro--preview-one (car files) frame))))
+            (goto-char (point-min))))))))
+
+(defun esploro--preview-heading (file)
+  (insert (propertize (file-name-nondirectory (directory-file-name file)) 'face 'bold) "\n"))
+
+(defun esploro--preview-facts (file)
+  "Size, time, and the windows that have FILE."
+  (let* ((attrs (file-attributes file))
+         (where (esploro--where-of file)))
+    (insert "\n" (propertize
+                  (format "%s%s\n" (if (file-directory-p file) ""
+                                      (concat (file-size-human-readable (file-attribute-size attrs)) ", "))
+                          (format-time-string "%Y-%m-%d %H:%M" (file-attribute-modification-time attrs)))
+                  'face 'shadow))
+    (when where (insert (propertize (concat "open in " where "\n") 'face 'esploro-where)))))
+
+(defun esploro--where-of (file)
+  "The windows that have FILE, as the pane's list says beside it."
+  (when-let* ((view (esploro--view)))
+    (with-current-buffer view
+      (save-excursion
+        (when (dired-goto-file file)
+          (seq-some (lambda (o) (and (overlay-get o 'esploro-where)
+                                     (string-trim (replace-regexp-in-string "\\`\\s-*open in " ""
+                                                                            (overlay-get o 'after-string)))))
+                    (overlays-in (line-beginning-position) (1+ (line-end-position)))))))))
+
+(defun esploro--preview-one (file frame)
+  (esploro--preview-heading file)
+  (pcase (esploro--kind file)
+    ('folder (esploro--preview-folder file))
+    ('text (esploro--preview-text file))
+    ((or 'image 'pdf 'video) (esploro--preview-picture file frame))
+    (_ (insert (or (ignore-errors (car (process-lines "file" "-b" "--" file))) "a file") "\n")))
+  (esploro--preview-facts file))
+
+(defun esploro--preview-many (files)
+  (let ((size (apply #'+ (mapcar (lambda (f) (or (and (file-regular-p f) (file-attribute-size (file-attributes f))) 0))
+                                 files))))
+    (insert (propertize (format "%d selected" (length files)) 'face 'bold)
+            (format ", %s in files\n\n" (file-size-human-readable size)))
+    (dolist (f (seq-take files 60))
+      (insert (file-name-nondirectory (directory-file-name f)) (if (file-directory-p f) "/" "") "\n"))
+    (when (> (length files) 60) (insert "...\n"))))
+
+(defun esploro--preview-folder (dir)
+  (let* ((names (seq-remove (lambda (n) (member n '("." ".."))) (ignore-errors (directory-files dir))))
+         (shown (seq-remove (lambda (n) (string-prefix-p "." n)) names)))
+    (insert (format "a folder of %d%s\n\n" (length shown)
+                    (if (= (length shown) (length names)) ""
+                      (format " (and %d hidden)" (- (length names) (length shown))))))
+    (dolist (n (seq-take shown 40))
+      (insert n (if (file-directory-p (expand-file-name n dir)) "/" "") "\n"))
+    (when (> (length shown) 40) (insert "...\n"))))
+
+(defun esploro--preview-text (file)
+  "FILE's start, in the colours of its mode, fontified apart from this buffer."
+  (let ((text (with-temp-buffer
+                (ignore-errors (insert-file-contents file nil 0 esploro-preview-text-bytes))
+                (let ((buffer-file-name file))
+                  (ignore-errors (delay-mode-hooks (set-auto-mode t)))
+                  (ignore-errors (font-lock-ensure)))
+                (buffer-string))))
+    (insert "\n" text)
+    (unless (bolp) (insert "\n"))))
+
+(defun esploro--preview-picture (file frame)
+  "A picture, or the thumbnail the core makes of a picture, PDF or video."
+  (let ((ext (downcase (or (file-name-extension file) ""))))
+    (if (and (member ext '("png" "jpg" "jpeg" "gif" "webp" "svg"))
+             (< (or (file-attribute-size (file-attributes file)) 0) 3000000)
+             (image-supported-file-p file))
+        (esploro--preview-insert-image file frame)
+      (insert (propertize "making a preview...\n" 'face 'shadow 'esploro-pending t))
+      (let ((buffer (current-buffer))
+            (key esploro--preview-shown))
+        (esploro--call (list "preview" file) nil
+                       (lambda (answer)
+                         (esploro--preview-thumbnail-came buffer key file frame answer)))))))
+
+(defun esploro--preview-thumbnail-came (buffer key file frame answer)
+  "The core's ANSWER for FILE's thumbnail: in place of \"making a preview\",
+when BUFFER still shows what it did (KEY) when it was asked."
+  (when (buffer-live-p buffer)
+    (with-current-buffer buffer
+      (when (equal key esploro--preview-shown)
+        (let ((inhibit-read-only t))
+          (save-excursion
+            (goto-char (point-min))
+            (when-let* ((pending (text-property-search-forward 'esploro-pending t t)))
+              (delete-region (prop-match-beginning pending) (prop-match-end pending))
+              (goto-char (prop-match-beginning pending))
+              (pcase answer
+                (`(:thumbnail ,png) (esploro--preview-insert-image png frame))
+                (_ (insert (or (ignore-errors (car (process-lines "file" "-b" "--" file)))
+                               "no preview")
+                           "\n"))))))))))
+
+(defun esploro--preview-insert-image (file frame)
+  (let* ((window (esploro--preview-window frame))
+         (width (max 100 (- (if window (window-body-width window t) 400) 8))))
+    (if (display-images-p)
+        (insert-image (create-image file nil nil :max-width width :max-height (* 2 width)))
+      ;; No pictures here (a terminal frame, or the tests in batch).
+      (insert (propertize (concat "[picture: " file "]") 'esploro-image file)))
+    (insert "\n")))
+
+(define-derived-mode esploro-preview-mode special-mode "Preview"
+  "Esploro's preview of the file under the cursor."
+  (setq-local cursor-type nil)
+  (setq-local mode-line-format nil)
+  (setq-local tool-bar-map esploro-tool-bar-map)
+  (visual-line-mode 1))
 
 ;;; --- The manual ---------------------------------------------------------------------------
 

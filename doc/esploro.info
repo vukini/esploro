@@ -32,6 +32,7 @@ and kept in a journal.
 * Selecting and opening::  Click, double-click, the keys.
 * Changing files::         Copy, cut, paste, rename, the Trash, undo.
 * Drag and drop::          Files in from other programs, and out to them.
+* The preview::            The file under the cursor, beside the folder.
 * Two panes::              Two folders side by side.
 * Windows and workspaces:: One Esploro per workspace, or more.
 * Looking around::         Sorting, hidden files, a filter, finding below.
@@ -97,8 +98,9 @@ Places
      them again.
 
 The tool bar
-     Back, Forward, Up, Home, Places, Two Panes, New Folder,
-     Copy, Cut, Paste, Trash, Undo, Find, Refresh and Help.
+     Back, Forward, Up, Home, Places, Two Panes, Preview, New
+     Folder, Copy, Cut, Paste, Trash, Undo, Find, Refresh and
+     Help.
 
 The menus
      File, Edit, View, Go and Help.  Esploro's frame shows only
@@ -184,7 +186,7 @@ the list, but around the journal: what they do can't be undone
 from Esploro.
 
 
-File: esploro.info,  Node: Drag and drop,  Next: Two panes,  Prev: Changing files,  Up: Top
+File: esploro.info,  Node: Drag and drop,  Next: The preview,  Prev: Changing files,  Up: Top
 
 5 Drag and drop
 ***************
@@ -207,9 +209,43 @@ Between panes
      that pane's folder.
 
 
-File: esploro.info,  Node: Two panes,  Next: Windows and workspaces,  Prev: Drag and drop,  Up: Top
+File: esploro.info,  Node: The preview,  Next: Two panes,  Prev: Drag and drop,  Up: Top
 
-6 Two panes
+6 The preview
+*************
+
+Down the right of the window, the file under the cursor:
+
+A picture
+     The picture, scaled to fit.
+A PDF, a video
+     The PDF's first page, or a frame of the video.  Esploro
+     makes it once, in the background ("making a preview..."
+     while it does), and keeps it in ‘~/.cache/esploro’, so the
+     next look is at once.
+Text, code
+     Its first lines, in the colours its mode gives them.
+A folder
+     How many things are in it, and their names.
+Anything else
+     What it is, as ‘file’ says.
+Several selected
+     How many, their size together, and their names.
+
+   Below each: its size, when it last changed, and the windows
+that have it open.  The preview follows the cursor and the mouse
+once they rest, so holding an arrow key down stays quick.  With
+two panes, it shows the pane used last; each Esploro window has
+its own.
+
+   ‘F11’ (View, Preview, or the tool bar) hides it, or shows it
+again.  Hidden stays hidden, in every Esploro window, until you
+turn it on.
+
+
+File: esploro.info,  Node: Two panes,  Next: Windows and workspaces,  Prev: The preview,  Up: Top
+
+7 Two panes
 ***********
 
 ‘F3’ (View, Two Panes, or the tool bar) shows two folders side
@@ -227,7 +263,7 @@ Move to Other Pane (‘F6’)
 
 File: esploro.info,  Node: Windows and workspaces,  Next: Looking around,  Prev: Two panes,  Up: Top
 
-7 Windows and workspaces
+8 Windows and workspaces
 ************************
 
 Each workspace can have its own Esploro window, at its own
@@ -243,7 +279,7 @@ window.
 
 File: esploro.info,  Node: Looking around,  Next: The Trash,  Prev: Windows and workspaces,  Up: Top
 
-8 Looking around
+9 Looking around
 ****************
 
 Sorting (View, or ‘s’)
@@ -270,8 +306,8 @@ Going (‘M-Left’, ‘M-Right’, ‘M-Up’, ‘C-l’)
 
 File: esploro.info,  Node: The Trash,  Next: Where files are open,  Prev: Looking around,  Up: Top
 
-9 The Trash
-***********
+10 The Trash
+************
 
 Esploro uses the Trash other programs use (the freedesktop one,
 in ‘~/.local/share/Trash’).  Go, The Trash (or Trash in the
@@ -283,7 +319,7 @@ after asking: that one can't be undone.
 
 File: esploro.info,  Node: Where files are open,  Next: Keys and mouse,  Prev: The Trash,  Up: Top
 
-10 Where files are open
+11 Where files are open
 ***********************
 
 Beside a file that a window has open, Esploro says which: "open
@@ -295,7 +331,7 @@ such a file goes to its window instead of opening it again.
 
 File: esploro.info,  Node: Keys and mouse,  Next: The command line,  Prev: Where files are open,  Up: Top
 
-11 Keys and mouse
+12 Keys and mouse
 *****************
 
 Mouse
@@ -326,6 +362,7 @@ s                         next sort
 M-s f                     find below
 F5                        refresh
 F3                        two panes, or one
+F11                       the preview, or none
 C-c C-c, F6               copy, move to the other pane
 F9                        places
 C-x 5 2                   another Esploro window
@@ -336,7 +373,7 @@ m, u, U                   mark, unmark, unmark all (dired's)
 
 File: esploro.info,  Node: The command line,  Next: Writing commands,  Prev: Keys and mouse,  Up: Top
 
-12 The command line
+13 The command line
 *******************
 
 ‘esploro [FOLDER]’
@@ -360,6 +397,9 @@ File: esploro.info,  Node: The command line,  Next: Writing commands,  Prev: Key
      The files in FOLDER a window has open.
 ‘esploro open PATH’
      Goes to the window that has PATH, or opens it.
+‘esploro preview PATH’
+     A PNG of PATH (a picture, a PDF or a video), made once and
+     kept.
 ‘esploro trash-list’
 ‘esploro restore NAME...’
 ‘esploro empty-trash’
@@ -368,7 +408,7 @@ File: esploro.info,  Node: The command line,  Next: Writing commands,  Prev: Key
 
 File: esploro.info,  Node: Writing commands,  Prev: The command line,  Up: Top
 
-13 Writing commands
+14 Writing commands
 *******************
 
 The core defines commands once, for the kinds of file they're
@@ -388,19 +428,20 @@ the next step.
 
 Tag Table:
 Node: Top276
-Node: Opening Esploro1691
-Node: The window2881
-Node: Selecting and opening3894
-Node: Changing files4947
-Node: Drag and drop6460
-Node: Two panes7191
-Node: Windows and workspaces7766
-Node: Looking around8369
-Node: The Trash9209
-Node: Where files are open9688
-Node: Keys and mouse10156
-Node: The command line11792
-Node: Writing commands12854
+Node: Opening Esploro1764
+Node: The window2954
+Node: Selecting and opening3981
+Node: Changing files5034
+Node: Drag and drop6547
+Node: The preview7280
+Node: Two panes8394
+Node: Windows and workspaces8967
+Node: Looking around9570
+Node: The Trash10410
+Node: Where files are open10891
+Node: Keys and mouse11359
+Node: The command line13042
+Node: Writing commands14206
 
 End Tag Table
 
