@@ -962,6 +962,8 @@ show the pane's sort and history even when the places are selected."
           ["Move to Other Pane" esploro-move-to-other-pane :keys "F6"
            :active (and (esploro--two-panes-p) (esploro--marked-or-point-p))]
           ["Rename..." esploro-rename :keys "F2" :active (esploro--file-at)]
+          ["Rename by Pattern..." esploro-rename-by-pattern]
+          ["Sort into Folders by Kind..." esploro-sort-by-kind]
           ["Move to Trash" esploro-trash :keys "Delete" :active (esploro--marked-or-point-p)]
           "---"
           ["Select All" esploro-select-all]
@@ -1533,8 +1535,14 @@ that changes files, as a plan for your review."
 ;; Each runs as a plan through the core: checked, journaled, undoable.
 
 (defun esploro--recipe-run (name files what)
-  (esploro--call (append (list "recipe" "run" name) files) nil
-                 (lambda (answer) (esploro--say answer what) (esploro--refresh))))
+  "Do the recipe NAME on FILES: at once, or, for one whose plan you
+review, shown for that."
+  (esploro--call (append (list "recipe" "run" "--plan" name) files) nil
+                 (lambda (answer)
+                   (pcase answer
+                     (`(:plan ,file ,why ,_n ,recipe) (esploro--review-open file why recipe (selected-frame)))
+                     (`(:none ,why) (message "Esploro: nothing to do. %s" why))
+                     (_ (esploro--say answer what) (esploro--refresh))))))
 
 (defun esploro-repeat ()
   "Do the last change again, on the selection."
@@ -1561,19 +1569,81 @@ that changes files, as a plan for your review."
   (message "Esploro: forgot \"%s\"" name))
 
 (defun esploro--recipes-menu (_items)
-  "Recipes, made as the menu opens: the last change, and yours by name."
+  "Recipes, made as the menu opens: yours by name, renames by a pattern and
+sorting by kind, and keeping the last change."
   (let ((files (and (esploro--view) (with-current-buffer (esploro--view) (esploro--selection))))
+        (all (and (esploro--view) (with-current-buffer (esploro--view) (esploro--recipe-files))))
         (saved (esploro--call (list "recipe" "list") nil nil t)))
     (setq saved (and (listp saved) (not (keywordp (car saved))) saved))
     (append
      (mapcar (lambda (r)
-               (vector (format "%s (%s)" (car r) (cadr r))
-                       (list 'esploro--recipe-run (car r) (list 'quote files) (cadr r))
-                       :active (and files t)))
+               ;; One whose plan you review takes what's marked, else
+               ;; everything here; the rest, what's selected.
+               (let ((these (if (memq :review r) all files)))
+                 (vector (format "%s (%s)%s" (car r) (cadr r) (if (memq :review r) "..." ""))
+                         (list 'esploro--recipe-run (car r) (list 'quote these) (cadr r))
+                         :active (and these t))))
              saved)
      (when saved (list "---"))
-     (list ["Save Last Change As..." esploro-save-recipe]
+     (list ["Rename by Pattern..." esploro-rename-by-pattern]
+           ["Sort into Folders by Kind..." esploro-sort-by-kind]
+           "---"
+           ["Save Last Change As..." esploro-save-recipe]
            (vector "Forget a Recipe..." 'esploro-forget-recipe :active (and saved t))))))
+
+;; Renames by a pattern and sorting by kind send each file its own way:
+;; their plan waits in the review panel, each file before and after,
+;; until you choose Apply. They take what's marked, or, with nothing
+;; marked, everything listed (a pattern picks its own files).
+
+(defun esploro--recipe-files ()
+  "The marked files, or, with none marked, every file listed here."
+  (if (save-excursion (goto-char (point-min)) (re-search-forward (dired-marker-regexp) nil t))
+      (esploro--selection)
+    (save-excursion
+      (goto-char (point-min))
+      (let (files)
+        (while (not (eobp))
+          (let ((file (dired-get-filename nil t)))
+            (when (and file (not (member (file-name-nondirectory (directory-file-name file)) '("." ".."))))
+              (push file files)))
+          (forward-line 1))
+        (nreverse files)))))
+
+(defun esploro--offer-plan (args what)
+  "Ask the core for a plan (ARGS, which end in --plan's files), and show it
+for review; WHAT says what it was, when there's none."
+  (esploro--call args nil
+                 (lambda (answer)
+                   (pcase answer
+                     (`(:plan ,file ,why ,_n ,recipe) (esploro--review-open file why recipe (selected-frame)))
+                     (`(:none ,why) (message "Esploro: nothing to do. %s" why))
+                     (_ (esploro--say answer what))))))
+
+(defun esploro-rename-by-pattern (from to)
+  "Rename by a pattern: the names FROM fits, as TO says.
+In FROM, * stands for any run of characters and ? for any one; in TO,
+#1, #2... give back what each took, #n numbers the files (01, 02...), and
+## is a #.  FROM without * or ? is text to replace wherever a name holds
+it.  On what's marked, or everything here.  The plan waits for your
+review, each file before and after; two files to one name, or a name
+already taken, and it's refused."
+  (interactive
+   (let* ((file (esploro--in-view (esploro--file-at)))
+          (from (read-string "Rename the names like (* any run, ? any one; or text to replace): "
+                             (and file (file-name-nondirectory file)))))
+     (list from (read-string (format "Rename %s to (#1 #2: what * and ? took; #n: a number): " from)))))
+  (let ((files (or (esploro--in-view (esploro--recipe-files)) (user-error "No files here"))))
+    (esploro--offer-plan (append (list "rename-by" "--plan" from to) files) "rename")))
+
+(defun esploro-sort-by-kind ()
+  "Sort into folders by kind: pictures into Images, videos into Videos,
+then Audio, Documents (PDFs), Text and Archives, each beside its file.
+On what's marked, or everything here.  The plan waits for your review.
+Your own kinds and folders are a recipe: see the manual."
+  (interactive)
+  (let ((files (or (esploro--in-view (esploro--recipe-files)) (user-error "No files here"))))
+    (esploro--offer-plan (append (list "sort-by-kind" "--plan") files) "sort by kind")))
 
 ;;; --- Searches: folders that are questions ------------------------------------------
 
@@ -1848,6 +1918,9 @@ working there; not Esploro's own views."
 
 (defvar-local esploro--review-file nil "The plan under review: its file.")
 (defvar-local esploro--review-why nil "Why the agent proposes it.")
+(defvar-local esploro--review-recipe nil
+  "When the plan is a recipe's (a rename by a pattern, a sorting): the recipe,
+which the review offers to keep by name.")
 (defvar-local esploro--review-problems nil
   "What the core found wrong with the plan as it now is; nil when it can be applied.")
 (defvar-local esploro--review-edited nil "Whether you've changed the plan.")
@@ -1857,6 +1930,7 @@ working there; not Esploro's own views."
   :doc "A plan to review: Esploro's menus."
   :parent special-mode-map
   "e" #'esploro-review-edit
+  "k" #'esploro-review-keep-recipe
   "C-x C-c" #'esploro-close)
 (esploro--install-menu-bar esploro-review-mode-map)
 
@@ -1878,13 +1952,14 @@ working there; not Esploro's own views."
       (insert (propertize "A plan for you to review" 'face 'bold)
               (if esploro--review-edited (propertize "  (edited by you)" 'face 'shadow) "")
               "\n")
-      (insert (propertize "An agent proposes these changes. Nothing happens until you apply them; undo takes them back after.\n" 'face 'shadow))
+      (insert (propertize (if esploro--review-recipe
+                              "Nothing happens until you apply it; undo takes it back after.\n"
+                            "An agent proposes these changes. Nothing happens until you apply them; undo takes them back after.\n")
+                          'face 'shadow))
       (when (and esploro--review-why (not (string-empty-p esploro--review-why)))
-        (insert "\nWhy: " esploro--review-why "\n"))
+        (insert "\n" (if esploro--review-recipe "" "Why: ") esploro--review-why "\n"))
       (insert "\n")
-      (let ((n 0))
-        (dolist (step steps)
-          (insert (format "%d. %s\n" (setq n (1+ n)) (esploro--describe-step step)))))
+      (esploro--review-insert-steps steps)
       (when esploro--review-problems
         (insert "\n" (propertize "It can't be applied as it is:" 'face 'error) "\n")
         (dolist (problem esploro--review-problems)
@@ -1898,23 +1973,35 @@ working there; not Esploro's own views."
       (insert "   ")
       (insert-text-button " Cancel " 'action (lambda (_) (esploro--review-done buffer nil))
                           'follow-link t 'face 'esploro-button 'help-echo "Drop the plan: nothing changes")
+      (when esploro--review-recipe
+        (insert "   ")
+        (insert-text-button " Keep as Recipe... " 'action (lambda (_) (with-current-buffer buffer (call-interactively #'esploro-review-keep-recipe)))
+                            'follow-link t 'face 'esploro-button
+                            'help-echo "Keep this by name, to do again from Recipes (k)"))
       (insert "\n")
       (goto-char (point-min)))))
 
-(defun esploro-review-plan (file &optional why where)
-  "Show the plan in FILE (an agent's, checked by the core) in Esploro, on
-your workspace (WHERE, as `esploro' takes it), with Apply, Edit and Cancel."
+(defun esploro-review-plan (file &optional why where recipe)
+  "Show the plan in FILE (an agent's, or a recipe's, checked by the core)
+in Esploro, on your workspace (WHERE, as `esploro' takes it), with Apply,
+Edit and Cancel; and when it's RECIPE's, Keep as Recipe."
   (let* ((steps (esploro--read-plan file))
          (first-path (cadr (car steps)))
          (dir (if (and first-path (file-directory-p (file-name-directory first-path)))
                   (file-name-directory first-path)
-                "~"))
-         (frame (esploro dir where))
-         (buffer (generate-new-buffer "*Esploro: a plan to review*")))
+                "~")))
+    (esploro--review-open file why recipe (esploro dir where))))
+
+(defun esploro--review-open (file why recipe frame)
+  "The review of the plan in FILE, beside the folder in FRAME (which stays
+where it is): WHY says what it does, RECIPE what made it, if one did."
+  (let ((steps (esploro--read-plan file))
+        (buffer (generate-new-buffer "*Esploro: a plan to review*")))
     (with-current-buffer buffer
       (esploro-review-mode)
       (setq esploro--review-file file
-            esploro--review-why why))
+            esploro--review-why why
+            esploro--review-recipe recipe))
     (esploro--review-show buffer)
     (with-selected-frame frame
       (select-window (display-buffer-in-side-window
@@ -1922,6 +2009,32 @@ your workspace (WHERE, as `esploro' takes it), with Apply, Edit and Cancel."
                                (window-parameters (no-delete-other-windows . t))))))
     (message "Esploro: a plan of %d %s to review" (length steps) (if (= (length steps) 1) "step" "steps"))
     buffer))
+
+(defun esploro--review-insert-steps (steps)
+  "STEPS, numbered.  Renames all in one folder are a table, each name
+before and after, under the folder's name."
+  (let* ((renames (and steps (seq-every-p (lambda (s) (eq (car s) :rename)) steps)))
+         (folders (and renames (seq-uniq (mapcar (lambda (s) (file-name-directory (cadr s))) steps))))
+         (n 0))
+    (if (not (and renames (= (length folders) 1)))
+        (dolist (step steps)
+          (insert (format "%d. %s\n" (setq n (1+ n)) (esploro--describe-step step))))
+      (insert (format "In %s, %d %s:\n" (abbreviate-file-name (car folders)) (length steps)
+                      (if (= (length steps) 1) "rename" "renames")))
+      (let ((width (apply #'max (mapcar (lambda (s) (string-width (file-name-nondirectory (cadr s)))) steps))))
+        (dolist (step steps)
+          (let ((old (file-name-nondirectory (cadr step))))
+            (insert (format "%3d. %s%s  →  %s\n" (setq n (1+ n)) old
+                            (make-string (- width (string-width old)) ?\s) (caddr step)))))))))
+
+(defun esploro-review-keep-recipe (name)
+  "Keep the recipe that made the plan under review by NAME, to do again
+from Recipes."
+  (interactive (list (if esploro--review-recipe (read-string "Keep this recipe as: ")
+                       (user-error "This plan isn't a recipe's"))))
+  (pcase (esploro--call (list "recipe" "add" name (prin1-to-string esploro--review-recipe)) nil nil t)
+    (`(:saved ,n ,description) (message "Esploro: \"%s\": %s, under Recipes" n description))
+    (answer (esploro--say answer "keep"))))
 
 (defun esploro--review-edit-buffer (review)
   "The buffer editing REVIEW's plan, if there is one."

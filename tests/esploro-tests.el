@@ -452,6 +452,78 @@ without a frame."
      (should (member "Done (move into ~/r/done)"
                      (mapcar (lambda (v) (and (vectorp v) (aref v 0))) (esploro--recipes-menu nil)))))))
 
+(defun esploro-tests--reviews ()
+  (seq-filter (lambda (b) (eq (buffer-local-value 'major-mode b) 'esploro-review-mode)) (buffer-list)))
+
+(defmacro esploro-tests--with-reviews (&rest body)
+  "BODY, the review panels it opens closed after."
+  `(unwind-protect (progn ,@body)
+     (mapc #'kill-buffer (esploro-tests--reviews))))
+
+(ert-deftest esploro-rename-by-pattern ()
+  (skip-unless (file-executable-p (expand-file-name "../esploro" (file-name-directory (locate-library "esploro")))))
+  (esploro-tests--world
+   (esploro-tests--with-reviews
+    (let ((process-environment (cons (concat "XDG_CONFIG_HOME=" esploro-tests--top "config") process-environment)))
+      (esploro-tests--file "p/IMG_1.jpg") (esploro-tests--file "p/IMG_2.jpg") (esploro-tests--file "p/notes.txt")
+      (esploro-go (esploro-tests--path "p"))
+      ;; Nothing marked: everything here, and the pattern picks.
+      (with-current-buffer (esploro--view) (esploro-rename-by-pattern "IMG_*.jpg" "Pic #n.jpg"))
+      (let ((review (car (esploro-tests--reviews))))
+        (should review)
+        (with-current-buffer review
+          (should (equal esploro--review-recipe '(:rename-by "IMG_*.jpg" "Pic #n.jpg")))
+          (let ((text (buffer-string)))
+            ;; Each file before and after; nothing renamed yet.
+            (should (string-match-p "In ~?/.*p/, 2 renames" text))
+            (should (string-match-p "1\\. IMG_1\\.jpg  →  Pic 1\\.jpg" text))
+            (should (string-match-p "2\\. IMG_2\\.jpg  →  Pic 2\\.jpg" text))
+            (should (string-match-p "left as they are, not fitting: notes.txt" text))
+            (should (string-match-p "Keep as Recipe" text))
+            (should-not (string-match-p "An agent" text))))
+        (should (file-exists-p (esploro-tests--path "p/IMG_1.jpg")))
+        (with-current-buffer review (esploro-review-keep-recipe "Pics"))
+        (esploro--review-done review t))
+      (should (equal (esploro-tests--names) '("Pic 1.jpg" "Pic 2.jpg" "notes.txt")))
+      (esploro-undo)
+      (should (equal (esploro-tests--names) '("IMG_1.jpg" "IMG_2.jpg" "notes.txt")))
+      ;; Two files to one name: refused, no review.
+      (with-current-buffer (esploro--view) (esploro-rename-by-pattern "*.jpg" "same.jpg"))
+      (should-not (esploro-tests--reviews))
+      ;; Kept, it's under Recipes, and marked files are what it takes.
+      (let ((item (seq-find (lambda (v) (and (vectorp v) (string-prefix-p "Pics" (aref v 0))))
+                            (with-current-buffer (esploro--view) (esploro--recipes-menu nil)))))
+        (should (equal (aref item 0) "Pics (rename IMG_*.jpg to Pic #n.jpg)...")))
+      (with-current-buffer (esploro--view)
+        (dired-goto-file (esploro-tests--path "p/IMG_2.jpg")) (dired-mark 1)
+        (esploro--recipe-run "Pics" (esploro--recipe-files) "Pics"))
+      (let ((review (car (esploro-tests--reviews))))
+        (should (string-match-p "IMG_2\\.jpg  →  Pic 1\\.jpg" (with-current-buffer review (buffer-string))))
+        (esploro--review-done review nil))
+      (should (equal (esploro-tests--names) '("IMG_1.jpg" "IMG_2.jpg" "notes.txt")))))))
+
+(ert-deftest esploro-sort-by-kind ()
+  (skip-unless (file-executable-p (expand-file-name "../esploro" (file-name-directory (locate-library "esploro")))))
+  (esploro-tests--world
+   (esploro-tests--with-reviews
+    (esploro-tests--file "k/a.jpg") (esploro-tests--file "k/b.pdf") (esploro-tests--file "k/c.docx")
+    (esploro-tests--file "k/Images/a.jpg")
+    (esploro-go (esploro-tests--path "k"))
+    (with-current-buffer (esploro--view) (esploro-sort-by-kind))
+    (let ((review (car (esploro-tests--reviews))))
+      (with-current-buffer review
+        (let ((text (buffer-string)))
+          (should (string-match-p "1 into .*k/Images, 1 into .*k/Documents" text))
+          (should (string-match-p "c.docx (of no kind named)" text))
+          (should (string-match-p "a.jpg as a 2.jpg" text))
+          (should (string-match-p "make the folder .*Documents" text))))
+      (esploro--review-done review t))
+    (should (equal (esploro-tests--names) '("Documents" "Images" "c.docx")))
+    (should (file-exists-p (esploro-tests--path "k/Images/a 2.jpg")))
+    (should (file-exists-p (esploro-tests--path "k/Documents/b.pdf")))
+    (esploro-undo)
+    (should (equal (esploro-tests--names) '("Images" "a.jpg" "b.pdf" "c.docx"))))))
+
 (ert-deftest esploro-searches ()
   (skip-unless (file-executable-p (expand-file-name "../esploro" (file-name-directory (locate-library "esploro")))))
   (esploro-tests--world
