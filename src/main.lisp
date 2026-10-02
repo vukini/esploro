@@ -17,6 +17,8 @@ esploro reveal [--print]    the file behind the focused window, selected in its 
 esploro commands [--lines] FILE...   the file commands that suit them (yours too:
                             ~/.config/esploro/commands.lisp)
 esploro run NAME FILE...    run one: at once, or as a plan for your review
+esploro recipe last|list|save NAME|forget NAME|run NAME|last FILE...
+                            a change done again: the last one, or one kept by name
 esploro propose FILE [WHY]  a plan for you to review in Esploro (an agent's): checked
                             first; nothing happens until you choose Apply
 esploro --dbus              the running Emacs answers \"Show in folder\" (FileManager1)
@@ -224,6 +226,38 @@ changes files, its steps go to Esploro for your review."
            (propose-steps (run-file-command command paths) (file-command-label command)))
           (t (run-file-command command paths) (answer (list :done (length paths))) 0))))
 
+(defun cli-recipe (args)
+  "esploro recipe last | list | save NAME | forget NAME | run NAME|last FILE..."
+  (let ((what (first args)))
+    (cond ((equal what "last")
+           (let ((recipe (plan-recipe (last-applied-steps))))
+             (answer (if recipe (list :recipe recipe (describe-recipe recipe))
+                         (list :none "the last change isn't one thing into one folder (or there's none)")))
+             (if recipe 0 1)))
+          ((equal what "list")
+           (answer (mapcar (lambda (r) (list (car r) (describe-recipe (cdr r)))) (read-recipes))) 0)
+          ((equal what "save")
+           (let ((recipe (plan-recipe (last-applied-steps))))
+             (cond ((or (null (second args)) (string= (second args) "")) (answer (list :error "a recipe needs a name")) 1)
+                   ((null recipe) (answer (list :none "the last change isn't one thing into one folder")) 1)
+                   (t (save-recipe (second args) recipe)
+                      (answer (list :saved (second args) (describe-recipe recipe))) 0))))
+          ((equal what "forget") (forget-recipe (second args)) (answer (list :forgotten (second args))) 0)
+          ((equal what "run")
+           (let* ((name (second args))
+                  (recipe (if (equal name "last") (plan-recipe (last-applied-steps))
+                              (cdr (assoc name (read-recipes) :test #'string=)))))
+             (if (null recipe)
+                 (progn (answer (list :none (format nil "no recipe ~a" name))) 1)
+                 (with-input-from-string (*standard-input*
+                                          (with-output-to-string (out)
+                                            (with-standard-io-syntax
+                                              (let ((*print-case* :downcase))
+                                                (dolist (s (recipe-steps recipe (mapcar #'absolute (cddr args))))
+                                                  (prin1 s out) (terpri out))))))
+                   (cli-apply "-")))))
+          (t (answer (list :error "esploro recipe last | list | save NAME | forget NAME | run NAME FILE...")) 2))))
+
 (defun cli-dbus ()
   "Make the running Emacs answer org.freedesktop.FileManager1 (the browsers'
 \"Show in folder\"): what the session bus runs when it's first asked."
@@ -260,6 +294,7 @@ changes files, its steps go to Esploro for your review."
            (let ((lines (equal (second args) "--lines")))
              (cli-commands (if lines (cddr args) (rest args)) lines)))
           ((equal command "run") (cli-run (second args) (cddr args)))
+          ((equal command "recipe") (cli-recipe (rest args)))
           ((and (equal command "reveal") (equal (second args) "--print"))
            ;; For a script (rofi's menu of commands): the file, or nothing.
            (let ((file (reveal-target)))

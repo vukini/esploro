@@ -435,4 +435,20 @@ without a frame."
    (esploro-run-command "compress" (list (esploro-tests--path "c/note.txt")))
    (should (file-exists-p (esploro-tests--path "c/note.txt.zip")))))
 
+(ert-deftest esploro-recipes ()
+  (skip-unless (file-executable-p (expand-file-name "../esploro" (file-name-directory (locate-library "esploro")))))
+  (esploro-tests--world
+   (let ((process-environment (cons (concat "XDG_CONFIG_HOME=" esploro-tests--top "config") process-environment)))
+     (esploro-tests--file "r/a.txt") (esploro-tests--file "r/b.txt")
+     (make-directory (esploro-tests--path "r/done"))
+     (esploro-go (esploro-tests--path "r"))
+     (esploro--apply (list (list :move (esploro-tests--path "r/a.txt") (esploro-tests--path "r/done/a.txt"))) "moved")
+     ;; z: the same again, on b.
+     (with-current-buffer (esploro--view) (dired-goto-file (esploro-tests--path "r/b.txt")) (esploro-repeat))
+     (should (file-exists-p (esploro-tests--path "r/done/b.txt")))
+     ;; Kept by name, it's on the Recipes menu.
+     (esploro-save-recipe "Done")
+     (should (member "Done (move into ~/r/done)"
+                     (mapcar (lambda (v) (and (vectorp v) (aref v 0))) (esploro--recipes-menu nil)))))))
+
 ;;; esploro-tests.el ends here

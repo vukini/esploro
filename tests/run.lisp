@@ -443,6 +443,33 @@
 (check "your own commands are offered too"
        (member "shout" (cdr (run-cli (list "commands" (p "cmd/note.txt")))) :key #'first :test #'string=))
 
+;;; --- Recipes: a change done again ----------------------------------------------------
+
+(check "moves into one folder are a recipe"
+       (equal (esploro::plan-recipe '((:move "/a/x" "/b/x") (:move "/a/y" "/b/y"))) '(:move-into "/b")))
+(check "a folder made, then moves into it, is one too"
+       (equal (esploro::plan-recipe '((:mkdir "/b/new") (:move "/a/x" "/b/new/x"))) '(:move-into "/b/new")))
+(check "the Trash is one" (equal (esploro::plan-recipe '((:trash "/a/x"))) '(:trash)))
+(check "renames aren't" (null (esploro::plan-recipe '((:rename "/a/x" "y")))))
+(check "moves into two folders aren't" (null (esploro::plan-recipe '((:move "/a/x" "/b/x") (:move "/a/y" "/c/y")))))
+(esploro::ensure-folder (p "rec/in"))
+(esploro::ensure-folder (p "rec/archive"))
+(make-file (p "rec/in/one.txt")) (make-file (p "rec/in/two.txt")) (make-file (p "rec/archive/two.txt"))
+(check "a recipe's plan: a name taken in the folder gets a free one"
+       (equal (esploro::recipe-steps (list :move-into (p "rec/archive")) (list (p "rec/in/one.txt") (p "rec/in/two.txt")))
+              (list (list :move (p "rec/in/one.txt") (p "rec/archive/one.txt"))
+                    (list :move (p "rec/in/two.txt") (p "rec/archive/two 2.txt")))))
+(run-cli (list "apply") (format nil "(:move ~s ~s)" (p "rec/in/one.txt") (p "rec/archive/one.txt")))
+(check "the last change, as a recipe" (equal (cdr (run-cli (list "recipe" "last")))
+                                             (list :recipe (list :move-into (p "rec/archive")) "move into ~/rec/archive")))
+(check "it can be kept by name" (eq (second (run-cli (list "recipe" "save" "Archive it"))) :saved))
+(check "and listed" (equal (cdr (run-cli (list "recipe" "list"))) (list (list "Archive it" "move into ~/rec/archive"))))
+(check "and run on other files, as a plan (undone like any)"
+       (and (equal (run-cli (list "recipe" "run" "Archive it" (p "rec/in/two.txt"))) (list 0 :done 1))
+            (path-exists-p (p "rec/archive/two 2.txt"))
+            (progn (undo-last) (path-exists-p (p "rec/in/two.txt")))))
+(check "and forgotten" (progn (run-cli (list "recipe" "forget" "Archive it")) (null (esploro::read-recipes))))
+
 ;;; --- The end -------------------------------------------------------------------------
 
 (sb-ext:run-program "chmod" (list "-R" "u+w" *top*) :search t)

@@ -19,6 +19,7 @@
                (:file "stumpwm")
                (:file "where")
                (:file "commands")
+               (:file "recipes")
                (:file "preview")))
 
 (defsystem "esploro"

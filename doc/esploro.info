@@ -31,6 +31,7 @@ and kept in a journal.
 * The window::             The list, the places, the tool bar, the menus.
 * Selecting and opening::  Click, double-click, the keys.
 * Changing files::         Copy, cut, paste, rename, the Trash, undo.
+* Recipes::                The last change, again; or kept by name.
 * Drag and drop::          Files in from other programs, and out to them.
 * The preview::            The file under the cursor, beside the folder.
 * Two panes::              Two folders side by side.
@@ -156,7 +157,7 @@ every file in the folder.  Dired's keys still mark: ‘m’ marks,
 ‘u’ unmarks, ‘U’ unmarks all.
 
 
-File: esploro.info,  Node: Changing files,  Next: Drag and drop,  Prev: Selecting and opening,  Up: Top
+File: esploro.info,  Node: Changing files,  Next: Recipes,  Prev: Selecting and opening,  Up: Top
 
 4 Changing files
 ****************
@@ -201,9 +202,29 @@ the list, but around the journal: what they do can't be undone
 from Esploro.
 
 
-File: esploro.info,  Node: Drag and drop,  Next: The preview,  Prev: Changing files,  Up: Top
+File: esploro.info,  Node: Recipes,  Next: Drag and drop,  Prev: Changing files,  Up: Top
 
-5 Drag and drop
+5 Recipes
+*********
+
+Having moved some files into a folder, copied them into one, or
+put them in the Trash, select others and press ‘z’ (Edit ⇒
+Repeat Last Change): the same is done to them.  A name already
+taken in the folder gets a free one ("report 2.pdf"); a file
+already there isn't moved again.
+
+   Edit ⇒ Save Last Change As... keeps it by name.  Recipes you
+kept are in the right-click menu under Recipes, to do on what's
+selected, with Forget a Recipe... there too.  They're kept in
+‘~/.config/esploro/recipes.lisp’.
+
+   A recipe is a plan like any other: checked whole, done in the
+background, undone with ‘C-/’.
+
+
+File: esploro.info,  Node: Drag and drop,  Next: The preview,  Prev: Recipes,  Up: Top
+
+6 Drag and drop
 ***************
 
 In
@@ -226,7 +247,7 @@ Between panes
 
 File: esploro.info,  Node: The preview,  Next: Two panes,  Prev: Drag and drop,  Up: Top
 
-6 The preview
+7 The preview
 *************
 
 Down the right of the window, the file under the cursor:
@@ -260,7 +281,7 @@ turn it on.
 
 File: esploro.info,  Node: Two panes,  Next: Windows and workspaces,  Prev: The preview,  Up: Top
 
-7 Two panes
+8 Two panes
 ***********
 
 ‘F3’ (View, Two Panes, or the tool bar) shows two folders side
@@ -278,7 +299,7 @@ Move to Other Pane (‘F6’)
 
 File: esploro.info,  Node: Windows and workspaces,  Next: Looking around,  Prev: Two panes,  Up: Top
 
-8 Windows and workspaces
+9 Windows and workspaces
 ************************
 
 Each workspace can have its own Esploro window, at its own
@@ -299,8 +320,8 @@ window.
 
 File: esploro.info,  Node: Looking around,  Next: The Trash,  Prev: Windows and workspaces,  Up: Top
 
-9 Looking around
-****************
+10 Looking around
+*****************
 
 Sorting (View, or ‘s’)
      By name, size (largest first), time (newest first) or kind.
@@ -326,7 +347,7 @@ Going (‘M-Left’, ‘M-Right’, ‘M-Up’, ‘C-l’)
 
 File: esploro.info,  Node: The Trash,  Next: Where files are open,  Prev: Looking around,  Up: Top
 
-10 The Trash
+11 The Trash
 ************
 
 Esploro uses the Trash other programs use (the freedesktop one,
@@ -339,7 +360,7 @@ after asking: that one can't be undone.
 
 File: esploro.info,  Node: Where files are open,  Next: Plans from agents,  Prev: The Trash,  Up: Top
 
-11 Where files are open
+12 Where files are open
 ***********************
 
 Beside a file that a window has open, Esploro says which: "open
@@ -351,7 +372,7 @@ such a file goes to its window instead of opening it again.
 
 File: esploro.info,  Node: Plans from agents,  Next: Keys and mouse,  Prev: Where files are open,  Up: Top
 
-12 Plans from agents
+13 Plans from agents
 ********************
 
 An agent (Claude Code, through Vikix's ‘vikix mcp’) never moves,
@@ -377,7 +398,7 @@ isn't applied).  ‘C-c C-c’ saves and goes back to the review;
 
 File: esploro.info,  Node: Keys and mouse,  Next: The command line,  Prev: Plans from agents,  Up: Top
 
-13 Keys and mouse
+14 Keys and mouse
 *****************
 
 Mouse
@@ -402,6 +423,7 @@ Delete                    to the Trash
 F2                        rename
 +                         new folder
 C-/                       undo the last change
+z                         the last change again, on the selection
 s                         next sort
 .                         hidden files
 /                         only names with...
@@ -419,7 +441,7 @@ m, u, U                   mark, unmark, unmark all (dired's)
 
 File: esploro.info,  Node: The command line,  Next: Writing commands,  Prev: Keys and mouse,  Up: Top
 
-14 The command line
+15 The command line
 *******************
 
 ‘esploro [FOLDER]’
@@ -434,6 +456,13 @@ File: esploro.info,  Node: The command line,  Next: Writing commands,  Prev: Key
 ‘esploro reveal’
      The file behind the window you're in, selected in its
      folder.
+‘esploro recipe list’
+‘esploro recipe last’
+‘esploro recipe save NAME’
+‘esploro recipe forget NAME’
+‘esploro recipe run NAME|last FILE...’
+     Recipes (*note Recipes::): the last change, or one kept by
+     name, done again on FILE....
 ‘esploro propose FILE [WHY]’
      A plan for you to review in Esploro (what an agent's
      proposal runs).
@@ -468,7 +497,7 @@ File: esploro.info,  Node: The command line,  Next: Writing commands,  Prev: Key
 
 File: esploro.info,  Node: Writing commands,  Prev: The command line,  Up: Top
 
-15 Writing commands
+16 Writing commands
 *******************
 
 The core defines commands once, for the kinds of file they're
@@ -488,21 +517,22 @@ the next step.
 
 Tag Table:
 Node: Top276
-Node: Opening Esploro1836
-Node: The window3652
-Node: Selecting and opening4679
-Node: Changing files5732
-Node: Drag and drop7245
-Node: The preview7978
-Node: Two panes9092
-Node: Windows and workspaces9665
-Node: Looking around10528
-Node: The Trash11368
-Node: Where files are open11849
-Node: Plans from agents12320
-Node: Keys and mouse13395
-Node: The command line15075
-Node: Writing commands16820
+Node: Opening Esploro1904
+Node: The window3720
+Node: Selecting and opening4747
+Node: Changing files5800
+Node: Recipes7307
+Node: Drag and drop8040
+Node: The preview8766
+Node: Two panes9880
+Node: Windows and workspaces10453
+Node: Looking around11316
+Node: The Trash12158
+Node: Where files are open12639
+Node: Plans from agents13110
+Node: Keys and mouse14185
+Node: The command line15931
+Node: Writing commands17933
 
 End Tag Table
 

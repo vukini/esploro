@@ -36,6 +36,7 @@ anything happens, done in the background, and kept in a journal.
 * The window::             The list, the places, the tool bar, the menus.
 * Selecting and opening::  Click, double-click, the keys.
 * Changing files::         Copy, cut, paste, rename, the Trash, undo.
+* Recipes::                The last change, again; or kept by name.
 * Drag and drop::          Files in from other programs, and out to them.
 * The preview::            The file under the cursor, beside the folder.
 * Two panes::              Two folders side by side.
@@ -189,6 +190,23 @@ which is what undo reads.
 Dired's own keys (@kbd{C}, @kbd{R}, @kbd{D} and the rest) still work
 in the list, but around the journal: what they do can't be undone from
 Esploro.
+
+@node Recipes
+@chapter Recipes
+
+Having moved some files into a folder, copied them into one, or put
+them in the Trash, select others and press @kbd{z} (Edit @result{}
+Repeat Last Change): the same is done to them.  A name already taken
+in the folder gets a free one (``report 2.pdf''); a file already there
+isn't moved again.
+
+Edit @result{} Save Last Change As@dots{} keeps it by name.  Recipes
+you kept are in the right-click menu under Recipes, to do on what's
+selected, with Forget a Recipe@dots{} there too.  They're kept in
+@file{~/.config/esploro/recipes.lisp}.
+
+A recipe is a plan like any other: checked whole, done in the
+background, undone with @kbd{C-/}.
 
 @node Drag and drop
 @chapter Drag and drop
@@ -362,6 +380,7 @@ your unsaved changes.  Then @samp{Apply} as before.
 @item F2 @tab rename
 @item + @tab new folder
 @item C-/ @tab undo the last change
+@item z @tab the last change again, on the selection
 @item s @tab next sort
 @item . @tab hidden files
 @item / @tab only names with...
@@ -392,6 +411,13 @@ The file's folder, with @var{file} selected.
 Which windows have @var{path} open, or every file that's open.
 @item esploro reveal
 The file behind the window you're in, selected in its folder.
+@item esploro recipe list
+@itemx esploro recipe last
+@itemx esploro recipe save @var{name}
+@itemx esploro recipe forget @var{name}
+@itemx esploro recipe run @var{name}|last @var{file}@dots{}
+Recipes (@pxref{Recipes}): the last change, or one kept by name,
+done again on @var{file}@dots{}.
 @item esploro propose @var{file} [@var{why}]
 A plan for you to review in Esploro (what an agent's proposal runs).
 @item esploro --dbus

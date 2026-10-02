@@ -882,6 +882,7 @@ a dropped name kept its newline, named no file, and the drop was lost."
   "<f9>" #'esploro-places-toggle
   "<f3>" #'esploro-split
   "<f11>" #'esploro-preview-toggle
+  "z" #'esploro-repeat
   "<f6>" #'esploro-move-to-other-pane
   "C-c C-c" #'esploro-copy-to-other-pane
   "C-x 5 2" #'esploro-new-window
@@ -940,6 +941,9 @@ show the pane's sort and history even when the places are selected."
           ["Close Esploro" esploro-close :keys "C-x C-c"])
     (edit "Edit"
           ["Undo" esploro-undo :keys "C-/"]
+          ["Repeat Last Change" esploro-repeat :keys "z" :active (esploro--marked-or-point-p)]
+          ["Save Last Change As..." esploro-save-recipe]
+          ("Recipes" :filter esploro--recipes-menu)
           "---"
           ["Copy" esploro-copy :keys "M-w" :active (esploro--marked-or-point-p)]
           ["Cut" esploro-cut :keys "C-w" :active (esploro--marked-or-point-p)]
@@ -1008,6 +1012,7 @@ show the pane's sort and history even when the places are selected."
     ["Open" esploro-open]
     ["Open With..." esploro-open-with]
     ("Commands" :filter esploro--commands-menu)
+    ("Recipes" :filter esploro--recipes-menu)
     "---"
     ["Copy" esploro-copy]
     ["Cut" esploro-cut]
@@ -1491,6 +1496,56 @@ that changes files, as a plan for your review."
                        (`(:done ,_) (message "Esploro: %s, done" name) (esploro--refresh))
                        (`(:proposed ,n) (message "Esploro: %s proposes %d %s: review it" name n (if (= n 1) "step" "steps")))
                        (_ (esploro--say answer name)))))))
+
+;;; --- Recipes: a change done again --------------------------------------------------------
+
+;; The last change (moved into a folder, copied into one, put in the Trash),
+;; done again on the selection; or kept by name and found under Recipes.
+;; Each runs as a plan through the core: checked, journaled, undoable.
+
+(defun esploro--recipe-run (name files what)
+  (esploro--call (append (list "recipe" "run" name) files) nil
+                 (lambda (answer) (esploro--say answer what) (esploro--refresh))))
+
+(defun esploro-repeat ()
+  "Do the last change again, on the selection."
+  (interactive)
+  (let ((files (or (esploro--in-view (esploro--selection)) (user-error "Nothing selected"))))
+    (pcase (esploro--call (list "recipe" "last") nil nil t)
+      (`(:recipe ,_ ,description) (esploro--recipe-run "last" files description))
+      (`(:none ,why) (message "Esploro: nothing to repeat: %s" why))
+      (answer (esploro--say answer "repeat")))))
+
+(defun esploro-save-recipe (name)
+  "Keep the last change as a recipe called NAME, to do again from Recipes."
+  (interactive (list (read-string "Keep the last change as: ")))
+  (pcase (esploro--call (list "recipe" "save" name) nil nil t)
+    (`(:saved ,n ,description) (message "Esploro: \"%s\": %s, under Recipes" n description))
+    (`(:none ,why) (message "Esploro: can't keep it: %s" why))
+    (answer (esploro--say answer "keep"))))
+
+(defun esploro-forget-recipe (name)
+  "Forget the recipe NAME."
+  (interactive (list (completing-read "Forget the recipe: "
+                                      (mapcar #'car (esploro--call (list "recipe" "list") nil nil t)) nil t)))
+  (esploro--call (list "recipe" "forget" name) nil nil t)
+  (message "Esploro: forgot \"%s\"" name))
+
+(defun esploro--recipes-menu (_items)
+  "Recipes, made as the menu opens: the last change, and yours by name."
+  (let ((files (and (esploro--view) (with-current-buffer (esploro--view) (esploro--selection))))
+        (saved (esploro--call (list "recipe" "list") nil nil t)))
+    (append
+     (list (vector "Repeat Last Change" 'esploro-repeat :active (and files t) :keys "z"))
+     (when (and (listp saved) saved (not (keywordp (car saved))))
+       (cons "---"
+             (mapcar (lambda (r)
+                       (vector (format "%s (%s)" (car r) (cadr r))
+                               (list 'esploro--recipe-run (car r) (list 'quote files) (cadr r))
+                               :active (and files t)))
+                     saved)))
+     (list "---" ["Save Last Change As..." esploro-save-recipe]
+           ["Forget a Recipe..." esploro-forget-recipe]))))
 
 ;;; --- Plans to review: an agent's proposals ---------------------------------------------
 
