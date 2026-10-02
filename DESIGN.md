@@ -44,6 +44,32 @@ Selection is as in other file managers, by mouse (click, Ctrl, Shift, double-cli
 
 Not yet: tried by hand at length, the theme, thumbnails made in the background (now a first look at a big picture waits for ImageMagick), Vikix installing it.
 
+## McCLIM or Emacs: measured (2026-10-02)
+
+The risk above, tested before building more on the McCLIM window. Esploro (fa8b97b, with incremental redisplay) and Emacs's dired (`emacs -Q`), each on folders of 0, 1,000, 5,000 and 20,000 files and `/usr/bin` (3,725), in Xvfb, with real key presses; "per key" is CPU time for one Down arrow, redraw included.
+
+| Folder | McCLIM: open | McCLIM: per key | dired: open | dired: per key |
+|---|---|---|---|---|
+| empty | 1.4 s | 44 ms | | 6.6 ms (a scratch buffer) |
+| 1,000 files | 1.5 s | 275 ms | 0.31 s | 1.0 ms |
+| /usr/bin, 3,725 | 2.7 s | 800 ms | | |
+| 5,000 files | 3.3 s | 1,640 ms | 0.51 s | 1.2 ms |
+| 20,000 files | 6.5 s | 7,420 ms | 1.25 s | 1.7 ms |
+
+McCLIM's cost per key grows with the folder: a profile of the 5,000-file folder puts it in McCLIM itself (walking the output records, recomputing extents, a lock per dynamic slot), not in Esploro's code (text metrics under 2%), so incremental redisplay doesn't save it. Drawing only the rows in view, with scrolling done by hand, would bring a key to about the empty folder's 44 ms whatever the size, and no lower: that is McCLIM's own cost per command, 25 times dired's. Memory: 210 MB empty, 620 MB at 20,000 files.
+
+So the front in Emacs, as the risk above foresaw: a mode built on dired, which Emacs (already running as a daemon in Vikix) shows at once in a frame, in the Vikix theme, with drag and drop (`dired-mouse-drag-files`), thumbnails (image-dired) and wdired for free. The core stays in Common Lisp, where StumpWM is: the window map, plans with their checks, the journal and undo, the Trash, and `define-file-command`, reached from Emacs through `esploro` on the command line (`--where`, applying a plan) or a long-running `esploro --serve` over a socket. **Undecided: Vid chooses.** If McCLIM stays, the next step is the visible-rows list.
+
+## Becoming Vikix's file explorer (plan, 2026-10-02)
+
+What PCManFM does today in Vikix (Super+e, folders by default, new drives, "Show in folder"), Esploro must do first; then what only it can do. In order:
+
+**1. Every day.** Copy, cut and paste (Ctrl+C/X/V, into the plan, and with other programs through the clipboard's file list); places (home, Downloads, Documents, ~/src, Dropbox, mounted drives in /run/media, the Trash, bookmarks shared with GTK in ~/.config/gtk-3.0/bookmarks); back and forward, a typed path with completion (Ctrl+L), typing to jump to a name; sorting by name, size, time and kind, a filter, and finding below (fd); the Trash to look in, restore from and empty; one Esploro at a time, which a second start asks to show a folder; Vikix's colours and font. Then: open with another program, archives (extract, compress), a folder's size and permissions, long copies in the background with progress and cancel, thumbnails made in the background, and drag and drop.
+
+**2. Vikix's file explorer.** Super+e, `inode/directory` in mimeapps.list, udiskie's `--file-manager`, and org.freedesktop.FileManager1 (the browsers' "Show in folder"). From the optional feature into the base install, with a migration, and PCManFM kept as the fallback for a release or two. The key card, the guides, the agents' guide, the tests, `vikix doctor`.
+
+**3. What only it does.** From any window, reveal its file; workspace means project (open in the workspace's folder; closing a project lists its open files, unsaved first); the commands' other doors (rofi, StumpWM keys, Emacs, `vikix mcp` for agents, which only ever propose plans); the shared selection with dired; folders as queries; a recorded plan as a named command.
+
 ## Later
 
 - The other doors for commands: rofi, Emacs (embark), StumpWM keys, the MCP server.
