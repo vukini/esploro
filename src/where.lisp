@@ -141,6 +141,27 @@ when there's none. timeout keeps a busy Emacs from holding Esploro up."
                   for n = (and (stringp id) (parse-integer id :junk-allowed t))
                   when n collect n))))
 
+(defparameter *selection-elisp*
+  "(let ((b (seq-find (lambda (b) (with-current-buffer b (derived-mode-p 'dired-mode))) (buffer-list))))
+     (when b
+       (with-current-buffer b
+         (let ((marked (dired-get-marked-files nil nil nil t)))
+           (list (expand-file-name default-directory)
+                 (seq-remove (lambda (f) (or (eq f t) (member (file-name-nondirectory (directory-file-name f)) '(\".\" \"..\"))))
+                             (if (eq (car marked) t) (cdr marked) marked)))))))"
+  "What Emacs answers for the selection: (FOLDER FILES) of the Esploro view,
+or dired, used last; the file at point when none is marked.")
+
+(defun emacs-selection ()
+  "The files selected in the Esploro view (or dired) used last, and its folder:
+(VALUES FILES FOLDER); NIL when Emacs has none."
+  (let ((answer (emacs-ask *selection-elisp*)))
+    (when (and (consp answer) (stringp (first answer)))
+      (values (loop for f in (second answer)
+                    for path = (and (stringp f) (normalize-path f))
+                    when path collect path)
+              (normalize-path (first answer))))))
+
 (defun true-symbol-p (x)
   (and x (symbolp x) (string= (symbol-name x) "T")))
 

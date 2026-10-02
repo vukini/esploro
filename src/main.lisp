@@ -25,6 +25,8 @@ esploro query [--lines] TEXT [FOLDER]   the files below FOLDER (the one you're i
                             -word for not; or a query as an s-expression
 esploro search list|save NAME TEXT [FOLDER]|forget NAME|run [--lines] NAME
                             searches kept by name (Searches, down the side)
+esploro selection [--sexp]  the files selected in Esploro (or dired), the view used
+                            last: one a line, for a shell or an agent
 esploro propose FILE [WHY]  a plan for you to review in Esploro (an agent's): checked
                             first; nothing happens until you choose Apply
 esploro --dbus              the running Emacs answers \"Show in folder\" (FileManager1)
@@ -307,6 +309,15 @@ changes files, its steps go to Esploro for your review."
                  (progn (answer (list :none (format nil "no search ~a" name))) 1))))
           (t (answer (list :error "esploro search list | save NAME TEXT [FOLDER] | forget NAME | run NAME")) 2))))
 
+(defun cli-selection (args)
+  "esploro selection [--sexp]: what's selected in Esploro (or dired), used last."
+  (multiple-value-bind (files folder) (emacs-selection)
+    (cond ((equal (first args) "--sexp")
+           (answer (if folder (list :selection folder files) (list :none "no Esploro or dired open in Emacs"))))
+          (t (handler-case (progn (format t "~{~a~%~}" files) (finish-output))
+               (stream-error () nil))))
+    (if files 0 1)))
+
 (defun cli-dbus ()
   "Make the running Emacs answer org.freedesktop.FileManager1 (the browsers'
 \"Show in folder\"): what the session bus runs when it's first asked."
@@ -346,6 +357,7 @@ changes files, its steps go to Esploro for your review."
           ((equal command "recipe") (cli-recipe (rest args)))
           ((equal command "query") (cli-query (rest args)))
           ((equal command "search") (cli-search (rest args)))
+          ((equal command "selection") (cli-selection (rest args)))
           ((and (equal command "reveal") (equal (second args) "--print"))
            ;; For a script (rofi's menu of commands): the file, or nothing.
            (let ((file (reveal-target)))

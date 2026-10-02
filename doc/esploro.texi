@@ -395,6 +395,13 @@ wrong if anything is (a plan with a problem isn't applied).
 @kbd{C-c C-c} saves and goes back to the review; @kbd{C-c C-k} drops
 your unsaved changes.  Then @samp{Apply} as before.
 
+Agents, and shells, can read what you've selected: @command{esploro
+selection} prints the files selected in the Esploro window you used
+last (or a dired buffer, if you used one since), one a line; with
+nothing marked, the file the cursor is on.  So you can select files,
+then ask an agent to ``sort the ones I've selected'', or run
+@samp{tar czf out.tgz $(esploro selection)} in a terminal.
+
 @node Keys and mouse
 @chapter Keys and mouse
 
@@ -464,6 +471,9 @@ The files below @var{folder} that @var{words} describe
 @itemx esploro search forget @var{name}
 @itemx esploro search run [--lines] @var{name}
 Searches kept by name.
+@item esploro selection [--sexp]
+The files selected in Esploro, or dired, used last, one a line;
+@option{--sexp} gives @code{(:selection @var{folder} (@var{file}@dots{}))}.
 @item esploro propose @var{file} [@var{why}]
 A plan for you to review in Esploro (what an agent's proposal runs).
 @item esploro --dbus

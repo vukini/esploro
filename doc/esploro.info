@@ -433,6 +433,14 @@ you, with what's wrong if anything is (a plan with a problem
 isn't applied).  ‘C-c C-c’ saves and goes back to the review;
 ‘C-c C-k’ drops your unsaved changes.  Then ‘Apply’ as before.
 
+   Agents, and shells, can read what you've selected: ‘esploro
+selection’ prints the files selected in the Esploro window you
+used last (or a dired buffer, if you used one since), one a
+line; with nothing marked, the file the cursor is on.  So you
+can select files, then ask an agent to "sort the ones I've
+selected", or run ‘tar czf out.tgz $(esploro selection)’ in a
+terminal.
+
 
 File: esploro.info,  Node: Keys and mouse,  Next: The command line,  Prev: Plans from agents,  Up: Top
 
@@ -510,6 +518,9 @@ File: esploro.info,  Node: The command line,  Next: Writing commands,  Prev: Key
 ‘esploro search forget NAME’
 ‘esploro search run [--lines] NAME’
      Searches kept by name.
+‘esploro selection [--sexp]’
+     The files selected in Esploro, or dired, used last, one a
+     line; ‘--sexp’ gives ‘(:selection FOLDER (FILE...))’.
 ‘esploro propose FILE [WHY]’
      A plan for you to review in Esploro (what an agent's
      proposal runs).
@@ -578,9 +589,9 @@ Node: Searches12226
 Node: The Trash13608
 Node: Where files are open14083
 Node: Plans from agents14554
-Node: Keys and mouse15629
-Node: The command line17414
-Node: Writing commands19738
+Node: Keys and mouse16017
+Node: The command line17802
+Node: Writing commands20289
 
 End Tag Table
 

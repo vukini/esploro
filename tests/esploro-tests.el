@@ -477,4 +477,21 @@ without a frame."
      (esploro-forget-search "PDFs")
      (should-not (esploro--searches)))))
 
+(ert-deftest esploro-selection-for-others ()
+  ;; What the core asks Emacs (esploro selection), asked here.
+  (let ((elisp (with-temp-buffer
+                 (insert-file-contents (expand-file-name "../src/where.lisp" (file-name-directory (locate-library "esploro"))))
+                 (search-forward "(defparameter *selection-elisp*")
+                 (goto-char (match-beginning 0))
+                 (car (read-from-string (nth 2 (read (current-buffer))))))))
+    (esploro-tests--world
+     (esploro-tests--file "sel/a.txt") (esploro-tests--file "sel/b.txt") (esploro-tests--file "sel/c.txt")
+     (esploro-go (esploro-tests--path "sel"))
+     (with-current-buffer (esploro--view)
+       (dired-goto-file (esploro-tests--path "sel/b.txt"))
+       (should (equal (eval elisp t) (list (esploro-tests--path "sel/") (list (esploro-tests--path "sel/b.txt")))))
+       (dired-goto-file (esploro-tests--path "sel/a.txt")) (dired-mark 1)
+       (dired-goto-file (esploro-tests--path "sel/c.txt")) (dired-mark 1)
+       (should (equal (cadr (eval elisp t)) (list (esploro-tests--path "sel/a.txt") (esploro-tests--path "sel/c.txt"))))))))
+
 ;;; esploro-tests.el ends here
