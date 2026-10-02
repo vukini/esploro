@@ -22,14 +22,7 @@ make install         # into ~/.local/bin
 make test            # the core's tests (SBCL) and the window's (Emacs in batch)
 ```
 
-Then, in Emacs:
-
-```elisp
-(add-to-list 'load-path "~/src/esploro/emacs")
-(require 'esploro)
-```
-
-`M-x esploro` opens its frame; `esploro FOLDER` from a shell or a key does the same through Emacs's server. In it, `?` shows the keys and the mouse. `esploro --where [PATH]` says which windows have a file open.
+`esploro FOLDER`, from a shell, a key or the launcher, opens its frame in the running Emacs (through its server), loading the window's code from `emacs/` beside the program the first time; nothing to add to your config. To have `M-x esploro` before that, put `emacs/` on Emacs's `load-path` and `(require 'esploro)`. In it, `?` shows the keys and the mouse. `esploro --where [PATH]` says which windows have a file open.
 
 It knows the windows when StumpWM runs Swank (on 127.0.0.1:4004; `ESPLORO_SWANK_PORT` changes it, and the password in `~/.slime-secret` is sent when there is one). Without it, it is a plain explorer. [Vikix](https://vikix.dev) sets it all up.
 

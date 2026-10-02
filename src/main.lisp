@@ -105,11 +105,25 @@ of its frames to use."
              (answer (list :opened))))
     0))
 
+(defun window-code ()
+  "The window's Emacs code beside this program (emacs/esploro.el, where the
+repository is or Vikix builds it), or ESPLORO_EL; NIL when it's elsewhere,
+and Emacs is to find it on its load-path."
+  (let* ((program (ignore-errors (normalize-path (sb-ext:native-namestring
+                                                  (truename sb-ext:*runtime-pathname*)))))
+         (beside (and program (join-path (path-parent program) "emacs" "esploro.el"))))
+    (or (sb-posix:getenv "ESPLORO_EL")
+        (and beside (path-exists-p beside) beside))))
+
 (defun cli-show (folder)
-  "Show FOLDER in Esploro's window, which is in Emacs: through its server."
-  (let ((code (sb-ext:process-exit-code
+  "Show FOLDER in Esploro's window, which is in Emacs: through its server,
+loading the window's code first when Emacs hasn't it yet."
+  (let* ((code-file (window-code))
+         (form (format nil "(progn (unless (featurep 'esploro) ~:[(require 'esploro)~;~:*(load ~a nil t)~]) (esploro ~a))"
+                       (and code-file (lisp-string code-file)) (lisp-string folder)))
+         (code (sb-ext:process-exit-code
                (sb-ext:run-program "emacsclient"
-                                   (list "-n" "-e" (format nil "(esploro ~a)" (lisp-string folder)))
+                                   (list "-n" "-e" form)
                                    :search t :input nil :output nil :error *error-output* :wait t))))
     (unless (zerop code)
       (format *error-output* "esploro: its window is in Emacs, and Emacs's server isn't answering (M-x server-start, or emacs --daemon)~%"))
