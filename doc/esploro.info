@@ -129,7 +129,8 @@ The menus
           extract, shrink a picture, yours), properties, a
           terminal here, closing a project.
         • Edit: undo, repeat the last change and Recipes, copy,
-          cut, paste and the rest, the Trash, selecting.
+          cut, paste and the rest, rename by a pattern, sort
+          into folders by kind, the Trash, selecting.
         • View: sorting, hidden files, the filter, searching
           below, refresh, two panes, the preview, places.
         • Go: back, forward, up, home, a folder typed, your
@@ -238,6 +239,59 @@ is there too.  They're kept in ‘~/.config/esploro/recipes.lisp’.
 
    A recipe is a plan like any other: checked whole, done in the
 background, undone with ‘C-/’.
+
+5.1 Rename by a pattern
+=======================
+
+Edit ⇒ Rename by Pattern... (also under Recipes) asks for the
+names to change, then what to make of them.  In the first, ‘*’
+stands for any run of characters (as few as will do) and ‘?’ for
+any one, in any case; in the second, ‘#1’, ‘#2’... give back
+what each took, ‘#n’ numbers the files in the order they're
+listed (01, 02..., as wide as the count needs), and ‘##’ is a
+‘#’.  So ‘IMG_*.jpg’ to ‘Holiday #n.jpg’ makes "Holiday 1.jpg",
+"Holiday 2.jpg" and so on, and ‘* - *.mp3’ to ‘#2 - #1.mp3’
+turns "Artist - Song.mp3" round.  Without ‘*’ or ‘?’, the first
+is text to replace wherever a name holds it: a space to ‘_’.
+
+   It takes the marked files, or with none marked everything
+listed (the pattern picks its own); names that don't fit are
+left as they are.
+
+5.2 Sort into folders by kind
+=============================
+
+Edit ⇒ Sort into Folders by Kind... sends pictures to Images,
+videos to Videos, then Audio, Documents (PDFs, EPUBs), Text
+(code too) and Archives: each a folder beside its file, made
+when it isn't there.  It too takes the marked files, or
+everything listed; a search's files are each sorted in their own
+folder.  Folders, files of no kind it names (a spreadsheet) and
+files already in their folder stay where they are.  A name
+already taken in a folder gets a free one ("notes 2.txt").
+
+5.3 Their plans wait for you
+============================
+
+Both send each file its own way, so their plan isn't done at
+once: it waits under the folder, as an agent's does (*note Plans
+from agents::).  A rename shows each name before and after; a
+sorting, how many go where, what stays and why, and which file
+got another name.  Apply, Edit or Cancel; nothing has changed
+until Apply, and ‘C-/’ puts it back after.  A rename that would
+give two files one name, or a name that's already taken, isn't
+offered at all: Esploro says which.
+
+   Keep as Recipe... (‘k’) keeps it by name, under Recipes, to
+do again, again for review.  Your own sorting is written in
+‘~/.config/esploro/recipes.lisp’, each kind to a folder: a name
+is beside the file, a whole path gathers them there; the first
+kind a file is wins, ‘:file’ is anything else and ‘:folder’ a
+folder:
+
+     (:recipe "Media" (:sort-by-kind (:image "Pictures") (:video "Pictures/Video")
+                                     (:pdf "/home/vid/Documents/Papers")))
+     (:recipe "Holiday" (:rename-by "IMG_*.jpg" "Holiday #n.jpg"))
 
 
 File: esploro.info,  Node: Drag and drop,  Next: The preview,  Prev: Recipes,  Up: Top
@@ -547,7 +601,16 @@ File: esploro.info,  Node: The command line,  Next: Writing commands,  Prev: Key
 ‘esploro recipe forget NAME’
 ‘esploro recipe run NAME|last FILE...’
      Recipes (*note Recipes::): the last change, or one kept by
-     name, done again on FILE....
+     name, done again on FILE....  A rename or a sorting goes to
+     Esploro for your review; with ‘--plan’ (‘run --plan’) it
+     only answers with the plan's file.
+‘esploro recipe add NAME RECIPE’
+     Keep RECIPE, an s-expression such as ‘(:rename-by "IMG_*"
+     "Pic #n")’, by name.
+‘esploro rename-by [--plan] FROM TO FILE...’
+‘esploro sort-by-kind [--plan] FILE...’
+     Rename by a pattern, or sort into folders by kind (*note
+     Recipes::): the plan goes to Esploro for your review.
 ‘esploro query [--lines] WORDS [FOLDER]’
      The files below FOLDER that WORDS describe (*note
      Searches::), one a line with ‘--lines’.
@@ -619,22 +682,22 @@ Tag Table:
 Node: Top276
 Node: Opening Esploro2038
 Node: The window3854
-Node: Selecting and opening5668
-Node: Changing files6721
-Node: Recipes8228
-Node: Drag and drop8988
-Node: The preview9714
-Node: Two panes10828
-Node: Windows and workspaces11401
-Node: Looking around12264
-Node: Searches13132
-Node: The Trash14583
-Node: Where files are open15058
-Node: Closing a project15529
-Node: Plans from agents16398
-Node: Keys and mouse17858
-Node: The command line19606
-Node: Writing commands22249
+Node: Selecting and opening5726
+Node: Changing files6779
+Node: Recipes8286
+Node: Drag and drop11570
+Node: The preview12296
+Node: Two panes13410
+Node: Windows and workspaces13983
+Node: Looking around14846
+Node: Searches15714
+Node: The Trash17165
+Node: Where files are open17640
+Node: Closing a project18111
+Node: Plans from agents18980
+Node: Keys and mouse20440
+Node: The command line22188
+Node: Writing commands25316
 
 End Tag Table
 

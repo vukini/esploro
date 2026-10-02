@@ -126,7 +126,8 @@ own menus.
 else suits the file: copy its path, compress, extract, shrink a
 picture, yours), properties, a terminal here, closing a project.
 @item Edit: undo, repeat the last change and Recipes, copy, cut,
-paste and the rest, the Trash, selecting.
+paste and the rest, rename by a pattern, sort into folders by kind,
+the Trash, selecting.
 @item View: sorting, hidden files, the filter, searching below,
 refresh, two panes, the preview, places.
 @item Go: back, forward, up, home, a folder typed, your Searches, the
@@ -228,6 +229,58 @@ there too.  They're kept in
 
 A recipe is a plan like any other: checked whole, done in the
 background, undone with @kbd{C-/}.
+
+@section Rename by a pattern
+
+Edit @result{} Rename by Pattern@dots{} (also under Recipes) asks for
+the names to change, then what to make of them.  In the first,
+@samp{*} stands for any run of characters (as few as will do) and
+@samp{?} for any one, in any case; in the second, @samp{#1},
+@samp{#2}@dots{} give back what each took, @samp{#n} numbers the files
+in the order they're listed (01, 02@dots{}, as wide as the count needs),
+and @samp{##} is a @samp{#}.  So @samp{IMG_*.jpg} to
+@samp{Holiday #n.jpg} makes ``Holiday 1.jpg'', ``Holiday 2.jpg'' and
+so on, and @samp{* - *.mp3} to @samp{#2 - #1.mp3} turns
+``Artist - Song.mp3'' round.
+Without @samp{*} or @samp{?}, the first is text to replace wherever a
+name holds it: a space to @samp{_}.
+
+It takes the marked files, or with none marked everything listed (the
+pattern picks its own); names that don't fit are left as they are.
+
+@section Sort into folders by kind
+
+Edit @result{} Sort into Folders by Kind@dots{} sends pictures to
+Images, videos to Videos, then Audio, Documents (PDFs, EPUBs), Text
+(code too) and Archives: each a folder beside its file, made when it
+isn't there.  It too takes the marked files, or everything listed; a
+search's files are each sorted in their own folder.  Folders, files of
+no kind it names (a spreadsheet) and files already in their folder stay
+where they are.  A name already taken in a folder gets a free one
+(``notes 2.txt'').
+
+@section Their plans wait for you
+
+Both send each file its own way, so their plan isn't done at once: it
+waits under the folder, as an agent's does (@pxref{Plans from agents}).
+A rename shows each name before and after; a sorting, how many go
+where, what stays and why, and which file got another name.  Apply,
+Edit or Cancel; nothing has changed until Apply, and @kbd{C-/} puts it
+back after.  A rename that would give two files one name, or a name
+that's already taken, isn't offered at all: Esploro says which.
+
+Keep as Recipe@dots{} (@kbd{k}) keeps it by name, under Recipes, to
+do again, again for review.  Your own sorting is written in
+@file{~/.config/esploro/recipes.lisp}, each kind to a folder: a name
+is beside the file, a whole path gathers them there; the first kind a
+file is wins, @code{:file} is anything else and @code{:folder} a
+folder:
+
+@example
+(:recipe "Media" (:sort-by-kind (:image "Pictures") (:video "Pictures/Video")
+                                (:pdf "/home/vid/Documents/Papers")))
+(:recipe "Holiday" (:rename-by "IMG_*.jpg" "Holiday #n.jpg"))
+@end example
 
 @node Drag and drop
 @chapter Drag and drop
@@ -500,7 +553,16 @@ The file behind the window you're in, selected in its folder.
 @itemx esploro recipe forget @var{name}
 @itemx esploro recipe run @var{name}|last @var{file}@dots{}
 Recipes (@pxref{Recipes}): the last change, or one kept by name,
-done again on @var{file}@dots{}.
+done again on @var{file}@dots{}.  A rename or a sorting goes to
+Esploro for your review; with @option{--plan} (@code{run --plan}) it
+only answers with the plan's file.
+@item esploro recipe add @var{name} @var{recipe}
+Keep @var{recipe}, an s-expression such as
+@code{(:rename-by "IMG_*" "Pic #n")}, by name.
+@item esploro rename-by [--plan] @var{from} @var{to} @var{file}@dots{}
+@itemx esploro sort-by-kind [--plan] @var{file}@dots{}
+Rename by a pattern, or sort into folders by kind
+(@pxref{Recipes}): the plan goes to Esploro for your review.
 @item esploro query [--lines] @var{words} [@var{folder}]
 The files below @var{folder} that @var{words} describe
 (@pxref{Searches}), one a line with @option{--lines}.
