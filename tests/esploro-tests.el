@@ -451,4 +451,30 @@ without a frame."
      (should (member "Done (move into ~/r/done)"
                      (mapcar (lambda (v) (and (vectorp v) (aref v 0))) (esploro--recipes-menu nil)))))))
 
+(ert-deftest esploro-searches ()
+  (skip-unless (file-executable-p (expand-file-name "../esploro" (file-name-directory (locate-library "esploro")))))
+  (esploro-tests--world
+   (let ((process-environment (cons (concat "XDG_CONFIG_HOME=" esploro-tests--top "config") process-environment)))
+     (esploro-tests--file "s/a/report.pdf") (esploro-tests--file "s/b/notes.md")
+     (esploro-go (esploro-tests--path "s"))
+     (with-current-buffer (esploro--view)
+       (esploro-search "kind:pdf")
+       (should (equal (car esploro--search) "kind:pdf"))
+       (should (save-excursion (goto-char (point-min)) (search-forward "a/report.pdf" nil t)))
+       (should-not (save-excursion (goto-char (point-min)) (search-forward "notes.md" nil t)))
+       ;; Back goes to the folder searched.
+       (should (equal (car esploro--back) (esploro-tests--path "s/")))
+       (esploro-save-search "PDFs"))
+     (should (equal (mapcar #'car (esploro--searches)) '("PDFs")))
+     (should (assoc "Searches" (esploro--places)))
+     ;; F5 looks again: a new one shows.
+     (esploro-tests--file "s/b/new.pdf")
+     (with-current-buffer (esploro--view)
+       (revert-buffer)
+       (should (save-excursion (goto-char (point-min)) (search-forward "b/new.pdf" nil t)))
+       (esploro-go (esploro-tests--path "s"))
+       (should-not esploro--search))
+     (esploro-forget-search "PDFs")
+     (should-not (esploro--searches)))))
+
 ;;; esploro-tests.el ends here

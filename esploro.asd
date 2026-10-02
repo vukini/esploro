@@ -20,6 +20,7 @@
                (:file "where")
                (:file "commands")
                (:file "recipes")
+               (:file "searches")
                (:file "preview")))
 
 (defsystem "esploro"

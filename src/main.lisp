@@ -19,6 +19,12 @@ esploro commands [--lines] FILE...   the file commands that suit them (yours too
 esploro run NAME FILE...    run one: at once, or as a plan for your review
 esploro recipe last|list|save NAME|forget NAME|run NAME|last FILE...
                             a change done again: the last one, or one kept by name
+esploro query [--lines] TEXT [FOLDER]   the files below FOLDER (the one you're in)
+                            that match TEXT: words a name holds, *.pdf, kind:pdf,
+                            newer:7 or older:30 (days), larger:10M, smaller:1k,
+                            -word for not; or a query as an s-expression
+esploro search list|save NAME TEXT [FOLDER]|forget NAME|run [--lines] NAME
+                            searches kept by name (Searches, down the side)
 esploro propose FILE [WHY]  a plan for you to review in Esploro (an agent's): checked
                             first; nothing happens until you choose Apply
 esploro --dbus              the running Emacs answers \"Show in folder\" (FileManager1)
@@ -258,6 +264,49 @@ changes files, its steps go to Esploro for your review."
                    (cli-apply "-")))))
           (t (answer (list :error "esploro recipe last | list | save NAME | forget NAME | run NAME FILE...")) 2))))
 
+(defun answer-found (query root lines)
+  (multiple-value-bind (paths more) (run-query query root)
+    (if lines
+        (handler-case (progn (format t "~{~a~%~}" paths) (finish-output))
+          (stream-error () nil))
+        (answer (list :found root (query-words query) paths more)))
+    0))
+
+(defun cli-query (args)
+  "esploro query [--lines] TEXT [FOLDER]"
+  (let* ((lines (equal (first args) "--lines"))
+         (args (if lines (rest args) args))
+         (root (absolute (or (second args) "."))))
+    (handler-case
+        (let ((query (parse-query (or (first args) ""))))
+          (if (directory-p root) (answer-found query root lines)
+              (progn (answer (list :error (format nil "~a isn't a folder" root))) 1)))
+      (error (e) (answer (list :error (princ-to-string e))) 1))))
+
+(defun cli-search (args)
+  "esploro search list | save NAME TEXT [FOLDER] | forget NAME | run [--lines] NAME"
+  (let ((what (first args)))
+    (cond ((equal what "list")
+           (answer (mapcar (lambda (s) (list (first s) (query-words (second s)) (third s))) (read-searches))) 0)
+          ((equal what "save")
+           (destructuring-bind (&optional name text folder) (rest args)
+             (handler-case
+                 (let ((query (parse-query (or text "")))
+                       (root (absolute (or folder "."))))
+                   (cond ((or (null name) (string= name "")) (answer (list :error "a search needs a name")) 1)
+                         ((not (directory-p root)) (answer (list :error (format nil "~a isn't a folder" root))) 1)
+                         (t (save-search name query root)
+                            (answer (list :saved name (query-words query) root)) 0)))
+               (error (e) (answer (list :error (princ-to-string e))) 1))))
+          ((equal what "forget") (forget-search (second args)) (answer (list :forgotten (second args))) 0)
+          ((equal what "run")
+           (let* ((lines (equal (second args) "--lines"))
+                  (name (if lines (third args) (second args)))
+                  (search (find name (read-searches) :key #'first :test #'equal)))
+             (if search (answer-found (second search) (third search) lines)
+                 (progn (answer (list :none (format nil "no search ~a" name))) 1))))
+          (t (answer (list :error "esploro search list | save NAME TEXT [FOLDER] | forget NAME | run NAME")) 2))))
+
 (defun cli-dbus ()
   "Make the running Emacs answer org.freedesktop.FileManager1 (the browsers'
 \"Show in folder\"): what the session bus runs when it's first asked."
@@ -295,6 +344,8 @@ changes files, its steps go to Esploro for your review."
              (cli-commands (if lines (cddr args) (rest args)) lines)))
           ((equal command "run") (cli-run (second args) (cddr args)))
           ((equal command "recipe") (cli-recipe (rest args)))
+          ((equal command "query") (cli-query (rest args)))
+          ((equal command "search") (cli-search (rest args)))
           ((and (equal command "reveal") (equal (second args) "--print"))
            ;; For a script (rofi's menu of commands): the file, or nothing.
            (let ((file (reveal-target)))

@@ -77,7 +77,9 @@ Its menu bar and tool bar are on even when they're off elsewhere."
 (defvar-local esploro--reverse nil "Non-nil: the sort the other way round.")
 (defvar-local esploro--hidden nil "Non-nil: files starting with a dot are shown.")
 (defvar-local esploro--filter nil "Only names holding this text are shown, until refreshed.")
-(dolist (v '(esploro--view esploro--back esploro--forward esploro--sort esploro--reverse esploro--hidden))
+(defvar-local esploro--search nil "In a view of a search's files: (WORDS FOLDER NAME).")
+(dolist (v '(esploro--view esploro--back esploro--forward esploro--sort esploro--reverse esploro--hidden
+             esploro--search))
   (put v 'permanent-local t))
 
 (defvar esploro--clipboard nil "(copy . FILES) or (cut . FILES), from Esploro's own copy or cut.")
@@ -103,6 +105,7 @@ In the background, so a long copy never stops Emacs; SYNC waits (tests)."
     ;; From /: the core is given whole paths, and the folder Emacs happens
     ;; to be in may be gone.
     (let ((out (generate-new-buffer " *esploro-out*"))
+          (here default-directory)
           (default-directory "/"))
       (with-current-buffer out (setq default-directory "/"))
       (if (or sync esploro--wait)
@@ -112,7 +115,9 @@ In the background, so a long copy never stops Emacs; SYNC waits (tests)."
                                  esploro-program t t nil args)
                           (esploro--read-answer (buffer-string)))))
             (kill-buffer out)
-            (when then (funcall then answer))
+            ;; THEN as called from where it was asked: the binding of "/"
+            ;; above may be the view's own folder, bound for the while.
+            (when then (let ((default-directory here)) (funcall then answer)))
             answer)
         (let ((process (make-process
                         :name "esploro" :buffer out :command (cons esploro-program args)
@@ -211,7 +216,7 @@ FRAME (the selected one) used last; else its first; nil when it has none."
   (with-current-buffer (or buffer (esploro--view) (esploro--new-view))
     (let ((inhibit-read-only t)
           (dir (if (consp what) (car what) (file-name-as-directory (expand-file-name what)))))
-      (setq esploro--filter nil)
+      (setq esploro--filter nil esploro--search nil)
       (erase-buffer)
       ;; As dired-internal-noselect does, in a buffer of Esploro's own, so a
       ;; dired of the same folder elsewhere is left alone.
@@ -878,6 +883,7 @@ a dropped name kept its newline, named no file, and the drop was lost."
   "." #'esploro-toggle-hidden
   "/" #'esploro-filter
   "M-s f" #'esploro-find
+  "M-s s" #'esploro-search
   "<f5>" #'revert-buffer
   "<f9>" #'esploro-places-toggle
   "<f3>" #'esploro-split
@@ -972,6 +978,9 @@ show the pane's sort and history even when the places are selected."
           ["Hidden Files" esploro-toggle-hidden :style toggle :selected (esploro--value 'esploro--hidden)]
           ["Filter..." esploro-filter :keys "/"]
           ["Find Below..." esploro-find :keys "M-s f"]
+          ["Search..." esploro-search :keys "M-s s"]
+          ["Keep This Search..." esploro-save-search :active (esploro--value 'esploro--search)]
+          ["Forget a Search..." esploro-forget-search :active (esploro--searches)]
           ["Refresh" esploro--refresh :keys "F5"]
           "---"
           ["Two Panes" esploro-split :keys "F3" :style toggle :selected (esploro--two-panes-p)]
@@ -1128,6 +1137,7 @@ through the core, journaled so they can be undone."
                                                        esploro-places)))
                     (cons "Drives" (esploro--drives))
                     (cons "Bookmarks" (esploro--bookmarks))
+                    (cons "Searches" (esploro--searches))
                     (cons "" (list (cons "Trash" (esploro--trash-dir)))))))
 
 (defvar-keymap esploro-places-mode-map
@@ -1147,10 +1157,11 @@ through the core, journaled so they can be undone."
 (defun esploro-places-refresh ()
   (when-let* ((buffer (get-buffer esploro-places-buffer-name)))
     ;; One places buffer for every Esploro frame: it shows where the pane
-    ;; used last, in the frame you're in, is.
-    (let ((here (when-let* ((frame (esploro--frame))
-                            (view (esploro--view frame)))
-                  (esploro--dir view))))
+    ;; used last, in the frame you're in, is.  A place is a folder, or
+    ;; (search . NAME).
+    (let* ((view (when-let* ((frame (esploro--frame))) (esploro--view frame)))
+           (search (and view (nth 2 (buffer-local-value 'esploro--search view))))
+           (here (if search (cons 'search search) (and view (esploro--dir view)))))
      (with-current-buffer buffer
       (let ((inhibit-read-only t))
         (erase-buffer)
@@ -1160,10 +1171,14 @@ through the core, journaled so they can be undone."
           (dolist (place (cdr group))
             (insert "  ")
             (insert-text-button (car place)
-                                'action (lambda (_) (esploro--from-places (cdr place)))
+                                'action (if (stringp (cdr place))
+                                            (lambda (_) (esploro--from-places (cdr place)))
+                                          (lambda (_) (esploro-run-search (cddr place))))
                                 'follow-link t
-                                'help-echo (abbreviate-file-name (cdr place))
-                                'face (if (equal (file-name-as-directory (cdr place)) here) 'highlight 'default))
+                                'help-echo (if (stringp (cdr place)) (abbreviate-file-name (cdr place)) "A search")
+                                'face (if (equal (if (stringp (cdr place)) (file-name-as-directory (cdr place)) (cdr place))
+                                                 here)
+                                          'highlight 'default))
             (insert "\n"))
           (insert "\n"))
         (goto-char (point-min)))))))
@@ -1546,6 +1561,99 @@ that changes files, as a plan for your review."
                      saved)))
      (list "---" ["Save Last Change As..." esploro-save-recipe]
            ["Forget a Recipe..." esploro-forget-recipe]))))
+
+;;; --- Searches: folders that are questions ------------------------------------------
+
+;; The core looks (`esploro query'), below a folder, for the files a few
+;; words describe; the view shows them, newest first by default, and F5
+;; looks again.  Kept by name, a search is down the side under Searches.
+
+(defun esploro--searches-file ()
+  (expand-file-name "esploro/searches.lisp" (or (getenv "XDG_CONFIG_HOME") "~/.config")))
+
+(defun esploro--searches ()
+  "Your searches, for the places: (NAME . (search . NAME))."
+  (let ((file (esploro--searches-file)))
+    (when (file-readable-p file)
+      (with-temp-buffer
+        (insert-file-contents file)
+        (let (forms form)
+          (while (setq form (ignore-errors (read (current-buffer))))
+            (when (and (eq (car-safe form) :search) (stringp (nth 1 form)))
+              (push (cons (nth 1 form) (cons 'search (nth 1 form))) forms)))
+          (nreverse forms))))))
+
+(defun esploro--search-show (buffer answer &optional name again)
+  "Show the core's ANSWER to a search in BUFFER, a view; AGAIN when it's F5,
+so the view's history stays as it is."
+  (pcase answer
+    (`(:found ,root ,words ,paths ,more)
+     (if (and (null paths) (not again))
+         (message "Esploro: nothing below %s is %s" (abbreviate-file-name root) words)
+       (with-current-buffer buffer
+         (unless again
+           (let ((here (and (derived-mode-p 'dired-mode) (expand-file-name default-directory))))
+             (when here (push here esploro--back) (setq esploro--forward '()))))
+         (esploro--show (cons root (mapcar (lambda (f) (file-relative-name f root)) paths)) nil buffer)
+         (setq esploro--search (list words root name))
+         (setq-local revert-buffer-function #'esploro--search-again)
+         (rename-buffer (format "Esploro: %s" (or name words)) t))
+       (unless again
+         (message "Esploro: %d found%s" (length paths) (if more " (the first ones)" "")))))
+    (_ (esploro--say answer "search"))))
+
+(defun esploro--search-again (&rest _)
+  "Look again, for the search this view shows."
+  (let ((buffer (current-buffer)))
+    (pcase-let ((`(,words ,root ,name) esploro--search))
+      (esploro--call (list "query" words root) nil
+                     (lambda (answer) (when (buffer-live-p buffer)
+                                        (esploro--search-show buffer answer name t)))))))
+
+(defun esploro-search (words)
+  "The files below this folder that WORDS describe.
+Words a name holds, *.pdf, kind:pdf (folder, image, video, audio, text,
+archive), newer:7 or older:30 (days), larger:10M, smaller:1k, -word
+for not."
+  (interactive (list (read-string "Look below here for (words, *.pdf, kind:pdf, newer:7, larger:10M): ")))
+  (esploro--in-view
+   (let ((buffer (current-buffer)))
+     (message "Esploro: looking...")
+     (esploro--call (list "query" words (esploro--dir)) nil
+                    (lambda (answer) (esploro--search-show buffer answer))))))
+
+(defun esploro-run-search (name)
+  "The search kept as NAME, in the pane used last."
+  (interactive (list (completing-read "Search: " (mapcar #'car (esploro--searches)) nil t)))
+  (let* ((frame (esploro--frame))
+         (buffer (if frame (window-buffer (esploro--main-window frame)) (esploro--view))))
+    (unless (esploro--view-p buffer) (user-error "No Esploro here (M-x esploro)"))
+    (message "Esploro: looking...")
+    (esploro--call (list "search" "run" name) nil
+                   (lambda (answer) (esploro--search-show buffer answer name)
+                     (esploro-places-refresh)))))
+
+(defun esploro-save-search (name)
+  "Keep the search this view shows as NAME, down the side under Searches."
+  (interactive (list (esploro--in-view
+                      (unless esploro--search (user-error "This isn't a search (View > Search...)"))
+                      (read-string "Keep this search as: " (or (nth 2 esploro--search) (car esploro--search))))))
+  (esploro--in-view
+   (pcase-let ((`(,words ,root ,_) esploro--search))
+     (pcase (esploro--call (list "search" "save" name words root) nil nil t)
+       (`(:saved . ,_)
+        (setf (nth 2 esploro--search) name)
+        (rename-buffer (format "Esploro: %s" name) t)
+        (esploro-places-refresh)
+        (message "Esploro: \"%s\" is under Searches" name))
+       (answer (esploro--say answer "keep"))))))
+
+(defun esploro-forget-search (name)
+  "Forget the search NAME."
+  (interactive (list (completing-read "Forget the search: " (mapcar #'car (esploro--searches)) nil t)))
+  (esploro--call (list "search" "forget" name) nil nil t)
+  (esploro-places-refresh)
+  (message "Esploro: forgot \"%s\"" name))
 
 ;;; --- Plans to review: an agent's proposals ---------------------------------------------
 

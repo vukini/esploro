@@ -42,6 +42,7 @@ anything happens, done in the background, and kept in a journal.
 * Two panes::              Two folders side by side.
 * Windows and workspaces:: One Esploro per workspace, or more.
 * Looking around::         Sorting, hidden files, a filter, finding below.
+* Searches::               Folders that are questions, kept by name.
 * The Trash::              Looking in it, restoring, emptying.
 * Where files are open::   ``open in Emacs on 2'' beside a file.
 * Plans from agents::      Changes an agent proposes, for you to apply.
@@ -315,6 +316,42 @@ open, copy and drag from like any folder.  Back returns.
 Back, forward, the folder above, and a folder typed, with completion.
 @end table
 
+@node Searches
+@chapter Searches
+
+View @result{} Search@dots{} (@kbd{M-s s}) looks below the folder you're
+in for the files a few words describe, and shows them as if they were
+one folder: open them, drag them, copy or move them as anywhere else.
+Every word must hold:
+
+@table @asis
+@item @samp{report}
+A name holding ``report'', in any case.
+@item @samp{*.pdf}, @samp{IMG_20??*}
+Names like it: @samp{*} any run of characters, @samp{?} any one.
+@item @samp{kind:pdf}
+Of a kind: folder, file, image, video, audio, pdf, text, lisp,
+archive.
+@item @samp{newer:7}, @samp{older:30}
+Changed in the last 7 days, or not for 30.
+@item @samp{larger:10M}, @samp{smaller:1k}
+By size (k, M, G).
+@item @samp{-draft}
+Not: a word with @samp{-} in front.
+@end table
+
+So @samp{kind:pdf newer:30 -invoice} is the PDFs of the last month that
+aren't invoices.  Hidden files and folders aren't looked in, nor what
+a project's @file{.gitignore} leaves out (when @command{fd} is
+installed), nor @file{node_modules}.  At most 1000 are shown.
+
+@kbd{F5} looks again.  View @result{} Keep This Search@dots{} keeps it
+by name: it's down the side under Searches from then on, a click away,
+and always up to date.  They're kept in
+@file{~/.config/esploro/searches.lisp}, where a search can also be
+written as an s-expression:
+@code{(:and (:kind :pdf) (:or (:name "tax") (:name "receipt")))}.
+
 @node The Trash
 @chapter The Trash
 
@@ -385,6 +422,7 @@ your unsaved changes.  Then @samp{Apply} as before.
 @item . @tab hidden files
 @item / @tab only names with...
 @item M-s f @tab find below
+@item M-s s @tab search below
 @item F5 @tab refresh
 @item F3 @tab two panes, or one
 @item F11 @tab the preview, or none
@@ -418,6 +456,14 @@ The file behind the window you're in, selected in its folder.
 @itemx esploro recipe run @var{name}|last @var{file}@dots{}
 Recipes (@pxref{Recipes}): the last change, or one kept by name,
 done again on @var{file}@dots{}.
+@item esploro query [--lines] @var{words} [@var{folder}]
+The files below @var{folder} that @var{words} describe
+(@pxref{Searches}), one a line with @option{--lines}.
+@item esploro search list
+@itemx esploro search save @var{name} @var{words} [@var{folder}]
+@itemx esploro search forget @var{name}
+@itemx esploro search run [--lines] @var{name}
+Searches kept by name.
 @item esploro propose @var{file} [@var{why}]
 A plan for you to review in Esploro (what an agent's proposal runs).
 @item esploro --dbus

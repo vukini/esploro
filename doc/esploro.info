@@ -37,6 +37,7 @@ and kept in a journal.
 * Two panes::              Two folders side by side.
 * Windows and workspaces:: One Esploro per workspace, or more.
 * Looking around::         Sorting, hidden files, a filter, finding below.
+* Searches::               Folders that are questions, kept by name.
 * The Trash::              Looking in it, restoring, emptying.
 * Where files are open::   "open in Emacs on 2" beside a file.
 * Plans from agents::      Changes an agent proposes, for you to apply.
@@ -318,7 +319,7 @@ StumpWM. Without StumpWM, ‘esploro FOLDER’ uses any Esploro
 window.
 
 
-File: esploro.info,  Node: Looking around,  Next: The Trash,  Prev: Windows and workspaces,  Up: Top
+File: esploro.info,  Node: Looking around,  Next: Searches,  Prev: Windows and workspaces,  Up: Top
 
 10 Looking around
 *****************
@@ -345,9 +346,46 @@ Going (‘M-Left’, ‘M-Right’, ‘M-Up’, ‘C-l’)
      completion.
 
 
-File: esploro.info,  Node: The Trash,  Next: Where files are open,  Prev: Looking around,  Up: Top
+File: esploro.info,  Node: Searches,  Next: The Trash,  Prev: Looking around,  Up: Top
 
-11 The Trash
+11 Searches
+***********
+
+View ⇒ Search... (‘M-s s’) looks below the folder you're in for
+the files a few words describe, and shows them as if they were
+one folder: open them, drag them, copy or move them as anywhere
+else.  Every word must hold:
+
+‘report’
+     A name holding "report", in any case.
+‘*.pdf’, ‘IMG_20??*’
+     Names like it: ‘*’ any run of characters, ‘?’ any one.
+‘kind:pdf’
+     Of a kind: folder, file, image, video, audio, pdf, text,
+     lisp, archive.
+‘newer:7’, ‘older:30’
+     Changed in the last 7 days, or not for 30.
+‘larger:10M’, ‘smaller:1k’
+     By size (k, M, G).
+‘-draft’
+     Not: a word with ‘-’ in front.
+
+   So ‘kind:pdf newer:30 -invoice’ is the PDFs of the last month
+that aren't invoices.  Hidden files and folders aren't looked
+in, nor what a project's ‘.gitignore’ leaves out (when ‘fd’ is
+installed), nor ‘node_modules’.  At most 1000 are shown.
+
+   ‘F5’ looks again.  View ⇒ Keep This Search... keeps it by
+name: it's down the side under Searches from then on, a click
+away, and always up to date.  They're kept in
+‘~/.config/esploro/searches.lisp’, where a search can also be
+written as an s-expression: ‘(:and (:kind :pdf) (:or (:name
+"tax") (:name "receipt")))’.
+
+
+File: esploro.info,  Node: The Trash,  Next: Where files are open,  Prev: Searches,  Up: Top
+
+12 The Trash
 ************
 
 Esploro uses the Trash other programs use (the freedesktop one,
@@ -360,7 +398,7 @@ after asking: that one can't be undone.
 
 File: esploro.info,  Node: Where files are open,  Next: Plans from agents,  Prev: The Trash,  Up: Top
 
-12 Where files are open
+13 Where files are open
 ***********************
 
 Beside a file that a window has open, Esploro says which: "open
@@ -372,7 +410,7 @@ such a file goes to its window instead of opening it again.
 
 File: esploro.info,  Node: Plans from agents,  Next: Keys and mouse,  Prev: Where files are open,  Up: Top
 
-13 Plans from agents
+14 Plans from agents
 ********************
 
 An agent (Claude Code, through Vikix's ‘vikix mcp’) never moves,
@@ -398,7 +436,7 @@ isn't applied).  ‘C-c C-c’ saves and goes back to the review;
 
 File: esploro.info,  Node: Keys and mouse,  Next: The command line,  Prev: Plans from agents,  Up: Top
 
-14 Keys and mouse
+15 Keys and mouse
 *****************
 
 Mouse
@@ -428,6 +466,7 @@ s                         next sort
 .                         hidden files
 /                         only names with...
 M-s f                     find below
+M-s s                     search below
 F5                        refresh
 F3                        two panes, or one
 F11                       the preview, or none
@@ -441,7 +480,7 @@ m, u, U                   mark, unmark, unmark all (dired's)
 
 File: esploro.info,  Node: The command line,  Next: Writing commands,  Prev: Keys and mouse,  Up: Top
 
-15 The command line
+16 The command line
 *******************
 
 ‘esploro [FOLDER]’
@@ -463,6 +502,14 @@ File: esploro.info,  Node: The command line,  Next: Writing commands,  Prev: Key
 ‘esploro recipe run NAME|last FILE...’
      Recipes (*note Recipes::): the last change, or one kept by
      name, done again on FILE....
+‘esploro query [--lines] WORDS [FOLDER]’
+     The files below FOLDER that WORDS describe (*note
+     Searches::), one a line with ‘--lines’.
+‘esploro search list’
+‘esploro search save NAME WORDS [FOLDER]’
+‘esploro search forget NAME’
+‘esploro search run [--lines] NAME’
+     Searches kept by name.
 ‘esploro propose FILE [WHY]’
      A plan for you to review in Esploro (what an agent's
      proposal runs).
@@ -497,7 +544,7 @@ File: esploro.info,  Node: The command line,  Next: Writing commands,  Prev: Key
 
 File: esploro.info,  Node: Writing commands,  Prev: The command line,  Up: Top
 
-16 Writing commands
+17 Writing commands
 *******************
 
 The core defines commands once, for the kinds of file they're
@@ -517,22 +564,23 @@ the next step.
 
 Tag Table:
 Node: Top276
-Node: Opening Esploro1904
-Node: The window3720
-Node: Selecting and opening4747
-Node: Changing files5800
-Node: Recipes7307
-Node: Drag and drop8040
-Node: The preview8766
-Node: Two panes9880
-Node: Windows and workspaces10453
-Node: Looking around11316
-Node: The Trash12158
-Node: Where files are open12639
-Node: Plans from agents13110
-Node: Keys and mouse14185
-Node: The command line15931
-Node: Writing commands17933
+Node: Opening Esploro1973
+Node: The window3789
+Node: Selecting and opening4816
+Node: Changing files5869
+Node: Recipes7376
+Node: Drag and drop8109
+Node: The preview8835
+Node: Two panes9949
+Node: Windows and workspaces10522
+Node: Looking around11385
+Node: Searches12226
+Node: The Trash13608
+Node: Where files are open14083
+Node: Plans from agents14554
+Node: Keys and mouse15629
+Node: The command line17414
+Node: Writing commands19738
 
 End Tag Table
 
