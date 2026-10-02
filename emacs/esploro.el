@@ -675,6 +675,22 @@ Emacs's own quit would end all of Emacs."
                (delete-window (get-buffer-window esploro-places-buffer-name)))
              (set-frame-parameter frame 'esploro nil)))))
 
+;;; --- Dragging out: the file list as the standard says --------------------------------------
+
+(defun esploro--uri-list-crlf (converted)
+  "CONVERTED (Emacs's text/uri-list for a drag) with CRLF line ends.
+RFC 2483 asks for CRLF; Emacs sends LF (select.el), which GTK and Qt
+forgive, but winit (Alacritty and other Rust programs) splits on CRLF, so
+a dropped name kept its newline, named no file, and the drop was lost."
+  (if (and (consp converted) (stringp (cdr converted)))
+      (cons (car converted)
+            (replace-regexp-in-string "\r?\n" "\r\n" (cdr converted) t t))
+    converted))
+
+(with-eval-after-load 'select
+  (when (fboundp 'xselect-convert-to-text-uri-list)
+    (advice-add 'xselect-convert-to-text-uri-list :filter-return #'esploro--uri-list-crlf)))
+
 ;;; --- Menus, the tool bar and the keys -------------------------------------------------------
 
 (defvar-keymap esploro-mode-map

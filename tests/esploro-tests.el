@@ -65,6 +65,17 @@
   (should (null (esploro--uri-file "https://example.com/x")))
   (should (equal (esploro--uri-file "file://localhost/tmp/x") "/tmp/x")))
 
+(ert-deftest esploro-uri-list-crlf ()
+  ;; Dragged out, the file list ends its lines in CRLF, as RFC 2483 says
+  ;; (winit, in Alacritty, reads nothing else).
+  (should (equal (esploro--uri-list-crlf '(text/uri-list . "file:///a\nfile:///b\n"))
+                 '(text/uri-list . "file:///a\r\nfile:///b\r\n")))
+  (should (equal (esploro--uri-list-crlf '(text/uri-list . "file:///a\r\n"))
+                 '(text/uri-list . "file:///a\r\n")))
+  (should (null (esploro--uri-list-crlf nil)))
+  (when (fboundp 'xselect-convert-to-text-uri-list)
+    (should (string-suffix-p "\r\n" (cdr (xselect-convert-to-text-uri-list 'XdndSelection 'text/uri-list "/tmp/x"))))))
+
 (ert-deftest esploro-copied-files ()
   (should (equal (esploro--parse-copied "copy\nfile:///tmp/a%20b\nfile:///tmp/c")
                  '(copy "/tmp/a b" "/tmp/c")))
