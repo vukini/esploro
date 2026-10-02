@@ -321,17 +321,18 @@ CHECK-PLAN then judges."
 (defun write-plan (steps path)
   (write-forms path steps :comment *plan-file-comment*))
 
-(defvar *journal-counter* 0)
-
 (defvar *journal-version* 0
   "Goes up each time the journal changes (a plan applied or undone), so the
 window reads it again only then.")
 
 (defun write-journal (steps inverse)
-  (let ((path (join-path (journal-folder)
-                         (format nil "~a-~d.lisp"
-                                 (remove #\: (timestamp (get-universal-time) "" "-"))
-                                 (incf *journal-counter*)))))
+  ;; Named by the second, then a number the next free one: two plans in
+  ;; one second (two esploro processes, or one applying several) each get
+  ;; their own file, and sorting the names sorts them by age.
+  (let* ((stamp (remove #\: (timestamp (get-universal-time) "" "-")))
+         (path (loop for n from 1
+                     for path = (join-path (journal-folder) (format nil "~a-~4,'0d.lisp" stamp n))
+                     unless (path-exists-p path) return path)))
     (write-forms path (list (list :applied :time (timestamp) :steps steps :inverse inverse :undone nil)))
     (incf *journal-version*)))
 

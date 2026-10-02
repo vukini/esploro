@@ -159,6 +159,12 @@
 (check "the copies undone went to the Trash, not gone"
        (there (join-path (trash-folder) "files" "new2")))
 (check "nothing left to undo" (null (undo-last)))
+(check "a dozen plans in one second: undo takes back the newest, each in turn"
+       (progn (dotimes (i 12) (apply-plan (list (list :mkdir (p (format nil "many~d" i))))))
+              (and (loop for i from 11 downto 0
+                         always (and (undo-last) (not (there (p (format nil "many~d" i))))
+                                     (or (zerop i) (there (p (format nil "many~d" (1- i)))))))
+                   (null (undo-last)))))
 
 ;;; A step that fails while running: the restarts.
 (mkdir (p "locked"))
