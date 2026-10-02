@@ -123,7 +123,12 @@
      (should esploro-mode)
      (should (eq mouse-1-click-follows-link 'double))
      (should dired-mouse-drag-files)
-     (should (eq (cdr (assoc "^file:" dnd-protocol-alist)) #'esploro--dnd-file)))
+     (should (eq (cdr (assoc "^file:" dnd-protocol-alist)) #'esploro--dnd-file))
+     ;; A file can be dragged out from anywhere on its row, not only its name.
+     (save-excursion
+       (dired-goto-file (esploro-tests--path "f/a.txt"))
+       (should (eq (lookup-key (get-text-property (line-beginning-position) 'keymap) [down-mouse-1])
+                   #'dired-mouse-drag))))
    (esploro-toggle-hidden)
    (should (member ".hidden" (esploro-tests--names)))
    (esploro-toggle-hidden)

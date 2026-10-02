@@ -578,6 +578,19 @@ The same again turns it round."
 
 ;;; --- The mouse ----------------------------------------------------------------------------
 
+(defun esploro--whole-row-drag ()
+  "Let a file be dragged out from anywhere on its row, as in other file
+managers, not only from its name: dired puts its drag keymap on the name."
+  (when (and dired-mouse-drag-files (boundp 'dired-mouse-drag-files-map))
+    (let ((inhibit-read-only t))
+      (save-excursion
+        (goto-char (point-min))
+        (while (not (eobp))
+          (let ((name (dired-move-to-filename)))
+            (when (and name (not (member (dired-get-filename 'no-dir t) '("." ".."))))
+              (put-text-property (line-beginning-position) name 'keymap dired-mouse-drag-files-map)))
+          (forward-line 1))))))
+
 (defun esploro-mouse-open (event)
   "Open what was double-clicked."
   (interactive "e")
@@ -796,6 +809,7 @@ through the core, journaled so they can be undone."
     (setq-local dnd-protocol-alist (cons '("^file:" . esploro--dnd-file) dnd-protocol-alist))
     (setq-local tool-bar-map esploro-tool-bar-map)
     (setq-local header-line-format '(:eval (esploro--header)))
+    (add-hook 'dired-after-readin-hook #'esploro--whole-row-drag nil t)
     (add-hook 'dired-after-readin-hook #'esploro--annotate nil t)))
 
 ;;; --- Places, down the side --------------------------------------------------------------
