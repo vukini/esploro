@@ -107,7 +107,14 @@
   (should (keymapp esploro-folder-menu))
   (should (keymapp esploro-tool-bar-map))
   (should (eq (keymap-lookup esploro-mode-map "<mouse-3>") #'esploro-context-menu))
-  (should (eq (keymap-lookup esploro-mode-map "C-y") #'esploro-paste)))
+  (should (eq (keymap-lookup esploro-mode-map "C-y") #'esploro-paste))
+  ;; Quitting in Esploro closes Esploro, never all of Emacs.
+  (should (eq (keymap-lookup esploro-mode-map "<remap> <save-buffers-kill-terminal>") #'esploro-close))
+  (should (eq (keymap-lookup esploro-places-mode-map "<remap> <save-buffers-kill-terminal>") #'esploro-close))
+  (with-temp-buffer
+    (esploro-mode 1)
+    (should (eq (key-binding (kbd "C-x C-c")) #'esploro-close))
+    (should (eq (key-binding [menu-bar file exit-emacs]) #'esploro-close))))
 
 ;;; --- A folder in the buffer --------------------------------------------------------------
 

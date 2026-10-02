@@ -654,6 +654,27 @@ Through the core, so undo takes it back."
       (if steps (esploro--apply steps "dropped in")
         (message "Esploro: dropped on the folder it's in: nothing to do")))))
 
+;;; --- Closing ---------------------------------------------------------------------------------
+
+(defun esploro-close ()
+  "Close Esploro's frame; Emacs, and its other frames, go on.
+Quitting from the menu (File, Quit) or with C-x C-c in Esploro does this:
+in Emacs run as a daemon, the frame Esploro made isn't a client's, and
+Emacs's own quit would end all of Emacs."
+  (interactive)
+  (let ((frame (esploro--frame)))
+    (cond ((null frame) (bury-buffer))
+          ((or (daemonp)
+               (seq-some (lambda (f) (and (not (eq f frame)) (frame-visible-p f)
+                                          (not (frame-parameter f 'esploro))))
+                         (frame-list)))
+           (delete-frame frame))
+          ;; Esploro's frame is the only one, outside a daemon: keep Emacs.
+          (t (switch-to-buffer (other-buffer esploro-buffer-name))
+             (when (window-live-p (get-buffer-window esploro-places-buffer-name))
+               (delete-window (get-buffer-window esploro-places-buffer-name)))
+             (set-frame-parameter frame 'esploro nil)))))
+
 ;;; --- Menus, the tool bar and the keys -------------------------------------------------------
 
 (defvar-keymap esploro-mode-map
@@ -681,6 +702,8 @@ Through the core, so undo takes it back."
   "<f5>" #'revert-buffer
   "<f9>" #'esploro-places-toggle
   "?" #'esploro-help
+  "<remap> <save-buffers-kill-terminal>" #'esploro-close
+  "<remap> <save-buffers-kill-emacs>" #'esploro-close
   "<mouse-2>" #'esploro-mouse-open
   "C-<down-mouse-1>" #'ignore
   "C-<mouse-1>" #'esploro-mouse-toggle
@@ -734,7 +757,8 @@ Through the core, so undo takes it back."
      ["Restore" esploro-restore :active (esploro--in-trash-p)]
      ["Empty the Trash..." esploro-empty-trash])
     "---"
-    ["Keys and Mouse" esploro-help :keys "?"]))
+    ["Keys and Mouse" esploro-help :keys "?"]
+    ["Close Esploro" esploro-close :keys "C-x C-c"]))
 
 (easy-menu-define esploro-file-menu nil
   "Right-click on a file."
@@ -850,6 +874,12 @@ through the core, journaled so they can be undone."
                     (cons "Bookmarks" (esploro--bookmarks))
                     (cons "" (list (cons "Trash" (esploro--trash-dir)))))))
 
+(defvar-keymap esploro-places-mode-map
+  :doc "Esploro's places."
+  :parent special-mode-map
+  "<remap> <save-buffers-kill-terminal>" #'esploro-close
+  "<remap> <save-buffers-kill-emacs>" #'esploro-close)
+
 (define-derived-mode esploro-places-mode special-mode "Places"
   "Esploro's places: click one, or RET on it."
   (setq-local cursor-type nil)
@@ -928,6 +958,7 @@ Keys
   .                     hidden files        /           only names with...
   M-s f                 find below          F5          refresh
   F9                    places              ?           this
+  C-x C-c, File > Quit  close Esploro (Emacs goes on)
   m, u, U               mark, unmark, unmark all (dired's)
 
 Every change (copy, move, paste, rename, a new folder, the Trash, a drop)
