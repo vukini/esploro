@@ -70,7 +70,7 @@ What PCManFM does today in Vikix (Super+e, folders by default, new drives, "Show
 
 **2. Vikix's file explorer.** Super+e, `inode/directory` in mimeapps.list, udiskie's `--file-manager`, and org.freedesktop.FileManager1 (the browsers' "Show in folder"). From the optional feature into the base install, with a migration, and PCManFM kept as the fallback for a release or two. The key card, the guides, the agents' guide, the tests, `vikix doctor`.
 
-**Step 3, begun 2026-10-02:** reveal (`esploro reveal`: the focused window's file, from what Emacs shows or what the window's program was started on, works in or holds open, programs and their own logs left out), workspace means project (`esploro` with no folder: the project root, a `.git` or a `log.md`, most of the workspace's windows are in), and plans from agents (`esploro propose`: checked, then shown for review with Apply, Edit and Cancel; Edit opens the plan as text, checked again on each save; vikix mcp's propose_file_changes, which since Vikix 0.71.56 gives every agent the user's rules for where files go, `~/.config/esploro/sorting.md`, in their own words). Still to do from it: learning from your edits (below), closing a project, the other doors for commands (rofi, StumpWM keys, embark), the shared selection, folders as queries, recorded plans.
+**Step 3, begun 2026-10-02:** reveal (`esploro reveal`: the focused window's file, from what Emacs shows or what the window's program was started on, works in or holds open, programs and their own logs left out), workspace means project (`esploro` with no folder: the project root, a `.git` or a `log.md`, most of the workspace's windows are in), and plans from agents (`esploro propose`: checked, then shown for review with Apply, Edit and Cancel; Edit opens the plan as text, checked again on each save; vikix mcp's propose_file_changes, which since Vikix 0.71.56 gives every agent the user's rules for where files go, `~/.config/esploro/sorting.md`, in their own words). Then, the same day, the rest of it: file commands through every door (a Commands menu in the File and right-click menus, your own in `~/.config/esploro/commands.lisp`, `esploro commands` and `esploro run` for rofi and the rest, where a command that changes files becomes a plan to review); recorded plans (`z` does the last change again on the selection, Save Last Change As… keeps it by name, Recipes on the menus; `esploro recipe`); folders as queries (`esploro query`: words like `kind:pdf newer:30 -invoice`, with fd; View → Search…, kept by name down the side under Searches, F5 looks again); the shared selection (`esploro selection`: what's selected in the Esploro view or dired used last, for shells and agents); closing a project (File → Close Project…: its Emacs buffers, unsaved first, with Save and Close, and the other windows with something in it, with Go). Still to do from it: learning from your edits (below), embark, and Vikix's rofi door.
 
 **Learning from your edits (planned, 2026-10-02).** When you edit an agent's plan before applying it, the difference is a correction: the agent's step against yours (`Dataroom LME.zip`: Archives → Work). On Apply, Esploro keeps that difference beside the plan in the journal and offers to add it to `~/.config/esploro/sorting.md` as a rule in words ("a work zip goes in Work, not in Archives"), shown first and written only on your yes, never on its own. The rules file stays yours, plain text you can change; agents get it through vikix mcp. Then: the same from plans you make yourself (what you keep moving where), and the apprentice in `IDEAS.md`, which turns repeated corrections into a suggested rule or a recorded plan.
 
@@ -78,13 +78,11 @@ What PCManFM does today in Vikix (Super+e, folders by default, new drives, "Show
 
 ## Later
 
-- The other doors for commands: rofi, Emacs (embark), StumpWM keys, the MCP server.
-- Folders as queries, and saving them.
-- The shared selection, with dired.
-- Workspace means project: opening in the workspace's folder, dropping on a workspace.
-- Recording a plan as a named command.
+- Commands in embark, in Emacs.
+- Dropping files on a workspace.
 - Learning from your edits to a plan: rules for `sorting.md`, offered, never written on their own.
-- Thumbnails, and drag and drop.
+- Recipes beyond one folder: renames by a pattern, sorting by kind into several folders.
+- Thumbnails in the list, archives opened like folders, progress and cancel for long copies.
 
 ## The risk
 
