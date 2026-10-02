@@ -70,7 +70,9 @@ What PCManFM does today in Vikix (Super+e, folders by default, new drives, "Show
 
 **2. Vikix's file explorer.** Super+e, `inode/directory` in mimeapps.list, udiskie's `--file-manager`, and org.freedesktop.FileManager1 (the browsers' "Show in folder"). From the optional feature into the base install, with a migration, and PCManFM kept as the fallback for a release or two. The key card, the guides, the agents' guide, the tests, `vikix doctor`.
 
-**Step 3, begun 2026-10-02:** reveal (`esploro reveal`: the focused window's file, from what Emacs shows or what the window's program was started on, works in or holds open, programs and their own logs left out), workspace means project (`esploro` with no folder: the project root, a `.git` or a `log.md`, most of the workspace's windows are in), and plans from agents (`esploro propose`: checked, then shown for review with Apply and Cancel; vikix mcp's propose_file_changes). Still to do from it: closing a project, the other doors for commands (rofi, StumpWM keys, embark), the shared selection, folders as queries, recorded plans.
+**Step 3, begun 2026-10-02:** reveal (`esploro reveal`: the focused window's file, from what Emacs shows or what the window's program was started on, works in or holds open, programs and their own logs left out), workspace means project (`esploro` with no folder: the project root, a `.git` or a `log.md`, most of the workspace's windows are in), and plans from agents (`esploro propose`: checked, then shown for review with Apply, Edit and Cancel; Edit opens the plan as text, checked again on each save; vikix mcp's propose_file_changes, which since Vikix 0.71.56 gives every agent the user's rules for where files go, `~/.config/esploro/sorting.md`, in their own words). Still to do from it: learning from your edits (below), closing a project, the other doors for commands (rofi, StumpWM keys, embark), the shared selection, folders as queries, recorded plans.
+
+**Learning from your edits (planned, 2026-10-02).** When you edit an agent's plan before applying it, the difference is a correction: the agent's step against yours (`Dataroom LME.zip`: Archives → Work). On Apply, Esploro keeps that difference beside the plan in the journal and offers to add it to `~/.config/esploro/sorting.md` as a rule in words ("a work zip goes in Work, not in Archives"), shown first and written only on your yes, never on its own. The rules file stays yours, plain text you can change; agents get it through vikix mcp. Then: the same from plans you make yourself (what you keep moving where), and the apprentice in `IDEAS.md`, which turns repeated corrections into a suggested rule or a recorded plan.
 
 **3. What only it does.** From any window, reveal its file; workspace means project (open in the workspace's folder; closing a project lists its open files, unsaved first); the commands' other doors (rofi, StumpWM keys, Emacs, `vikix mcp` for agents, which only ever propose plans); the shared selection with dired; folders as queries; a recorded plan as a named command.
 
@@ -81,6 +83,7 @@ What PCManFM does today in Vikix (Super+e, folders by default, new drives, "Show
 - The shared selection, with dired.
 - Workspace means project: opening in the workspace's folder, dropping on a workspace.
 - Recording a plan as a named command.
+- Learning from your edits to a plan: rules for `sorting.md`, offered, never written on their own.
 - Thumbnails, and drag and drop.
 
 ## The risk
