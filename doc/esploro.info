@@ -1,0 +1,410 @@
+This is esploro.info, produced by makeinfo version 7.3 from
+esploro.texi.
+
+Esploro is free software under the MIT licence.  So is this
+manual.
+INFO-DIR-SECTION Emacs
+START-INFO-DIR-ENTRY
+* Esploro: (esploro).   A file explorer in Emacs, for Lisp desktops.
+END-INFO-DIR-ENTRY
+
+
+File: esploro.info,  Node: Top,  Next: Opening Esploro,  Up: (dir)
+
+Esploro
+*******
+
+Esploro (Esperanto for "exploration") is a file explorer.  Its
+window is a frame of Emacs, built on dired, with what a file
+manager is expected to have, for the mouse as much as the keys.
+Its core, which makes every change to files, is Common Lisp, and
+knows which window has each file open.
+
+   Every change can be undone: copying, moving, pasting,
+renaming, a new folder, the Trash and files dropped in are each
+checked whole before anything happens, done in the background,
+and kept in a journal.
+
+* Menu:
+
+* Opening Esploro::        Super+e, the command, and M-x esploro.
+* The window::             The list, the places, the tool bar, the menus.
+* Selecting and opening::  Click, double-click, the keys.
+* Changing files::         Copy, cut, paste, rename, the Trash, undo.
+* Drag and drop::          Files in from other programs, and out to them.
+* Two panes::              Two folders side by side.
+* Windows and workspaces:: One Esploro per workspace, or more.
+* Looking around::         Sorting, hidden files, a filter, finding below.
+* The Trash::              Looking in it, restoring, emptying.
+* Where files are open::   "open in Emacs on 2" beside a file.
+* Keys and mouse::         Everything, on one page.
+* The command line::       The esploro command.
+* Writing commands::       Commands of your own, in Lisp.
+
+
+File: esploro.info,  Node: Opening Esploro,  Next: The window,  Prev: Top,  Up: Top
+
+1 Opening Esploro
+*****************
+
+‘Super+e’
+     The Esploro window on the workspace you're on, or a new one
+     there.  On Vikix this is the key for files; where Esploro
+     isn't installed, it opens PCManFM instead.
+
+‘Super+Alt+Shift+e’
+     A new Esploro window, even where one is open.
+
+‘esploro FOLDER’
+     From a shell, the launcher, or a program opening a folder:
+     FOLDER in the Esploro window on your workspace, or a new
+     one there.  ‘esploro --new FOLDER’ always opens a new
+     window.
+
+‘M-x esploro’
+     From Emacs, once Esploro has been opened (or with ‘emacs/’
+     on Emacs's ‘load-path’).  With a prefix argument, a new
+     window.
+
+   Esploro's window is a frame of the Emacs that is running,
+which on Vikix is a daemon started at login, so it opens at
+once.  The first time, the command loads the window's code into
+that Emacs; nothing in your Emacs configuration is needed.
+
+   To close it, use File, Close Esploro, ‘C-x C-c’, or close the
+window (‘Super+q’ on Vikix).  Only that window closes: Emacs,
+and its other frames, go on.
+
+
+File: esploro.info,  Node: The window,  Next: Selecting and opening,  Prev: Opening Esploro,  Up: Top
+
+2 The window
+************
+
+The list
+     The folder's files, folders first, with their size and when
+     they last changed.  The line at the top says where you are,
+     how the list is sorted, and when hidden files are shown or
+     a filter is on.
+
+Places
+     Down the left side: your home, the usual folders
+     (Documents, Downloads, Pictures, Music, Videos, Projects,
+     Dropbox, when they exist), drives plugged in (in
+     ‘/run/media’), the bookmarks GTK programs keep
+     (‘~/.config/gtk-3.0/bookmarks’), and the Trash.  Click one
+     to go there.  ‘F9’, or View, Places, hides them or shows
+     them again.
+
+The tool bar
+     Back, Forward, Up, Home, Places, Two Panes, New Folder,
+     Copy, Cut, Paste, Trash, Undo, Find, Refresh and Help.
+
+The menus
+     File, Edit, View, Go and Help.  Esploro's frame shows only
+     these; your other Emacs frames keep Emacs's own menus.
+
+
+File: esploro.info,  Node: Selecting and opening,  Next: Changing files,  Prev: The window,  Up: Top
+
+3 Selecting and opening
+***********************
+
+Click
+     Selects the file: the one the next command acts on.
+
+‘Ctrl’+click
+     Adds the file to the selection, or takes it out.
+
+‘Shift’+click
+     Selects every file from the one selected last to the one
+     clicked.
+
+Double-click, or ‘RET’
+     Opens it.  A folder opens in the same window.  A file that
+     a window already has open goes to that window rather than
+     opening a second time.  Text opens in Emacs, in one of its
+     other frames.  Anything else opens in its usual program (as
+     ‘~/.config/mimeapps.list’ says).
+
+Right-click
+     What can be done with the file under the mouse, or, on
+     empty space, with the folder.
+
+File, Open With
+     Opens the selection with a program you name.
+
+   Edit, Select All, Select None and Invert Selection work on
+every file in the folder.  Dired's keys still mark: ‘m’ marks,
+‘u’ unmarks, ‘U’ unmarks all.
+
+
+File: esploro.info,  Node: Changing files,  Next: Drag and drop,  Prev: Selecting and opening,  Up: Top
+
+4 Changing files
+****************
+
+Copy, Cut, Paste (‘M-w’, ‘C-w’, ‘C-y’)
+     Copy or cut the selection, go to another folder, and paste.
+     Pasting where the files already are makes copies beside
+     them ("notes copy.txt").  Other file managers can paste
+     what Esploro copied, and Esploro can paste what they
+     copied.
+
+Duplicate
+     A copy of each selected file beside it.
+
+Copy To, Move To
+     Copies or moves the selection into a folder you type.
+
+Rename (‘F2’)
+     A new name for the file selected.
+
+New Folder (‘+’)
+     A folder in the one you're in.
+
+Move to Trash (‘Delete’)
+     Puts the selection in the Trash.  Nothing is deleted for
+     good there.
+
+Undo (‘C-/’)
+     Puts back the last change Esploro made.  Undo again for the
+     one before.  Undoing a copy puts the copy in the Trash,
+     rather than deleting it.
+
+   Every change is a plan, a short list of steps, checked whole
+before anything happens: a file that would be overwritten, or a
+folder that isn't there, stops it with nothing changed, and the
+message says why.  Changes run in the background, so a long copy
+doesn't stop Emacs.  Each one is kept in a journal
+(‘~/.local/state/esploro/journal/’), which is what undo reads.
+
+   Dired's own keys (‘C’, ‘R’, ‘D’ and the rest) still work in
+the list, but around the journal: what they do can't be undone
+from Esploro.
+
+
+File: esploro.info,  Node: Drag and drop,  Next: Two panes,  Prev: Changing files,  Up: Top
+
+5 Drag and drop
+***************
+
+In
+     Drag files from another program onto the list: they're
+     copied into the folder (moved, when the other program says
+     so, often with ‘Shift’).  Like every change, it can be
+     undone.  Files dropped on the folder they're already in are
+     left alone.
+
+Out
+     Press on a file anywhere on its row and drag it to another
+     program: a browser's upload, a mail, a terminal (which
+     types its name).  It's copied; hold ‘Shift’ to move it.
+     Selected files go together.
+
+Between panes
+     Drag from one pane to the other: the file is copied into
+     that pane's folder.
+
+
+File: esploro.info,  Node: Two panes,  Next: Windows and workspaces,  Prev: Drag and drop,  Up: Top
+
+6 Two panes
+***********
+
+‘F3’ (View, Two Panes, or the tool bar) shows two folders side
+by side.  The new pane starts at the same folder; each then has
+its own folder, history, sort and hidden files.  ‘F3’ again goes
+back to one.
+
+Copy to Other Pane (‘C-c C-c’)
+Move to Other Pane (‘F6’)
+     The selection, into the other pane's folder.  Both are on
+     the Edit menu and the right-click menu.
+
+   The places and the tool bar act on the pane used last.
+
+
+File: esploro.info,  Node: Windows and workspaces,  Next: Looking around,  Prev: Two panes,  Up: Top
+
+7 Windows and workspaces
+************************
+
+Each workspace can have its own Esploro window, at its own
+folder.  ‘Super+e’ goes to the one on the workspace you're on,
+or opens one there; one on another workspace stays where it is.
+To have two on the same workspace, use ‘Super+Alt+Shift+e’,
+File, New Window (‘C-x 5 2’), or ‘esploro --new’.
+
+   Esploro knows which window is on which workspace by asking
+StumpWM. Without StumpWM, ‘esploro FOLDER’ uses any Esploro
+window.
+
+
+File: esploro.info,  Node: Looking around,  Next: The Trash,  Prev: Windows and workspaces,  Up: Top
+
+8 Looking around
+****************
+
+Sorting (View, or ‘s’)
+     By name, size (largest first), time (newest first) or kind.
+     The same again, or View, The Other Way Round, turns it
+     round.  ‘s’ goes through them in turn.
+
+Hidden files (‘.’)
+     Shows or hides the files whose names start with a dot.
+
+Filter (‘/’)
+     Shows only the names holding some text, in any case, until
+     you refresh (‘F5’).
+
+Find Below (‘M-s f’)
+     Every file below this folder whose name matches, as a list
+     you can open, copy and drag from like any folder.  Back
+     returns.
+
+Going (‘M-Left’, ‘M-Right’, ‘M-Up’, ‘C-l’)
+     Back, forward, the folder above, and a folder typed, with
+     completion.
+
+
+File: esploro.info,  Node: The Trash,  Next: Where files are open,  Prev: Looking around,  Up: Top
+
+9 The Trash
+***********
+
+Esploro uses the Trash other programs use (the freedesktop one,
+in ‘~/.local/share/Trash’).  Go, The Trash (or Trash in the
+places) shows what's in it.  There, Restore from the Trash puts
+the selection back where it was; undo puts it in the Trash
+again.  Empty the Trash deletes everything in it, for good,
+after asking: that one can't be undone.
+
+
+File: esploro.info,  Node: Where files are open,  Next: Keys and mouse,  Prev: The Trash,  Up: Top
+
+10 Where files are open
+***********************
+
+Beside a file that a window has open, Esploro says which: "open
+in Emacs on 2 (unsaved)", "open in mpv on 4".  It asks StumpWM
+for the windows and their programs, ‘/proc’ for what those hold
+open or were started on, and Emacs for its buffers.  Opening
+such a file goes to its window instead of opening it again.
+
+
+File: esploro.info,  Node: Keys and mouse,  Next: The command line,  Prev: Where files are open,  Up: Top
+
+11 Keys and mouse
+*****************
+
+Mouse
+----------------------------------------------------------------------
+click                     select it
+double-click              open it (a folder goes in)
+Ctrl+click                add it to the selection, or take it out
+Shift+click               select everything from the last one to
+                          here
+right-click               what can be done with it, or with the
+                          folder
+drag a row out            give the file to another program
+drop files in             copy them here
+Keys
+----------------------------------------------------------------------
+RET                       open
+M-Left, M-Right           back, forward
+M-Up or ^                 the folder above
+C-l                       go to a folder, typed
+M-w, C-w, C-y             copy, cut, paste
+Delete                    to the Trash
+F2                        rename
++                         new folder
+C-/                       undo the last change
+s                         next sort
+.                         hidden files
+/                         only names with...
+M-s f                     find below
+F5                        refresh
+F3                        two panes, or one
+C-c C-c, F6               copy, move to the other pane
+F9                        places
+C-x 5 2                   another Esploro window
+C-x C-c                   close Esploro (Emacs goes on)
+?, F1                     this manual
+m, u, U                   mark, unmark, unmark all (dired's)
+
+
+File: esploro.info,  Node: The command line,  Next: Writing commands,  Prev: Keys and mouse,  Up: Top
+
+12 The command line
+*******************
+
+‘esploro [FOLDER]’
+     FOLDER (by default the one you're in) in the Esploro window
+     on your workspace, or a new one there.
+‘esploro --new [FOLDER]’
+     A new Esploro window.
+‘esploro --where [PATH...]’
+     Which windows have PATH open, or every file that's open.
+
+   What the window uses (each answers with one s-expression):
+
+‘esploro apply [FILE]’
+     Applies the plan in FILE, or on standard input: one step a
+     line, ‘(:copy "/from" "/to")’, ‘(:move ...)’, ‘(:rename
+     "/path" "new name")’, ‘(:mkdir "/path")’, ‘(:trash
+     "/path")’.  Anything else is refused.
+‘esploro undo’
+     Undoes the last applied plan.
+‘esploro where FOLDER’
+     The files in FOLDER a window has open.
+‘esploro open PATH’
+     Goes to the window that has PATH, or opens it.
+‘esploro trash-list’
+‘esploro restore NAME...’
+‘esploro empty-trash’
+     The Trash.
+
+
+File: esploro.info,  Node: Writing commands,  Prev: The command line,  Up: Top
+
+13 Writing commands
+*******************
+
+The core defines commands once, for the kinds of file they're
+for:
+
+     (esploro:define-file-command shrink ((path :image) :changes t)
+       "Plan a smaller copy beside it."
+       (list (list :copy path (esploro::free-name path " small"))))
+
+   Kinds: ‘:folder’, ‘:image’, ‘:video’, ‘:audio’, ‘:pdf’,
+‘:text’, ‘:lisp’, ‘:archive’, ‘:file’ (anything but a folder)
+and ‘t’ (anything).  A command with ‘:changes t’ returns plan
+steps instead of touching files, so it is checked, journaled and
+undoable like the rest.  Offering these in the window's menus is
+the next step.
+
+
+Tag Table:
+Node: Top276
+Node: Opening Esploro1691
+Node: The window2881
+Node: Selecting and opening3894
+Node: Changing files4947
+Node: Drag and drop6460
+Node: Two panes7191
+Node: Windows and workspaces7766
+Node: Looking around8369
+Node: The Trash9209
+Node: Where files are open9688
+Node: Keys and mouse10156
+Node: The command line11792
+Node: Writing commands12854
+
+End Tag Table
+
+
+Local Variables:
+coding: utf-8
+End:

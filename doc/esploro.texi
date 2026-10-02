@@ -1,0 +1,357 @@
+\input texinfo
+@c esploro.texi --- the Esploro manual.  make info builds esploro.info.
+@setfilename esploro.info
+@settitle Esploro
+@documentencoding UTF-8
+
+@dircategory Emacs
+@direntry
+* Esploro: (esploro).   A file explorer in Emacs, for Lisp desktops.
+@end direntry
+
+@copying
+Esploro is free software under the MIT licence.  So is this manual.
+@end copying
+
+@titlepage
+@title Esploro
+@subtitle A file explorer in Emacs, for Lisp desktops
+@end titlepage
+
+@node Top
+@top Esploro
+
+Esploro (Esperanto for ``exploration'') is a file explorer.  Its window
+is a frame of Emacs, built on dired, with what a file manager is
+expected to have, for the mouse as much as the keys.  Its core, which
+makes every change to files, is Common Lisp, and knows which window
+has each file open.
+
+Every change can be undone: copying, moving, pasting, renaming, a new
+folder, the Trash and files dropped in are each checked whole before
+anything happens, done in the background, and kept in a journal.
+
+@menu
+* Opening Esploro::        Super+e, the command, and M-x esploro.
+* The window::             The list, the places, the tool bar, the menus.
+* Selecting and opening::  Click, double-click, the keys.
+* Changing files::         Copy, cut, paste, rename, the Trash, undo.
+* Drag and drop::          Files in from other programs, and out to them.
+* Two panes::              Two folders side by side.
+* Windows and workspaces:: One Esploro per workspace, or more.
+* Looking around::         Sorting, hidden files, a filter, finding below.
+* The Trash::              Looking in it, restoring, emptying.
+* Where files are open::   ``open in Emacs on 2'' beside a file.
+* Keys and mouse::         Everything, on one page.
+* The command line::       The esploro command.
+* Writing commands::       Commands of your own, in Lisp.
+@end menu
+
+@node Opening Esploro
+@chapter Opening Esploro
+
+@table @asis
+@item @kbd{Super+e}
+The Esploro window on the workspace you're on, or a new one there.  On
+Vikix this is the key for files; where Esploro isn't installed, it
+opens PCManFM instead.
+
+@item @kbd{Super+Alt+Shift+e}
+A new Esploro window, even where one is open.
+
+@item @code{esploro @var{folder}}
+From a shell, the launcher, or a program opening a folder: @var{folder}
+in the Esploro window on your workspace, or a new one there.
+@code{esploro --new @var{folder}} always opens a new window.
+
+@item @kbd{M-x esploro}
+From Emacs, once Esploro has been opened (or with @file{emacs/} on
+Emacs's @code{load-path}).  With a prefix argument, a new window.
+@end table
+
+Esploro's window is a frame of the Emacs that is running, which on
+Vikix is a daemon started at login, so it opens at once.  The first
+time, the command loads the window's code into that Emacs; nothing in
+your Emacs configuration is needed.
+
+To close it, use File, Close Esploro, @kbd{C-x C-c}, or close the window
+(@kbd{Super+q} on Vikix).  Only that window closes: Emacs, and its other
+frames, go on.
+
+@node The window
+@chapter The window
+
+@table @asis
+@item The list
+The folder's files, folders first, with their size and when they last
+changed.  The line at the top says where you are, how the list is
+sorted, and when hidden files are shown or a filter is on.
+
+@item Places
+Down the left side: your home, the usual folders (Documents, Downloads,
+Pictures, Music, Videos, Projects, Dropbox, when they exist), drives
+plugged in (in @file{/run/media}), the bookmarks GTK programs keep
+(@file{~/.config/gtk-3.0/bookmarks}), and the Trash.  Click one to go
+there.  @kbd{F9}, or View, Places, hides them or shows them again.
+
+@item The tool bar
+Back, Forward, Up, Home, Places, Two Panes, New Folder, Copy, Cut,
+Paste, Trash, Undo, Find, Refresh and Help.
+
+@item The menus
+File, Edit, View, Go and Help.  Esploro's frame shows only these; your
+other Emacs frames keep Emacs's own menus.
+@end table
+
+@node Selecting and opening
+@chapter Selecting and opening
+
+@table @asis
+@item Click
+Selects the file: the one the next command acts on.
+
+@item @kbd{Ctrl}+click
+Adds the file to the selection, or takes it out.
+
+@item @kbd{Shift}+click
+Selects every file from the one selected last to the one clicked.
+
+@item Double-click, or @kbd{RET}
+Opens it.  A folder opens in the same window.  A file that a window
+already has open goes to that window rather than opening a second time.
+Text opens in Emacs, in one of its other frames.  Anything else opens
+in its usual program (as @file{~/.config/mimeapps.list} says).
+
+@item Right-click
+What can be done with the file under the mouse, or, on empty space,
+with the folder.
+
+@item File, Open With
+Opens the selection with a program you name.
+@end table
+
+Edit, Select All, Select None and Invert Selection work on every file
+in the folder.  Dired's keys still mark: @kbd{m} marks, @kbd{u}
+unmarks, @kbd{U} unmarks all.
+
+@node Changing files
+@chapter Changing files
+
+@table @asis
+@item Copy, Cut, Paste (@kbd{M-w}, @kbd{C-w}, @kbd{C-y})
+Copy or cut the selection, go to another folder, and paste.  Pasting
+where the files already are makes copies beside them (``notes
+copy.txt'').  Other file managers can paste what Esploro copied, and
+Esploro can paste what they copied.
+
+@item Duplicate
+A copy of each selected file beside it.
+
+@item Copy To, Move To
+Copies or moves the selection into a folder you type.
+
+@item Rename (@kbd{F2})
+A new name for the file selected.
+
+@item New Folder (@kbd{+})
+A folder in the one you're in.
+
+@item Move to Trash (@kbd{Delete})
+Puts the selection in the Trash.  Nothing is deleted for good there.
+
+@item Undo (@kbd{C-/})
+Puts back the last change Esploro made.  Undo again for the one before.
+Undoing a copy puts the copy in the Trash, rather than deleting it.
+@end table
+
+Every change is a plan, a short list of steps, checked whole before
+anything happens: a file that would be overwritten, or a folder that
+isn't there, stops it with nothing changed, and the message says why.
+Changes run in the background, so a long copy doesn't stop Emacs.  Each
+one is kept in a journal (@file{~/.local/state/esploro/journal/}),
+which is what undo reads.
+
+Dired's own keys (@kbd{C}, @kbd{R}, @kbd{D} and the rest) still work
+in the list, but around the journal: what they do can't be undone from
+Esploro.
+
+@node Drag and drop
+@chapter Drag and drop
+
+@table @asis
+@item In
+Drag files from another program onto the list: they're copied into the
+folder (moved, when the other program says so, often with @kbd{Shift}).
+Like every change, it can be undone.  Files dropped on the folder
+they're already in are left alone.
+
+@item Out
+Press on a file anywhere on its row and drag it to another program: a
+browser's upload, a mail, a terminal (which types its name).  It's
+copied; hold @kbd{Shift} to move it.  Selected files go together.
+
+@item Between panes
+Drag from one pane to the other: the file is copied into that pane's
+folder.
+@end table
+
+@node Two panes
+@chapter Two panes
+
+@kbd{F3} (View, Two Panes, or the tool bar) shows two folders side by
+side.  The new pane starts at the same folder; each then has its own
+folder, history, sort and hidden files.  @kbd{F3} again goes back to
+one.
+
+@table @asis
+@item Copy to Other Pane (@kbd{C-c C-c})
+@itemx Move to Other Pane (@kbd{F6})
+The selection, into the other pane's folder.  Both are on the Edit
+menu and the right-click menu.
+@end table
+
+The places and the tool bar act on the pane used last.
+
+@node Windows and workspaces
+@chapter Windows and workspaces
+
+Each workspace can have its own Esploro window, at its own folder.
+@kbd{Super+e} goes to the one on the workspace you're on, or opens one
+there; one on another workspace stays where it is.  To have two on the
+same workspace, use @kbd{Super+Alt+Shift+e}, File, New Window
+(@kbd{C-x 5 2}), or @code{esploro --new}.
+
+Esploro knows which window is on which workspace by asking StumpWM.
+Without StumpWM, @code{esploro @var{folder}} uses any Esploro window.
+
+@node Looking around
+@chapter Looking around
+
+@table @asis
+@item Sorting (View, or @kbd{s})
+By name, size (largest first), time (newest first) or kind.  The same
+again, or View, The Other Way Round, turns it round.  @kbd{s} goes
+through them in turn.
+
+@item Hidden files (@kbd{.})
+Shows or hides the files whose names start with a dot.
+
+@item Filter (@kbd{/})
+Shows only the names holding some text, in any case, until you refresh
+(@kbd{F5}).
+
+@item Find Below (@kbd{M-s f})
+Every file below this folder whose name matches, as a list you can
+open, copy and drag from like any folder.  Back returns.
+
+@item Going (@kbd{M-Left}, @kbd{M-Right}, @kbd{M-Up}, @kbd{C-l})
+Back, forward, the folder above, and a folder typed, with completion.
+@end table
+
+@node The Trash
+@chapter The Trash
+
+Esploro uses the Trash other programs use (the freedesktop one, in
+@file{~/.local/share/Trash}).  Go, The Trash (or Trash in the places)
+shows what's in it.  There, Restore from the Trash puts the selection
+back where it was; undo puts it in the Trash again.  Empty the Trash
+deletes everything in it, for good, after asking: that one can't be
+undone.
+
+@node Where files are open
+@chapter Where files are open
+
+Beside a file that a window has open, Esploro says which: ``open in
+Emacs on 2 (unsaved)'', ``open in mpv on 4''.  It asks StumpWM for the
+windows and their programs, @file{/proc} for what those hold open or
+were started on, and Emacs for its buffers.  Opening such a file goes to
+its window instead of opening it again.
+
+@node Keys and mouse
+@chapter Keys and mouse
+
+@multitable {Shift+click, or C-c C-c} {Everything from the last selected to here}
+@headitem Mouse @tab
+@item click @tab select it
+@item double-click @tab open it (a folder goes in)
+@item Ctrl+click @tab add it to the selection, or take it out
+@item Shift+click @tab select everything from the last one to here
+@item right-click @tab what can be done with it, or with the folder
+@item drag a row out @tab give the file to another program
+@item drop files in @tab copy them here
+@headitem Keys @tab
+@item RET @tab open
+@item M-Left, M-Right @tab back, forward
+@item M-Up or ^ @tab the folder above
+@item C-l @tab go to a folder, typed
+@item M-w, C-w, C-y @tab copy, cut, paste
+@item Delete @tab to the Trash
+@item F2 @tab rename
+@item + @tab new folder
+@item C-/ @tab undo the last change
+@item s @tab next sort
+@item . @tab hidden files
+@item / @tab only names with...
+@item M-s f @tab find below
+@item F5 @tab refresh
+@item F3 @tab two panes, or one
+@item C-c C-c, F6 @tab copy, move to the other pane
+@item F9 @tab places
+@item C-x 5 2 @tab another Esploro window
+@item C-x C-c @tab close Esploro (Emacs goes on)
+@item ?, F1 @tab this manual
+@item m, u, U @tab mark, unmark, unmark all (dired's)
+@end multitable
+
+@node The command line
+@chapter The command line
+
+@table @code
+@item esploro [@var{folder}]
+@var{folder} (by default the one you're in) in the Esploro window on
+your workspace, or a new one there.
+@item esploro --new [@var{folder}]
+A new Esploro window.
+@item esploro --where [@var{path}@dots{}]
+Which windows have @var{path} open, or every file that's open.
+@end table
+
+What the window uses (each answers with one s-expression):
+
+@table @code
+@item esploro apply [@var{file}]
+Applies the plan in @var{file}, or on standard input: one step a line,
+@code{(:copy "/from" "/to")}, @code{(:move @dots{})},
+@code{(:rename "/path" "new name")}, @code{(:mkdir "/path")},
+@code{(:trash "/path")}.  Anything else is refused.
+@item esploro undo
+Undoes the last applied plan.
+@item esploro where @var{folder}
+The files in @var{folder} a window has open.
+@item esploro open @var{path}
+Goes to the window that has @var{path}, or opens it.
+@item esploro trash-list
+@itemx esploro restore @var{name}@dots{}
+@itemx esploro empty-trash
+The Trash.
+@end table
+
+@node Writing commands
+@chapter Writing commands
+
+The core defines commands once, for the kinds of file they're for:
+
+@lisp
+(esploro:define-file-command shrink ((path :image) :changes t)
+  "Plan a smaller copy beside it."
+  (list (list :copy path (esploro::free-name path " small"))))
+@end lisp
+
+Kinds: @code{:folder}, @code{:image}, @code{:video}, @code{:audio},
+@code{:pdf}, @code{:text}, @code{:lisp}, @code{:archive}, @code{:file}
+(anything but a folder) and @code{t} (anything).  A command with
+@code{:changes t} returns plan steps instead of touching files, so it
+is checked, journaled and undoable like the rest.  Offering these in
+the window's menus is the next step.
+
+@bye

@@ -113,6 +113,23 @@
      (should (equal (cdr (assoc "Trash" (cdr (assoc "" (esploro--places)))))
                     (esploro--trash-dir))))))
 
+(ert-deftest esploro-menus-and-the-manual ()
+  ;; A file manager's menus; Emacs's and dired's hidden on Esploro's frame.
+  (dolist (map (list esploro-mode-map esploro-places-mode-map))
+    (dolist (key '(file edit view go help-menu))
+      (should (keymapp (lookup-key map (vector 'menu-bar key)))))
+    (dolist (key '(options buffer tools operate mark regexp immediate subdir))
+      (should (eq (lookup-key map (vector 'menu-bar key)) 'undefined))))
+  (should (eq (keymap-lookup esploro-mode-map "?") #'esploro-manual))
+  (should (eq (keymap-lookup esploro-mode-map "<f1>") #'esploro-manual))
+  ;; The manual is beside the code, and opens at the page asked for.
+  (should (string-suffix-p "doc/esploro.info" (esploro--manual-file)))
+  (save-window-excursion
+    (esploro-manual-keys)
+    (with-current-buffer "*Esploro manual*"
+      (should (equal Info-current-node "Keys and mouse")))
+    (kill-buffer "*Esploro manual*")))
+
 (ert-deftest esploro-menus-and-keys ()
   (should (keymapp esploro-file-menu))
   (should (keymapp esploro-folder-menu))

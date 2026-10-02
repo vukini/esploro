@@ -875,7 +875,8 @@ a dropped name kept its newline, named no file, and the drop was lost."
   "<f6>" #'esploro-move-to-other-pane
   "C-c C-c" #'esploro-copy-to-other-pane
   "C-x 5 2" #'esploro-new-window
-  "?" #'esploro-help
+  "?" #'esploro-manual
+  "<f1>" #'esploro-manual
   "<remap> <save-buffers-kill-terminal>" #'esploro-close
   "<remap> <save-buffers-kill-emacs>" #'esploro-close
   "<mouse-2>" #'esploro-mouse-open
@@ -889,57 +890,105 @@ a dropped name kept its newline, named no file, and the drop was lost."
 (defun esploro--marked-or-point-p ()
   (and (derived-mode-p 'dired-mode) (or (esploro--file-at) (dired-get-marked-files nil nil nil t))))
 
-(easy-menu-define esploro-menu esploro-mode-map
-  "Esploro's menu."
-  `("Esploro"
-    ["Open" esploro-open :active (esploro--file-at)]
-    ["Open With..." esploro-open-with :active (esploro--marked-or-point-p)]
-    ["Terminal Here" esploro-terminal-here]
-    ["New Window" esploro-new-window :keys "C-x 5 2"]
-    "---"
-    ["Copy" esploro-copy :keys "M-w" :active (esploro--marked-or-point-p)]
-    ["Cut" esploro-cut :keys "C-w" :active (esploro--marked-or-point-p)]
-    ["Paste" esploro-paste :keys "C-y"]
-    ["Duplicate" esploro-duplicate :active (esploro--marked-or-point-p)]
-    ["Copy To..." esploro-copy-to :active (esploro--marked-or-point-p)]
-    ["Move To..." esploro-move-to :active (esploro--marked-or-point-p)]
-    ["Copy to Other Pane" esploro-copy-to-other-pane :keys "C-c C-c"
-     :active (and (esploro--two-panes-p) (esploro--marked-or-point-p))]
-    ["Move to Other Pane" esploro-move-to-other-pane :keys "F6"
-     :active (and (esploro--two-panes-p) (esploro--marked-or-point-p))]
-    ["Rename..." esploro-rename :keys "F2" :active (esploro--file-at)]
-    ["New Folder..." esploro-new-folder :keys "+"]
-    ["Move to Trash" esploro-trash :keys "Delete" :active (esploro--marked-or-point-p)]
-    ["Undo" esploro-undo :keys "C-/"]
-    ["Properties" esploro-properties]
-    "---"
-    ("Go"
-     ["Back" esploro-back :keys "M-<left>" :active esploro--back]
-     ["Forward" esploro-forward :keys "M-<right>" :active esploro--forward]
-     ["Up" esploro-up :keys "M-<up>"]
-     ["Home" esploro-home]
-     ["Go to Folder..." esploro-go-to :keys "C-l"]
-     ["Places" esploro-places-toggle :keys "F9"])
-    ("View"
-     ["Sort by Name" (esploro-sort 'name) :style radio :selected (eq esploro--sort 'name)]
-     ["Sort by Size" (esploro-sort 'size) :style radio :selected (eq esploro--sort 'size)]
-     ["Sort by Time" (esploro-sort 'time) :style radio :selected (eq esploro--sort 'time)]
-     ["Sort by Kind" (esploro-sort 'kind) :style radio :selected (eq esploro--sort 'kind)]
-     ["The Other Way Round" (esploro-sort esploro--sort) :style toggle :selected esploro--reverse]
-     "---"
-     ["Hidden Files" esploro-toggle-hidden :style toggle :selected esploro--hidden]
-     ["Filter..." esploro-filter :keys "/"]
-     ["Find Below..." esploro-find :keys "M-s f"]
-     ["Refresh" revert-buffer :keys "F5"]
-     "---"
-     ["Two Panes" esploro-split :keys "F3" :style toggle :selected (esploro--two-panes-p)])
-    ("Trash"
-     ["Show the Trash" esploro-show-trash]
-     ["Restore" esploro-restore :active (esploro--in-trash-p)]
-     ["Empty the Trash..." esploro-empty-trash])
-    "---"
-    ["Keys and Mouse" esploro-help :keys "?"]
-    ["Close Esploro" esploro-close :keys "C-x C-c"]))
+;; Esploro's frame has a file manager's menus: File, Edit, View, Go and
+;; Help, the same in its panes and its places. Emacs's own (Options,
+;; Buffers, Tools) and dired's (Operate, Mark, Regexp, Immediate, Subdir)
+;; are hidden there; every other frame keeps them.
+
+(defun esploro--value (symbol)
+  "SYMBOL's value in the view a command acts on (nil with none): the menus
+show the pane's sort and history even when the places are selected."
+  (let ((view (esploro--view)))
+    (and view (buffer-local-value symbol view))))
+
+(defun esploro-select-all ()
+  "Select every file here."
+  (interactive)
+  (esploro--in-view (dired-unmark-all-marks) (dired-toggle-marks)))
+
+(defun esploro-select-none ()
+  "Select nothing."
+  (interactive)
+  (esploro--in-view (dired-unmark-all-marks)))
+
+(defun esploro-invert-selection ()
+  "Select what isn't, and unselect what is."
+  (interactive)
+  (esploro--in-view (dired-toggle-marks)))
+
+(defconst esploro--menu-bar
+  `((file "File"
+          ["New Window" esploro-new-window :keys "C-x 5 2"]
+          ["New Folder..." esploro-new-folder :keys "+"]
+          "---"
+          ["Open" esploro-open :active (esploro--file-at)]
+          ["Open With..." esploro-open-with :active (esploro--marked-or-point-p)]
+          ["Terminal Here" esploro-terminal-here]
+          ["Properties" esploro-properties]
+          "---"
+          ["Close Esploro" esploro-close :keys "C-x C-c"])
+    (edit "Edit"
+          ["Undo" esploro-undo :keys "C-/"]
+          "---"
+          ["Copy" esploro-copy :keys "M-w" :active (esploro--marked-or-point-p)]
+          ["Cut" esploro-cut :keys "C-w" :active (esploro--marked-or-point-p)]
+          ["Paste" esploro-paste :keys "C-y"]
+          ["Duplicate" esploro-duplicate :active (esploro--marked-or-point-p)]
+          ["Copy To..." esploro-copy-to :active (esploro--marked-or-point-p)]
+          ["Move To..." esploro-move-to :active (esploro--marked-or-point-p)]
+          ["Copy to Other Pane" esploro-copy-to-other-pane :keys "C-c C-c"
+           :active (and (esploro--two-panes-p) (esploro--marked-or-point-p))]
+          ["Move to Other Pane" esploro-move-to-other-pane :keys "F6"
+           :active (and (esploro--two-panes-p) (esploro--marked-or-point-p))]
+          ["Rename..." esploro-rename :keys "F2" :active (esploro--file-at)]
+          ["Move to Trash" esploro-trash :keys "Delete" :active (esploro--marked-or-point-p)]
+          "---"
+          ["Select All" esploro-select-all]
+          ["Select None" esploro-select-none]
+          ["Invert Selection" esploro-invert-selection])
+    (view "View"
+          ["Sort by Name" (esploro-sort 'name) :style radio :selected (eq (esploro--value 'esploro--sort) 'name)]
+          ["Sort by Size" (esploro-sort 'size) :style radio :selected (eq (esploro--value 'esploro--sort) 'size)]
+          ["Sort by Time" (esploro-sort 'time) :style radio :selected (eq (esploro--value 'esploro--sort) 'time)]
+          ["Sort by Kind" (esploro-sort 'kind) :style radio :selected (eq (esploro--value 'esploro--sort) 'kind)]
+          ["The Other Way Round" (esploro-sort (esploro--value 'esploro--sort))
+           :style toggle :selected (esploro--value 'esploro--reverse)]
+          "---"
+          ["Hidden Files" esploro-toggle-hidden :style toggle :selected (esploro--value 'esploro--hidden)]
+          ["Filter..." esploro-filter :keys "/"]
+          ["Find Below..." esploro-find :keys "M-s f"]
+          ["Refresh" esploro--refresh :keys "F5"]
+          "---"
+          ["Two Panes" esploro-split :keys "F3" :style toggle :selected (esploro--two-panes-p)]
+          ["Places" esploro-places-toggle :keys "F9" :style toggle
+           :selected (get-buffer-window esploro-places-buffer-name)])
+    (go "Go"
+        ["Back" esploro-back :keys "M-<left>" :active (esploro--value 'esploro--back)]
+        ["Forward" esploro-forward :keys "M-<right>" :active (esploro--value 'esploro--forward)]
+        ["Up" esploro-up :keys "M-<up>"]
+        ["Home" esploro-home]
+        ["Go to Folder..." esploro-go-to :keys "C-l"]
+        "---"
+        ["The Trash" esploro-show-trash]
+        ["Restore from the Trash" esploro-restore :active (esploro--in-trash-p)]
+        ["Empty the Trash..." esploro-empty-trash])
+    (help-menu "Help"
+               ["Esploro Manual" esploro-manual :keys "?"]
+               ["Keys and Mouse" esploro-manual-keys])))
+
+(defconst esploro--hidden-menus
+  '(options buffer tools operate mark regexp immediate subdir)
+  "Emacs's menus (Options, Buffers, Tools) and dired's, hidden in Esploro.")
+
+(defun esploro--install-menu-bar (map)
+  "Esploro's menus in MAP, in order, and Emacs's and dired's hidden."
+  (dolist (key esploro--hidden-menus)
+    (define-key map (vector 'menu-bar key) 'undefined))
+  (pcase-dolist (`(,key ,name . ,items) esploro--menu-bar)
+    (define-key-after map (vector 'menu-bar key)
+      (cons name (easy-menu-create-menu name items)))))
+
+(esploro--install-menu-bar esploro-mode-map)
 
 (easy-menu-define esploro-file-menu nil
   "Right-click on a file."
@@ -996,7 +1045,7 @@ a dropped name kept its newline, named no file, and the drop was lost."
                     nil
                     (esploro-find "search" "Find")
                     (revert-buffer "refresh" "Refresh")
-                    (esploro-help "help" "Help")))
+                    (esploro-manual "help" "Help")))
       (if (null item)
           (define-key-after map (vector (gensym "sep")) menu-bar-separator)
         (tool-bar-local-item (nth 1 item) (nth 0 item) (nth 0 item) map
@@ -1067,9 +1116,12 @@ through the core, journaled so they can be undone."
   "<remap> <save-buffers-kill-terminal>" #'esploro-close
   "<remap> <save-buffers-kill-emacs>" #'esploro-close)
 
+(esploro--install-menu-bar esploro-places-mode-map)
+
 (define-derived-mode esploro-places-mode special-mode "Places"
   "Esploro's places: click one, or RET on it."
   (setq-local cursor-type nil)
+  (setq-local tool-bar-map esploro-tool-bar-map)
   (setq-local mode-line-format nil))
 
 (defun esploro-places-refresh ()
@@ -1123,42 +1175,46 @@ through the core, journaled so they can be undone."
 
 ;;; --- Help -----------------------------------------------------------------------------------
 
-(defun esploro-help ()
-  "Esploro's keys, and what the mouse does."
+;;; --- The manual ---------------------------------------------------------------------------
+
+(defconst esploro--code-folder
+  (file-name-directory (or load-file-name buffer-file-name default-directory))
+  "Where this file is: the manual is beside it, in ../doc.")
+
+(defun esploro--manual-file ()
+  "Esploro's Info manual: beside this code (the repository, or where Vikix
+built it), else the one Info knows by name."
+  (let ((beside (expand-file-name "../doc/esploro.info" esploro--code-folder)))
+    (if (file-readable-p beside) beside "esploro")))
+
+(defvar-keymap esploro-manual-mode-map
+  :doc "In Esploro's manual: Info's menu, not Emacs's others."
+  "C-x C-c" #'esploro-close)
+(dolist (key esploro--hidden-menus)
+  (define-key esploro-manual-mode-map (vector 'menu-bar key) 'undefined))
+
+(define-minor-mode esploro-manual-mode
+  "Esploro's manual, in Info: its menus kept to Info's, lines wrapped by word."
+  :keymap esploro-manual-mode-map
+  (when esploro-manual-mode (visual-line-mode 1)))
+
+(defun esploro-manual (&optional node)
+  "Esploro's manual, at NODE (its top by default), beside the folder."
   (interactive)
-  (with-help-window "*Esploro help*"
-    (princ "Esploro: a file explorer in Emacs. Everything is also on the menus,
-the tool bar and the right-click menus.
+  (let ((buffer (save-window-excursion
+                  (info (format "(%s)%s" (esploro--manual-file) (or node "Top")) "*Esploro manual*")
+                  (current-buffer))))
+    (with-current-buffer buffer (esploro-manual-mode 1))
+    (select-window (display-buffer-in-side-window
+                    buffer '((side . right) (slot . 0) (window-width . 0.5)
+                             (window-parameters (no-delete-other-windows . t)))))))
 
-The mouse
-  click                 select it
-  double-click          open it (a folder goes in)
-  Ctrl+click            add it to the selection, or take it out
-  Shift+click           select everything from the last one to here
-  right-click           what can be done with it, or with the folder
-  drag a name out       give the file to another program
-  drop files in         copy them here (a move when the program says so)
+(defun esploro-manual-keys ()
+  "The manual's page of keys and what the mouse does."
+  (interactive)
+  (esploro-manual "Keys and mouse"))
 
-Keys
-  RET                   open
-  M-Left, M-Right       back, forward       M-Up or ^   the folder above
-  C-l                   go to a folder (typed, with completion)
-  M-w, C-w, C-y         copy, cut, paste (other file managers paste them too)
-  Delete                to the Trash        F2          rename
-  +                     new folder          C-/         undo the last change
-  s                     sort: name, time, size, kind (again turns it round on the menu)
-  .                     hidden files        /           only names with...
-  M-s f                 find below          F5          refresh
-  F9                    places              ?           this
-  F3                    two panes, or one   F6          move to the other pane
-  C-c C-c               copy to the other pane
-  C-x 5 2               another Esploro window (one per workspace: Super+Alt+e)
-  C-x C-c, File > Quit  close Esploro (Emacs goes on)
-  m, u, U               mark, unmark, unmark all (dired's)
-
-Every change (copy, move, paste, rename, a new folder, the Trash, a drop)
-is checked whole first, done in the background, and kept in a journal,
-so undo puts it back. Dired's own C, R and D work too, but around it.")))
+(define-obsolete-function-alias 'esploro-help #'esploro-manual "0.3")
 
 (provide 'esploro)
 ;;; esploro.el ends here
