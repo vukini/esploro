@@ -643,11 +643,16 @@ Through the core, so undo takes it back."
 
 (defun esploro--apply-dropped (dir)
   (when esploro--dropped
-    (let* ((dropped esploro--dropped)
+    (let* ((here (file-name-as-directory (expand-file-name dir)))
+           ;; Files dropped on the folder they're in (a drag let go over
+           ;; Esploro itself) stay as they are: no copies of them.
+           (dropped (seq-remove (lambda (d) (equal (file-name-directory (directory-file-name (cdr d))) here))
+                                esploro--dropped))
            (steps (append (esploro--paste-steps 'copy (mapcar #'cdr (seq-filter (lambda (d) (eq (car d) 'copy)) dropped)) dir)
                           (esploro--paste-steps 'cut (mapcar #'cdr (seq-filter (lambda (d) (eq (car d) 'cut)) dropped)) dir))))
       (setq esploro--dropped '())
-      (esploro--apply steps "dropped in"))))
+      (if steps (esploro--apply steps "dropped in")
+        (message "Esploro: dropped on the folder it's in: nothing to do")))))
 
 ;;; --- Menus, the tool bar and the keys -------------------------------------------------------
 

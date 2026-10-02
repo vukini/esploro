@@ -209,6 +209,11 @@
      (should (file-exists-p (esploro-tests--path "drop/x.txt")))
      (should (file-exists-p x))
      (should (file-exists-p (esploro-tests--path "drop/y.txt")))
-     (should-not (file-exists-p y)))))
+     (should-not (file-exists-p y))
+     ;; Dropped back on its own folder: nothing happens, no copy.
+     (with-current-buffer esploro-buffer-name
+       (esploro--dnd-file (esploro--uri (esploro-tests--path "drop/x.txt")) 'copy))
+     (esploro--apply-dropped (esploro-tests--path "drop"))
+     (should-not (file-exists-p (esploro-tests--path "drop/x copy.txt"))))))
 
 ;;; esploro-tests.el ends here
