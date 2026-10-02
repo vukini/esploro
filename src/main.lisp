@@ -10,6 +10,8 @@
 (defparameter *usage* "esploro [FOLDER]            show FOLDER in the Esploro window on your workspace
                             (StumpWM's), or in a new one when there's none there
 esploro --new [FOLDER]      a new Esploro window, wherever others are
+esploro FILE                its folder, with FILE selected
+esploro --dbus              the running Emacs answers \"Show in folder\" (FileManager1)
 esploro --where [PATH...]   which windows have PATH open (or every file that's open)
 
 For the window (each answers with one s-expression):
@@ -129,14 +131,15 @@ none, or NIL when StumpWM can't be asked (any Esploro window will do)."
           "'new")
     (stumpwm-unreachable () nil)))
 
-(defun cli-show (folder &key new)
+(defun cli-show (folder &key new file)
   "Show FOLDER in an Esploro window, which is Emacs's: through its server,
 loading the window's code first when Emacs hasn't it yet. NEW: a new window;
 else the one on this workspace (or a new one there)."
   (let* ((code-file (window-code))
          (where (if new "'new" (workspace-window)))
-         (form (format nil "(progn (unless (featurep 'esploro) ~:[(require 'esploro)~;~:*(load ~a nil t)~]) (esploro ~a~@[ ~a~]))"
-                       (and code-file (lisp-string code-file)) (lisp-string folder) where))
+         (form (format nil "(progn (unless (featurep 'esploro) ~:[(require 'esploro)~;~:*(load ~a nil t)~]) (esploro ~a ~a~@[ ~a~]))"
+                       (and code-file (lisp-string code-file)) (lisp-string folder)
+                       (or where "nil") (and file (lisp-string file))))
          (code (sb-ext:process-exit-code
                (sb-ext:run-program "emacsclient"
                                    (list "-n" "-e" form)
@@ -144,6 +147,16 @@ else the one on this workspace (or a new one there)."
     (unless (zerop code)
       (format *error-output* "esploro: its window is in Emacs, and Emacs's server isn't answering (M-x server-start, or emacs --daemon)~%"))
     code))
+
+(defun cli-dbus ()
+  "Make the running Emacs answer org.freedesktop.FileManager1 (the browsers'
+\"Show in folder\"): what the session bus runs when it's first asked."
+  (let* ((code-file (window-code))
+         (form (format nil "(progn (unless (featurep 'esploro) ~:[(require 'esploro)~;~:*(load ~a nil t)~]) (esploro-dbus-register))"
+                       (and code-file (lisp-string code-file)))))
+    (sb-ext:process-exit-code
+     (sb-ext:run-program "emacsclient" (list "-e" form)
+                         :search t :input nil :output nil :error *error-output* :wait t))))
 
 (defun main-1 (args)
   (let ((command (first args)))
@@ -164,6 +177,7 @@ else the one on this workspace (or a new one there)."
            (handler-case (progn (answer (list :done (length (restore-from-trash (rest args))))) 0)
              (plan-refused (e) (answer (list :refused (plan-refused-problems e))) 1)))
           ((equal command "empty-trash") (answer (list :emptied (empty-trash))) 0)
+          ((equal command "--dbus") (cli-dbus))
           ((equal command "--new")
            (let ((folder (absolute (or (second args) "."))))
              (if (and folder (directory-p folder)) (cli-show folder :new t)
@@ -173,7 +187,8 @@ else the one on this workspace (or a new one there)."
           (t
            (let ((folder (absolute (or command "."))))
              (cond ((and folder (directory-p folder)) (cli-show folder))
-                   ((and folder (path-exists-p folder)) (cli-show (path-parent folder)))
+                   ;; A file: its folder, with the file selected.
+                   ((and folder (path-exists-p folder)) (cli-show (path-parent folder) :file folder))
                    (t (format *error-output* "esploro: ~a isn't a folder~%" command) 2)))))))
 
 (defun main ()

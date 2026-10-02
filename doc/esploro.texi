@@ -63,7 +63,14 @@ A new Esploro window, even where one is open.
 @item @code{esploro @var{folder}}
 From a shell, the launcher, or a program opening a folder: @var{folder}
 in the Esploro window on your workspace, or a new one there.
-@code{esploro --new @var{folder}} always opens a new window.
+@code{esploro --new @var{folder}} always opens a new window, and
+@code{esploro @var{file}} opens the file's folder with it selected.
+
+@item Show in folder
+A browser's ``Show in folder'' (Firefox, Chromium), and any program
+that asks for the file manager over D-Bus, opens Esploro at the file's
+folder, with the file selected, on your workspace.  On Vikix, folders
+open in Esploro too, and so do drives when you plug them in.
 
 @item @kbd{M-x esploro}
 From Emacs, once Esploro has been opened (or with @file{emacs/} on
@@ -344,8 +351,15 @@ its window instead of opening it again.
 your workspace, or a new one there.
 @item esploro --new [@var{folder}]
 A new Esploro window.
+@item esploro @var{file}
+The file's folder, with @var{file} selected.
 @item esploro --where [@var{path}@dots{}]
 Which windows have @var{path} open, or every file that's open.
+@item esploro --dbus
+Makes the running Emacs answer @code{org.freedesktop.FileManager1},
+the file manager's name on D-Bus that browsers call for ``Show in
+folder''.  A D-Bus service file naming it starts it the first time
+it's asked (Vikix puts one in @file{~/.local/share/dbus-1/services}).
 @end table
 
 What the window uses (each answers with one s-expression):

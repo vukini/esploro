@@ -265,8 +265,8 @@ FRAME (the selected one) used last; else its first; nil when it has none."
           (frame-first-window frame)))))
 
 ;;;###autoload
-(defun esploro (&optional dir where)
-  "Show DIR in an Esploro frame, and go there.
+(defun esploro (&optional dir where file)
+  "Show DIR in an Esploro frame, and go there, with point on FILE if given.
 WHERE says which: nil, the frame you're in when it's Esploro's, else any;
 `new' (with a prefix argument), a new one; a number, the frame whose X
 window that is (StumpWM's choice: the one on your workspace), or a new
@@ -279,7 +279,7 @@ one when it's gone."
     (select-frame-set-input-focus frame)
     (with-selected-frame frame
       (select-window (esploro--main-window frame))
-      (esploro-go dir)
+      (esploro-go dir file)
       (esploro-places-show)
       (when (and (esploro--preview-wanted-p) (not (esploro--preview-window frame)))
         (esploro--preview-show frame)))
@@ -1415,6 +1415,43 @@ when BUFFER still shows what it did (KEY) when it was asked."
   (setq-local mode-line-format nil)
   (setq-local tool-bar-map esploro-tool-bar-map)
   (visual-line-mode 1))
+
+;;; --- Show in folder: org.freedesktop.FileManager1 ---------------------------------------
+
+;; Browsers' "Show in folder" (Firefox, Chromium), and other programs that
+;; ask for the file manager over D-Bus, reach Esploro: it shows the folder,
+;; with the file selected, on your workspace, as Super+e decides (the
+;; esploro command asks StumpWM). Registered by `esploro-dbus-register',
+;; which `esploro --dbus' runs: Vikix makes the bus start that the first
+;; time it's asked.
+
+(declare-function dbus-register-service "dbus" (bus service &rest flags))
+(declare-function dbus-register-method "dbus" (bus service path interface method handler &optional dont-register-service))
+
+(defconst esploro--dbus-name "org.freedesktop.FileManager1")
+(defconst esploro--dbus-path "/org/freedesktop/FileManager1")
+
+(defun esploro--dbus-show (uris)
+  "Each of URIS (file:// ones), shown by the esploro command, in the
+background: never wait inside a D-Bus call."
+  (dolist (uri uris)
+    (when-let* ((file (esploro--uri-file uri)))
+      (when (executable-find esploro-program)
+        (call-process esploro-program nil 0 nil (directory-file-name file)))))
+  :ignore)
+
+(defun esploro-dbus-register ()
+  "Answer org.freedesktop.FileManager1 on the session bus: ShowFolders,
+ShowItems and ShowItemProperties open Esploro there."
+  (interactive)
+  (require 'dbus)
+  (dbus-register-service :session esploro--dbus-name :replace-existing)
+  (dolist (method '("ShowFolders" "ShowItems" "ShowItemProperties"))
+    (dbus-register-method :session esploro--dbus-name esploro--dbus-path esploro--dbus-name
+                          method (lambda (uris _startup-id) (esploro--dbus-show uris))))
+  (when (called-interactively-p 'any)
+    (message "Esploro answers Show in folder (%s)" esploro--dbus-name))
+  t)
 
 ;;; --- The manual ---------------------------------------------------------------------------
 

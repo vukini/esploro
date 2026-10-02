@@ -60,7 +60,15 @@ File: esploro.info,  Node: Opening Esploro,  Next: The window,  Prev: Top,  Up: 
      From a shell, the launcher, or a program opening a folder:
      FOLDER in the Esploro window on your workspace, or a new
      one there.  ‘esploro --new FOLDER’ always opens a new
-     window.
+     window, and ‘esploro FILE’ opens the file's folder with it
+     selected.
+
+Show in folder
+     A browser's "Show in folder" (Firefox, Chromium), and any
+     program that asks for the file manager over D-Bus, opens
+     Esploro at the file's folder, with the file selected, on
+     your workspace.  On Vikix, folders open in Esploro too, and
+     so do drives when you plug them in.
 
 ‘M-x esploro’
      From Emacs, once Esploro has been opened (or with ‘emacs/’
@@ -381,8 +389,16 @@ File: esploro.info,  Node: The command line,  Next: Writing commands,  Prev: Key
      on your workspace, or a new one there.
 ‘esploro --new [FOLDER]’
      A new Esploro window.
+‘esploro FILE’
+     The file's folder, with FILE selected.
 ‘esploro --where [PATH...]’
      Which windows have PATH open, or every file that's open.
+‘esploro --dbus’
+     Makes the running Emacs answer
+     ‘org.freedesktop.FileManager1’, the file manager's name on
+     D-Bus that browsers call for "Show in folder".  A D-Bus
+     service file naming it starts it the first time it's asked
+     (Vikix puts one in ‘~/.local/share/dbus-1/services’).
 
    What the window uses (each answers with one s-expression):
 
@@ -429,19 +445,19 @@ the next step.
 Tag Table:
 Node: Top276
 Node: Opening Esploro1764
-Node: The window2954
-Node: Selecting and opening3981
-Node: Changing files5034
-Node: Drag and drop6547
-Node: The preview7280
-Node: Two panes8394
-Node: Windows and workspaces8967
-Node: Looking around9570
-Node: The Trash10410
-Node: Where files are open10891
-Node: Keys and mouse11359
-Node: The command line13042
-Node: Writing commands14206
+Node: The window3333
+Node: Selecting and opening4360
+Node: Changing files5413
+Node: Drag and drop6926
+Node: The preview7659
+Node: Two panes8773
+Node: Windows and workspaces9346
+Node: Looking around9949
+Node: The Trash10789
+Node: Where files are open11270
+Node: Keys and mouse11738
+Node: The command line13421
+Node: Writing commands14961
 
 End Tag Table
 
