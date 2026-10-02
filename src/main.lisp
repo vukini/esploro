@@ -7,7 +7,9 @@
 
 (in-package #:esploro)
 
-(defparameter *usage* "esploro [FOLDER]            show FOLDER in Esploro's window (in Emacs)
+(defparameter *usage* "esploro [FOLDER]            show FOLDER in the Esploro window on your workspace
+                            (StumpWM's), or in a new one when there's none there
+esploro --new [FOLDER]      a new Esploro window, wherever others are
 esploro --where [PATH...]   which windows have PATH open (or every file that's open)
 
 For the window (each answers with one s-expression):
@@ -115,12 +117,25 @@ and Emacs is to find it on its load-path."
     (or (sb-posix:getenv "ESPLORO_EL")
         (and beside (path-exists-p beside) beside))))
 
-(defun cli-show (folder)
-  "Show FOLDER in Esploro's window, which is in Emacs: through its server,
-loading the window's code first when Emacs hasn't it yet."
+(defun workspace-window ()
+  "Where the window should be, as Emacs's `esploro' takes it: the X window id
+of the Esploro window on StumpWM's current workspace, `new' when that has
+none, or NIL when StumpWM can't be asked (any Esploro window will do)."
+  (handler-case
+      (or (stumpwm-eval "(let ((w (find \"Esploro\" (group-windows (current-group))
+                                         :key (function window-title) :test (function string=))))
+                            (and w (xlib:window-id (window-xwin w))))")
+          "'new")
+    (stumpwm-unreachable () nil)))
+
+(defun cli-show (folder &key new)
+  "Show FOLDER in an Esploro window, which is Emacs's: through its server,
+loading the window's code first when Emacs hasn't it yet. NEW: a new window;
+else the one on this workspace (or a new one there)."
   (let* ((code-file (window-code))
-         (form (format nil "(progn (unless (featurep 'esploro) ~:[(require 'esploro)~;~:*(load ~a nil t)~]) (esploro ~a))"
-                       (and code-file (lisp-string code-file)) (lisp-string folder)))
+         (where (if new "'new" (workspace-window)))
+         (form (format nil "(progn (unless (featurep 'esploro) ~:[(require 'esploro)~;~:*(load ~a nil t)~]) (esploro ~a~@[ ~a~]))"
+                       (and code-file (lisp-string code-file)) (lisp-string folder) where))
          (code (sb-ext:process-exit-code
                (sb-ext:run-program "emacsclient"
                                    (list "-n" "-e" form)
@@ -143,6 +158,10 @@ loading the window's code first when Emacs hasn't it yet."
            (handler-case (progn (answer (list :done (length (restore-from-trash (rest args))))) 0)
              (plan-refused (e) (answer (list :refused (plan-refused-problems e))) 1)))
           ((equal command "empty-trash") (answer (list :emptied (empty-trash))) 0)
+          ((equal command "--new")
+           (let ((folder (absolute (or (second args) "."))))
+             (if (and folder (directory-p folder)) (cli-show folder :new t)
+                 (progn (format *error-output* "esploro: ~a isn't a folder~%" (second args)) 2))))
           ((and command (plusp (length command)) (char= (char command 0) #\-))
            (format *error-output* "esploro: what's ~a?~%~a~%" command *usage*) 2)
           (t

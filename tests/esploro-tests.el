@@ -33,15 +33,15 @@
           (esploro-program (expand-file-name "esploro" (file-name-directory (directory-file-name
                                                                               (file-name-directory (locate-library "esploro"))))))
           (esploro--wait t)
-          (esploro--back nil) (esploro--forward nil) (esploro--sort 'name)
-          (esploro--reverse nil) (esploro--hidden nil) (esploro--clipboard nil))
+          (esploro--clipboard nil))
      (unwind-protect (progn ,@body)
-       (when (get-buffer esploro-buffer-name) (kill-buffer esploro-buffer-name))
+       (delete-other-windows)
+       (mapc #'kill-buffer (esploro--views))
        (delete-directory esploro-tests--top t))))
 
 (defun esploro-tests--names ()
   "The names listed in the Esploro buffer, . and .. left out."
-  (with-current-buffer esploro-buffer-name
+  (with-current-buffer (esploro--view)
     (save-excursion
       (goto-char (point-min))
       (let (names)
@@ -137,7 +137,7 @@
    (make-directory (esploro-tests--path "f/sub"))
    (esploro-go (esploro-tests--path "f"))
    (should (equal (esploro-tests--names) '("sub" "a.txt" "b.txt")))
-   (with-current-buffer esploro-buffer-name
+   (with-current-buffer (esploro--view)
      (should esploro-mode)
      (should (eq mouse-1-click-follows-link 'double))
      (should dired-mouse-drag-files)
@@ -164,13 +164,13 @@
    (esploro-go (esploro-tests--path "one/two"))
    (esploro-back)
    (should (equal (esploro--dir) (esploro-tests--path "one/")))
-   (with-current-buffer esploro-buffer-name
+   (with-current-buffer (esploro--view)
      (should (equal (dired-get-filename 'no-dir t) "two")))
    (esploro-forward)
    (should (equal (esploro--dir) (esploro-tests--path "one/two/")))
    (esploro-up)
    (should (equal (esploro--dir) (esploro-tests--path "one/")))
-   (with-current-buffer esploro-buffer-name
+   (with-current-buffer (esploro--view)
      (should (equal (dired-get-filename 'no-dir t) "two")))))
 
 ;;; --- Changes, through the real core ------------------------------------------------------
@@ -203,7 +203,7 @@
      (esploro-show-trash)
      (should (esploro--in-trash-p))
      (should (member "renamed.txt" (esploro-tests--names)))
-     (with-current-buffer esploro-buffer-name
+     (with-current-buffer (esploro--view)
        (dired-goto-file (expand-file-name "renamed.txt" (esploro--trash-dir)))
        (esploro-restore))
      (should (file-exists-p (esploro-tests--path "w/renamed.txt")))
@@ -220,18 +220,56 @@
          (y (esploro-tests--file "elsewhere/y.txt")))
      (make-directory (esploro-tests--path "drop"))
      (esploro-go (esploro-tests--path "drop"))
-     (with-current-buffer esploro-buffer-name
+     (with-current-buffer (esploro--view)
        (should (eq (esploro--dnd-file (esploro--uri x) 'copy) 'copy))
        (should (eq (esploro--dnd-file (esploro--uri y) 'move) 'move)))
-     (esploro--apply-dropped (esploro-tests--path "drop"))
+     (esploro--apply-dropped)
      (should (file-exists-p (esploro-tests--path "drop/x.txt")))
      (should (file-exists-p x))
      (should (file-exists-p (esploro-tests--path "drop/y.txt")))
      (should-not (file-exists-p y))
      ;; Dropped back on its own folder: nothing happens, no copy.
-     (with-current-buffer esploro-buffer-name
+     (with-current-buffer (esploro--view)
        (esploro--dnd-file (esploro--uri (esploro-tests--path "drop/x.txt")) 'copy))
-     (esploro--apply-dropped (esploro-tests--path "drop"))
+     (esploro--apply-dropped)
      (should-not (file-exists-p (esploro-tests--path "drop/x copy.txt"))))))
+
+(ert-deftest esploro-two-panes ()
+  (skip-unless (file-executable-p (expand-file-name "../esploro" (file-name-directory (locate-library "esploro")))))
+  (esploro-tests--world
+   (esploro-tests--file "left/a.txt")
+   (make-directory (esploro-tests--path "right"))
+   (esploro-go (esploro-tests--path "left"))
+   (let ((left (selected-window)))
+     (esploro-split)
+     (should (= (length (esploro--view-windows)) 2))
+     (let ((right (esploro--other-pane left)))
+       ;; The new pane starts at the same folder, then goes its own way.
+       (should (equal (esploro--dir (window-buffer right)) (esploro-tests--path "left/")))
+       (with-selected-window right (esploro-go (esploro-tests--path "right")))
+       (should (equal (esploro--dir (window-buffer left)) (esploro-tests--path "left/")))
+       (should (equal (esploro--dir (window-buffer right)) (esploro-tests--path "right/")))
+       ;; Each pane has its own history and sort.
+       (with-current-buffer (window-buffer right) (should (equal esploro--back (list (esploro-tests--path "left/")))))
+       (with-current-buffer (window-buffer left) (should (null esploro--back)))
+       (with-selected-window left (esploro-sort 'size))
+       (with-current-buffer (window-buffer right) (should (eq esploro--sort 'name)))
+       ;; Copy to the other pane, through the core.
+       (with-selected-window left
+         (with-current-buffer (window-buffer left)
+           (dired-goto-file (esploro-tests--path "left/a.txt"))
+           (esploro-copy-to-other-pane)))
+       (should (file-exists-p (esploro-tests--path "right/a.txt")))
+       (should (member "a.txt" (with-current-buffer (window-buffer right)
+                                 (save-excursion (goto-char (point-min))
+                                                 (let (n) (while (not (eobp))
+                                                            (push (dired-get-filename 'no-dir t) n)
+                                                            (forward-line 1))
+                                                      n)))))
+       ;; F3 again: one pane, and the other's view is gone.
+       (let ((gone (window-buffer right)))
+         (with-selected-window left (esploro-split))
+         (should (= (length (esploro--view-windows)) 1))
+         (should-not (buffer-live-p gone)))))))
 
 ;;; esploro-tests.el ends here

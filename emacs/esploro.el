@@ -63,19 +63,26 @@ Its menu bar and tool bar are on even when they're off elsewhere."
 (defface esploro-where '((t :inherit font-lock-comment-face))
   "\"open in Emacs on 2\" beside a file.")
 
-;;; --- State: one Esploro, so it lives here, not in the buffer -------------------------
+;;; --- State: each view keeps its own --------------------------------------------------
 
-(defvar esploro--back '() "Folders to go back to, newest first.")
-(defvar esploro--forward '() "Folders to go forward to, after going back.")
-(defvar esploro--sort 'name "How the folder is sorted: name, size, time or kind.")
-(defvar esploro--reverse nil "Non-nil: the sort the other way round.")
-(defvar esploro--hidden nil "Non-nil: files starting with a dot are shown.")
-(defvar esploro--filter nil "Only names holding this text are shown, until refreshed.")
+;; A view is a buffer of Esploro's showing one folder: the one in an Esploro
+;; frame, or a pane of one (F3 splits it in two). Each has its own folder,
+;; history, sort and hidden files, kept across dired's resetting of the
+;; buffer (permanent-local), so frames on different workspaces, and two
+;; panes side by side, go their own ways.
+(defvar-local esploro--view nil "Non-nil in a buffer that is an Esploro view.")
+(defvar-local esploro--back '() "Folders to go back to, newest first.")
+(defvar-local esploro--forward '() "Folders to go forward to, after going back.")
+(defvar-local esploro--sort 'name "How the folder is sorted: name, size, time or kind.")
+(defvar-local esploro--reverse nil "Non-nil: the sort the other way round.")
+(defvar-local esploro--hidden nil "Non-nil: files starting with a dot are shown.")
+(defvar-local esploro--filter nil "Only names holding this text are shown, until refreshed.")
+(dolist (v '(esploro--view esploro--back esploro--forward esploro--sort esploro--reverse esploro--hidden))
+  (put v 'permanent-local t))
+
 (defvar esploro--clipboard nil "(copy . FILES) or (cut . FILES), from Esploro's own copy or cut.")
-(defvar esploro--dropped '() "Steps from files dropped in, applied together.")
+(defvar esploro--dropped '() "Files dropped in, as (OP FILE . FOLDER), applied together.")
 (defvar esploro--wait nil "Non-nil: wait for the core's answers (the tests).")
-
-(defconst esploro-buffer-name "*Esploro*")
 (defconst esploro-places-buffer-name "*Esploro places*")
 (defvar esploro-file-menu)
 (defvar esploro-folder-menu)
@@ -152,13 +159,52 @@ No owner or group (-g -G): size, time and name are what a file manager shows."
           (pcase esploro--sort ('size "S") ('time "t") ('kind "X") (_ "v"))
           (if esploro--reverse "r" "")))
 
-(defun esploro--buffer ()
-  (get-buffer-create esploro-buffer-name))
+(defun esploro--view-p (buffer)
+  (and (buffer-live-p buffer) (buffer-local-value 'esploro--view buffer)))
 
-(defun esploro--show (what &optional file)
-  "Show WHAT in the Esploro buffer: a folder, or (TITLE . FILES) for a list.
-Point goes to FILE when given."
-  (with-current-buffer (esploro--buffer)
+(defun esploro--views ()
+  "Every view buffer there is."
+  (seq-filter #'esploro--view-p (buffer-list)))
+
+(defun esploro--new-view (&optional like)
+  "A new, empty view buffer; with LIKE (a view), its sort and hidden files."
+  (let ((buffer (generate-new-buffer "Esploro")))
+    (with-current-buffer buffer
+      (setq esploro--view t)
+      (when (esploro--view-p like)
+        (setq esploro--sort (buffer-local-value 'esploro--sort like)
+              esploro--reverse (buffer-local-value 'esploro--reverse like)
+              esploro--hidden (buffer-local-value 'esploro--hidden like))))
+    buffer))
+
+(defun esploro--view-windows (&optional frame)
+  "FRAME's windows showing views, left to right (places, down the side, aren't)."
+  (seq-filter (lambda (w) (and (not (window-parameter w 'window-side))
+                               (esploro--view-p (window-buffer w))))
+              (window-list (or frame (selected-frame)) 'no-minibuf)))
+
+(defun esploro--view (&optional frame)
+  "The view a command acts on: this buffer, when it's one; else the pane of
+FRAME (the selected one) used last; else its first; nil when it has none."
+  (if (esploro--view-p (current-buffer))
+      (current-buffer)
+    (let* ((frame (or frame (selected-frame)))
+           (last (frame-parameter frame 'esploro-last-window)))
+      (cond ((and (window-live-p last) (eq (window-frame last) frame)
+                  (esploro--view-p (window-buffer last)))
+             (window-buffer last))
+            ((car (esploro--view-windows frame))
+             (window-buffer (car (esploro--view-windows frame))))))))
+
+(defun esploro--note-window ()
+  "Remember the pane used last, for places and the tool bar."
+  (when (esploro--view-p (window-buffer))
+    (set-frame-parameter nil 'esploro-last-window (selected-window))))
+
+(defun esploro--show (what &optional file buffer)
+  "Show WHAT in BUFFER (the current view, or a new one): a folder, or
+(TITLE . FILES) for a list.  Point goes to FILE when given.  Returns BUFFER."
+  (with-current-buffer (or buffer (esploro--view) (esploro--new-view))
     (let ((inhibit-read-only t)
           (dir (if (consp what) (car what) (file-name-as-directory (expand-file-name what)))))
       (setq esploro--filter nil)
@@ -171,38 +217,65 @@ Point goes to FILE when given."
       (dired-readin)
       (goto-char (point-min))
       (or (and file (dired-goto-file (expand-file-name file)))
-          (dired-initial-position dir)))
+          (dired-initial-position dir))
+      ;; Named after its folder, for the buffer list; unique, as panes may
+      ;; show the same one.
+      (rename-buffer (format "Esploro: %s" (abbreviate-file-name (directory-file-name
+                                                                   (if (consp what) (car what) dir))))
+                     t))
     (current-buffer)))
 
-(defun esploro--dir ()
-  "The folder Esploro shows."
-  (with-current-buffer (esploro--buffer) (expand-file-name default-directory)))
+(defun esploro--dir (&optional buffer)
+  "The folder the view BUFFER (the current one) shows."
+  (when-let* ((buffer (or buffer (esploro--view))))
+    (with-current-buffer buffer (expand-file-name default-directory))))
 
 (defun esploro--refresh ()
-  (when-let* ((buffer (get-buffer esploro-buffer-name)))
+  "Show every view again: a change in one folder may show in another pane."
+  (dolist (buffer (esploro--views))
     (with-current-buffer buffer
       (when (derived-mode-p 'dired-mode)
         (setq esploro--filter nil)
         (revert-buffer)))))
 
+(defun esploro--frames ()
+  (seq-filter (lambda (f) (and (frame-live-p f) (frame-parameter f 'esploro))) (frame-list)))
+
 (defun esploro--frame ()
-  (seq-find (lambda (f) (and (frame-live-p f) (frame-parameter f 'esploro))) (frame-list)))
+  "The Esploro frame to use: the selected one when it's Esploro's, else any."
+  (if (frame-parameter nil 'esploro) (selected-frame) (car (esploro--frames))))
+
+(defun esploro--frame-of-window-id (id)
+  "The Esploro frame whose X window is ID (as StumpWM knows it)."
+  (seq-find (lambda (f) (equal (frame-parameter f 'outer-window-id) (format "%s" id)))
+            (esploro--frames)))
+
+(defun esploro--make-frame ()
+  (make-frame (append esploro-frame-parameters
+                      `((esploro . t)
+                        ,@(when-let* ((display (or (car (x-display-list)) (getenv "DISPLAY"))))
+                            `((display . ,display)))))))
 
 (defun esploro--main-window (frame)
-  "FRAME's window for the folder: any but the places down the side."
-  (or (seq-find (lambda (w) (not (window-parameter w 'window-side))) (window-list frame 'no-minibuf))
-      (frame-first-window frame)))
+  "FRAME's window for a folder: its pane used last, else any but the places."
+  (let ((last (frame-parameter frame 'esploro-last-window)))
+    (if (and (window-live-p last) (eq (window-frame last) frame)) last
+      (or (car (esploro--view-windows frame))
+          (seq-find (lambda (w) (not (window-parameter w 'window-side))) (window-list frame 'no-minibuf))
+          (frame-first-window frame)))))
 
 ;;;###autoload
-(defun esploro (&optional dir)
-  "Show DIR in Esploro's frame (made the first time), and go there."
-  (interactive (list default-directory))
+(defun esploro (&optional dir where)
+  "Show DIR in an Esploro frame, and go there.
+WHERE says which: nil, the frame you're in when it's Esploro's, else any;
+`new' (with a prefix argument), a new one; a number, the frame whose X
+window that is (StumpWM's choice: the one on your workspace), or a new
+one when it's gone."
+  (interactive (list default-directory (and current-prefix-arg 'new)))
   (let* ((dir (expand-file-name (or dir default-directory)))
-         (frame (or (esploro--frame)
-                    (make-frame (append esploro-frame-parameters
-                                        `((esploro . t)
-                                          ,@(when-let* ((display (or (car (x-display-list)) (getenv "DISPLAY"))))
-                                              `((display . ,display)))))))))
+         (frame (cond ((eq where 'new) (esploro--make-frame))
+                      ((numberp where) (or (esploro--frame-of-window-id where) (esploro--make-frame)))
+                      (t (or (esploro--frame) (esploro--make-frame))))))
     (select-frame-set-input-focus frame)
     (with-selected-frame frame
       (select-window (esploro--main-window frame))
@@ -210,38 +283,56 @@ Point goes to FILE when given."
       (esploro-places-show))
     frame))
 
+(defun esploro-new-window ()
+  "Another Esploro frame, at this folder."
+  (interactive)
+  (esploro (or (esploro--dir) default-directory) 'new))
+
 (defun esploro-go (dir &optional file no-history)
-  "Show DIR, remembering where we were for Back; point on FILE when given."
-  (let ((dir (file-name-as-directory (expand-file-name dir))))
+  "Show DIR in this view (or the selected window's), remembering where it was
+for Back; point on FILE when given."
+  (let* ((dir (file-name-as-directory (expand-file-name dir)))
+         (buffer (cond ((esploro--view-p (current-buffer)) (current-buffer))
+                       ((esploro--view-p (window-buffer)) (window-buffer))
+                       (t (esploro--new-view)))))
     (unless (file-directory-p dir) (user-error "%s isn't a folder" dir))
-    (let ((here (and (get-buffer esploro-buffer-name) (esploro--dir))))
-      (unless (or no-history (null here) (equal here dir))
-        (push here esploro--back)
-        (setq esploro--forward '())))
-    (let ((buffer (esploro--show dir file)))
-      (unless (eq (window-buffer) buffer)
-        (switch-to-buffer buffer nil t)))
+    (with-current-buffer buffer
+      (let ((here (and (derived-mode-p 'dired-mode) (expand-file-name default-directory))))
+        (unless (or no-history (null here) (equal here dir))
+          (push here esploro--back)
+          (setq esploro--forward '()))))
+    (esploro--show dir file buffer)
+    (unless (eq (window-buffer) buffer)
+      (switch-to-buffer buffer nil t))
+    (esploro--note-window)
     (when (get-buffer esploro-places-buffer-name) (esploro-places-refresh))
     dir))
 
 ;;; --- Moving around ------------------------------------------------------------------
 
+(defmacro esploro--in-view (&rest body)
+  "BODY in the view a command acts on (`esploro--view'), or say there's none."
+  `(with-current-buffer (or (esploro--view) (user-error "No Esploro here (M-x esploro)"))
+     ,@body))
+
 (defun esploro-back ()
-  "Back to the folder before."
+  "Back to the folder before, in this view."
   (interactive)
-  (if (null esploro--back) (message "Esploro: nothing to go back to")
-    (let ((here (esploro--dir)))
-      (push here esploro--forward)
-      ;; Point on the folder just left, when it's in the one gone back to.
-      (esploro-go (pop esploro--back) (directory-file-name here) t))))
+  (esploro--in-view
+   (if (null esploro--back) (message "Esploro: nothing to go back to")
+     (let ((here (esploro--dir)))
+       (push here esploro--forward)
+       ;; Point on the folder just left, when it's in the one gone back to.
+       (esploro-go (pop esploro--back) (directory-file-name here) t)))))
 
 (defun esploro-forward ()
-  "Forward again, after going back."
+  "Forward again, after going back, in this view."
   (interactive)
-  (if (null esploro--forward) (message "Esploro: nothing to go forward to")
-    (let ((here (esploro--dir)))
-      (push here esploro--back)
-      (esploro-go (pop esploro--forward) (directory-file-name here) t))))
+  (esploro--in-view
+   (if (null esploro--forward) (message "Esploro: nothing to go forward to")
+     (let ((here (esploro--dir)))
+       (push here esploro--back)
+       (esploro-go (pop esploro--forward) (directory-file-name here) t)))))
 
 (defun esploro-up ()
   "The folder above, with point on the one just left."
@@ -486,31 +577,32 @@ From the clipboard (another program, or Esploro), else Esploro's own."
   "Sort by HOW: name, size (largest first), time (newest first) or kind.
 The same again turns it round."
   (interactive (list (intern (completing-read "Sort by: " '("name" "size" "time" "kind") nil t))))
-  (if (eq how esploro--sort)
-      (setq esploro--reverse (not esploro--reverse))
-    (setq esploro--sort how esploro--reverse nil))
-  (with-current-buffer (esploro--buffer)
-    (dired-sort-other (esploro--switches))))
+  (esploro--in-view
+   (if (eq how esploro--sort)
+       (setq esploro--reverse (not esploro--reverse))
+     (setq esploro--sort how esploro--reverse nil))
+   (dired-sort-other (esploro--switches))))
 
 (defun esploro-sort-cycle ()
   "The next sort: name, time, size, kind."
   (interactive)
-  (setq esploro--reverse nil)
-  (esploro-sort (pcase esploro--sort ('name 'time) ('time 'size) ('size 'kind) (_ 'name)))
-  (message "Esploro: sorted by %s" esploro--sort))
+  (esploro--in-view
+   (setq esploro--reverse nil)
+   (esploro-sort (pcase esploro--sort ('name 'time) ('time 'size) ('size 'kind) (_ 'name)))
+   (message "Esploro: sorted by %s" esploro--sort)))
 
 (defun esploro-toggle-hidden ()
   "Show or hide files whose names start with a dot."
   (interactive)
-  (setq esploro--hidden (not esploro--hidden))
-  (with-current-buffer (esploro--buffer)
-    (dired-sort-other (esploro--switches)))
-  (message "Esploro: hidden files %s" (if esploro--hidden "shown" "hidden")))
+  (esploro--in-view
+   (setq esploro--hidden (not esploro--hidden))
+   (dired-sort-other (esploro--switches))
+   (message "Esploro: hidden files %s" (if esploro--hidden "shown" "hidden"))))
 
 (defun esploro-filter (text)
   "Show only the names holding TEXT (any case), until refreshed (g, F5)."
   (interactive (list (read-string "Show names with: ")))
-  (with-current-buffer (esploro--buffer)
+  (esploro--in-view
     (revert-buffer)
     (unless (string-empty-p text)
       (setq esploro--filter text)
@@ -535,9 +627,10 @@ The same again turns it round."
                                              "--strip-cwd-prefix" "--" pattern))
                             esploro-find-limit))))
     (if (null files) (message "Esploro: nothing below matches %s" pattern)
-      (push dir esploro--back)
-      (setq esploro--forward '())
-      (switch-to-buffer (esploro--show (cons dir files)) nil t)
+      (esploro--in-view
+       (push dir esploro--back)
+       (setq esploro--forward '())
+       (esploro--show (cons dir files) nil (current-buffer)))
       (message "Esploro: %d found%s" (length files)
                (if (= (length files) esploro-find-limit) " (the first ones)" "")))))
 
@@ -635,21 +728,32 @@ managers, not only from its name: dired puts its drag keymap on the name."
   "A file dropped on Esploro, at URI: copied in, or moved when ACTION says so.
 Through the core, so undo takes it back."
   (when-let* ((file (or (esploro--uri-file uri) (dnd-get-local-file-name uri t))))
-    (let ((op (if (eq action 'move) 'cut 'copy)))
-      (setq esploro--dropped (append esploro--dropped (list (cons op file))))
+    ;; Into the folder of the pane it was dropped on: Emacs calls this with
+    ;; that pane's window selected, so this buffer is its view.
+    (let ((op (if (eq action 'move) 'cut 'copy))
+          (dir (file-name-as-directory (expand-file-name default-directory))))
+      (setq esploro--dropped (append esploro--dropped (list (cons op (cons file dir)))))
       ;; A drop of many files calls this once each: apply them together.
-      (run-at-time 0.2 nil #'esploro--apply-dropped (esploro--dir)))
+      (run-at-time 0.2 nil #'esploro--apply-dropped))
     action))
 
-(defun esploro--apply-dropped (dir)
+(defun esploro--apply-dropped ()
   (when esploro--dropped
-    (let* ((here (file-name-as-directory (expand-file-name dir)))
-           ;; Files dropped on the folder they're in (a drag let go over
-           ;; Esploro itself) stay as they are: no copies of them.
-           (dropped (seq-remove (lambda (d) (equal (file-name-directory (directory-file-name (cdr d))) here))
-                                esploro--dropped))
-           (steps (append (esploro--paste-steps 'copy (mapcar #'cdr (seq-filter (lambda (d) (eq (car d) 'copy)) dropped)) dir)
-                          (esploro--paste-steps 'cut (mapcar #'cdr (seq-filter (lambda (d) (eq (car d) 'cut)) dropped)) dir))))
+    (let* ((dropped esploro--dropped)
+           (steps
+            (seq-mapcat
+             (lambda (dir)
+               (let ((here (seq-filter (lambda (d) (equal (cddr d) dir)) dropped)))
+                 (seq-mapcat (lambda (op)
+                               (esploro--paste-steps
+                                op
+                                ;; Files dropped on the folder they're in (let go over
+                                ;; their own pane) stay as they are: no copies.
+                                (seq-remove (lambda (f) (equal (file-name-directory (directory-file-name f)) dir))
+                                            (mapcar #'cadr (seq-filter (lambda (d) (eq (car d) op)) here)))
+                                dir))
+                             '(copy cut))))
+             (seq-uniq (mapcar #'cddr dropped)))))
       (setq esploro--dropped '())
       (if steps (esploro--apply steps "dropped in")
         (message "Esploro: dropped on the folder it's in: nothing to do")))))
@@ -662,18 +766,68 @@ Quitting from the menu (File, Quit) or with C-x C-c in Esploro does this:
 in Emacs run as a daemon, the frame Esploro made isn't a client's, and
 Emacs's own quit would end all of Emacs."
   (interactive)
-  (let ((frame (esploro--frame)))
+  (let* ((frame (esploro--frame))
+         (views (and frame (mapcar #'window-buffer (esploro--view-windows frame)))))
     (cond ((null frame) (bury-buffer))
           ((or (daemonp)
-               (seq-some (lambda (f) (and (not (eq f frame)) (frame-visible-p f)
-                                          (not (frame-parameter f 'esploro))))
+               (seq-some (lambda (f) (and (not (eq f frame)) (frame-visible-p f)))
                          (frame-list)))
            (delete-frame frame))
           ;; Esploro's frame is the only one, outside a daemon: keep Emacs.
-          (t (switch-to-buffer (other-buffer esploro-buffer-name))
-             (when (window-live-p (get-buffer-window esploro-places-buffer-name))
-               (delete-window (get-buffer-window esploro-places-buffer-name)))
-             (set-frame-parameter frame 'esploro nil)))))
+          (t (delete-other-windows (esploro--main-window frame))
+             (switch-to-buffer (other-buffer (current-buffer)))
+             (set-frame-parameter frame 'esploro nil)))
+    ;; Its views go with it, unless another frame shows one.
+    (dolist (buffer views)
+      (unless (get-buffer-window buffer t) (kill-buffer buffer)))))
+
+;;; --- Two panes ---------------------------------------------------------------------------------
+
+(defun esploro--other-pane (&optional window)
+  "The other pane of WINDOW's frame (the selected one's), if it has two."
+  (let ((window (or window (esploro--main-window (selected-frame)))))
+    (seq-find (lambda (w) (not (eq w window))) (esploro--view-windows (window-frame window)))))
+
+(defun esploro-split ()
+  "Two panes side by side, each with its own folder; again, back to one."
+  (interactive)
+  (let* ((here (if (esploro--view-p (window-buffer)) (selected-window)
+                 (esploro--main-window (selected-frame))))
+         (other (esploro--other-pane here)))
+    (if other
+        (let ((buffer (window-buffer other)))
+          (delete-window other)
+          (unless (get-buffer-window buffer t) (kill-buffer buffer))
+          (select-window here))
+      (let* ((buffer (window-buffer here))
+             (dir (esploro--dir buffer))
+             (new (split-window here nil 'right))
+             (view (esploro--new-view buffer)))
+        (set-window-buffer new view)
+        (with-selected-window new
+          (with-current-buffer view (esploro-go dir nil t)))
+        (select-window here)
+        (esploro--note-window)))))
+
+(defun esploro--to-other-pane (op)
+  (let ((other (or (esploro--other-pane (selected-window))
+                   (user-error "One pane: F3 makes two"))))
+    (esploro--apply (esploro--paste-steps op (or (esploro--selection) (user-error "Nothing selected"))
+                                          (esploro--dir (window-buffer other)))
+                    (if (eq op 'cut) "moved to the other pane" "copied to the other pane"))))
+
+(defun esploro-copy-to-other-pane ()
+  "Copy the selection into the other pane's folder."
+  (interactive)
+  (esploro--to-other-pane 'copy))
+
+(defun esploro-move-to-other-pane ()
+  "Move the selection into the other pane's folder."
+  (interactive)
+  (esploro--to-other-pane 'cut))
+
+(defun esploro--two-panes-p ()
+  (and (esploro--other-pane (selected-window)) t))
 
 ;;; --- Dragging out: the file list as the standard says --------------------------------------
 
@@ -717,6 +871,10 @@ a dropped name kept its newline, named no file, and the drop was lost."
   "M-s f" #'esploro-find
   "<f5>" #'revert-buffer
   "<f9>" #'esploro-places-toggle
+  "<f3>" #'esploro-split
+  "<f6>" #'esploro-move-to-other-pane
+  "C-c C-c" #'esploro-copy-to-other-pane
+  "C-x 5 2" #'esploro-new-window
   "?" #'esploro-help
   "<remap> <save-buffers-kill-terminal>" #'esploro-close
   "<remap> <save-buffers-kill-emacs>" #'esploro-close
@@ -737,6 +895,7 @@ a dropped name kept its newline, named no file, and the drop was lost."
     ["Open" esploro-open :active (esploro--file-at)]
     ["Open With..." esploro-open-with :active (esploro--marked-or-point-p)]
     ["Terminal Here" esploro-terminal-here]
+    ["New Window" esploro-new-window :keys "C-x 5 2"]
     "---"
     ["Copy" esploro-copy :keys "M-w" :active (esploro--marked-or-point-p)]
     ["Cut" esploro-cut :keys "C-w" :active (esploro--marked-or-point-p)]
@@ -744,6 +903,10 @@ a dropped name kept its newline, named no file, and the drop was lost."
     ["Duplicate" esploro-duplicate :active (esploro--marked-or-point-p)]
     ["Copy To..." esploro-copy-to :active (esploro--marked-or-point-p)]
     ["Move To..." esploro-move-to :active (esploro--marked-or-point-p)]
+    ["Copy to Other Pane" esploro-copy-to-other-pane :keys "C-c C-c"
+     :active (and (esploro--two-panes-p) (esploro--marked-or-point-p))]
+    ["Move to Other Pane" esploro-move-to-other-pane :keys "F6"
+     :active (and (esploro--two-panes-p) (esploro--marked-or-point-p))]
     ["Rename..." esploro-rename :keys "F2" :active (esploro--file-at)]
     ["New Folder..." esploro-new-folder :keys "+"]
     ["Move to Trash" esploro-trash :keys "Delete" :active (esploro--marked-or-point-p)]
@@ -767,7 +930,9 @@ a dropped name kept its newline, named no file, and the drop was lost."
      ["Hidden Files" esploro-toggle-hidden :style toggle :selected esploro--hidden]
      ["Filter..." esploro-filter :keys "/"]
      ["Find Below..." esploro-find :keys "M-s f"]
-     ["Refresh" revert-buffer :keys "F5"])
+     ["Refresh" revert-buffer :keys "F5"]
+     "---"
+     ["Two Panes" esploro-split :keys "F3" :style toggle :selected (esploro--two-panes-p)])
     ("Trash"
      ["Show the Trash" esploro-show-trash]
      ["Restore" esploro-restore :active (esploro--in-trash-p)]
@@ -788,6 +953,8 @@ a dropped name kept its newline, named no file, and the drop was lost."
     ["Rename..." esploro-rename]
     ["Move To..." esploro-move-to]
     ["Copy To..." esploro-copy-to]
+    ["Copy to Other Pane" esploro-copy-to-other-pane :visible (esploro--two-panes-p)]
+    ["Move to Other Pane" esploro-move-to-other-pane :visible (esploro--two-panes-p)]
     "---"
     ["Move to Trash" esploro-trash :visible (not (esploro--in-trash-p))]
     ["Restore" esploro-restore :visible (esploro--in-trash-p)]
@@ -799,6 +966,8 @@ a dropped name kept its newline, named no file, and the drop was lost."
     ["Paste" esploro-paste]
     ["New Folder..." esploro-new-folder]
     ["Terminal Here" esploro-terminal-here]
+    ["Two Panes" esploro-split :style toggle :selected (esploro--two-panes-p)]
+    ["New Window" esploro-new-window]
     "---"
     ["Hidden Files" esploro-toggle-hidden :style toggle :selected esploro--hidden]
     ["Sort by Name" (esploro-sort 'name) :style radio :selected (eq esploro--sort 'name)]
@@ -816,6 +985,7 @@ a dropped name kept its newline, named no file, and the drop was lost."
                     (esploro-up "up-arrow" "Up")
                     (esploro-home "home" "Home")
                     (esploro-places-toggle "index" "Places")
+                    (esploro-split "next-page" "Two Panes")
                     nil
                     (esploro-new-folder "new" "New Folder")
                     (esploro-copy "copy" "Copy")
@@ -854,6 +1024,7 @@ through the core, journaled so they can be undone."
     (setq-local dnd-protocol-alist (cons '("^file:" . esploro--dnd-file) dnd-protocol-alist))
     (setq-local tool-bar-map esploro-tool-bar-map)
     (setq-local header-line-format '(:eval (esploro--header)))
+    (add-hook 'post-command-hook #'esploro--note-window nil t)
     (add-hook 'dired-after-readin-hook #'esploro--whole-row-drag nil t)
     (add-hook 'dired-after-readin-hook #'esploro--annotate nil t)))
 
@@ -903,9 +1074,13 @@ through the core, journaled so they can be undone."
 
 (defun esploro-places-refresh ()
   (when-let* ((buffer (get-buffer esploro-places-buffer-name)))
-    (with-current-buffer buffer
-      (let ((inhibit-read-only t)
-            (here (and (get-buffer esploro-buffer-name) (esploro--dir))))
+    ;; One places buffer for every Esploro frame: it shows where the pane
+    ;; used last, in the frame you're in, is.
+    (let ((here (when-let* ((frame (esploro--frame))
+                            (view (esploro--view frame)))
+                  (esploro--dir view))))
+     (with-current-buffer buffer
+      (let ((inhibit-read-only t))
         (erase-buffer)
         (dolist (group (esploro--places))
           (unless (string-empty-p (car group))
@@ -919,9 +1094,10 @@ through the core, journaled so they can be undone."
                                 'face (if (equal (file-name-as-directory (cdr place)) here) 'highlight 'default))
             (insert "\n"))
           (insert "\n"))
-        (goto-char (point-min))))))
+        (goto-char (point-min)))))))
 
 (defun esploro--from-places (dir)
+  "DIR in the pane used last of the frame whose places were clicked."
   (let ((frame (esploro--frame)))
     (when frame
       (with-selected-frame frame
@@ -974,6 +1150,9 @@ Keys
   .                     hidden files        /           only names with...
   M-s f                 find below          F5          refresh
   F9                    places              ?           this
+  F3                    two panes, or one   F6          move to the other pane
+  C-c C-c               copy to the other pane
+  C-x 5 2               another Esploro window (one per workspace: Super+Alt+e)
   C-x C-c, File > Quit  close Esploro (Emacs goes on)
   m, u, U               mark, unmark, unmark all (dired's)
 
