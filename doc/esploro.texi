@@ -326,6 +326,20 @@ and Esploro shows it to you, on your workspace: why, and each step.
 @samp{Apply} makes the changes, journaled, so undo takes them back;
 @samp{Cancel} drops the plan, and nothing changes.
 
+@samp{Edit} (or @kbd{e}) opens the plan as text, one step a line:
+
+@example
+(:move "/from" "/to")    (:copy "/from" "/to")
+(:rename "/path" "new name")
+(:mkdir "/path")         (:trash "/path")
+@end example
+
+Change, add or delete lines.  Each save checks the plan again, and the
+review shows it as it now is, marked as edited by you, with what's
+wrong if anything is (a plan with a problem isn't applied).
+@kbd{C-c C-c} saves and goes back to the review; @kbd{C-c C-k} drops
+your unsaved changes.  Then @samp{Apply} as before.
+
 @node Keys and mouse
 @chapter Keys and mouse
 

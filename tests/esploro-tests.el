@@ -346,6 +346,16 @@
        (delete-window (esploro--preview-window))
        (kill-buffer preview)))))
 
+(defun esploro-tests--review (plan)
+  "A review buffer for the plan in PLAN, as `esploro-review-plan' makes it,
+without a frame."
+  (let ((buffer (generate-new-buffer "review")))
+    (with-current-buffer buffer
+      (esploro-review-mode)
+      (setq esploro--review-file plan esploro--review-why "a test"))
+    (esploro--review-show buffer)
+    buffer))
+
 (ert-deftest esploro-review-a-proposed-plan ()
   (skip-unless (file-executable-p (expand-file-name "../esploro" (file-name-directory (locate-library "esploro")))))
   (esploro-tests--world
@@ -355,17 +365,60 @@
      (should (equal (esploro--read-plan plan) steps))
      (should (string-match-p "make the folder .*made" (esploro--describe-step (car steps))))
      (should (equal (esploro--describe-step (list :rename "/a/b.txt" "c.txt")) "rename /a/b.txt to c.txt"))
-     ;; Cancel: nothing happens, the proposal goes.
-     (let ((buffer (generate-new-buffer "review")))
-       (esploro--review-done buffer plan steps nil)
+     ;; Apply, Edit and Cancel, under the steps.
+     (let ((buffer (esploro-tests--review plan)))
+       (with-current-buffer buffer
+         (should (string-match-p "1\\. make the folder" (buffer-string)))
+         (should (string-match-p " Apply .* Edit .* Cancel " (buffer-string))))
+       ;; Cancel: nothing happens, the proposal goes.
+       (esploro--review-done buffer nil)
        (should-not (file-exists-p (esploro-tests--path "made")))
-       (should-not (file-exists-p plan)))
+       (should-not (file-exists-p plan))
+       (should-not (buffer-live-p buffer)))
      ;; Apply: through the core, so undo takes it back.
      (with-temp-file plan (insert (esploro--plan-text steps) "\n"))
-     (let ((buffer (generate-new-buffer "review")))
-       (esploro--review-done buffer plan steps t)
-       (should (file-directory-p (esploro-tests--path "made")))
-       (esploro-undo)
-       (should-not (file-directory-p (esploro-tests--path "made")))))))
+     (esploro--review-done (esploro-tests--review plan) t)
+     (should (file-directory-p (esploro-tests--path "made")))
+     (esploro-undo)
+     (should-not (file-directory-p (esploro-tests--path "made"))))))
+
+(ert-deftest esploro-review-edit-the-plan ()
+  (skip-unless (file-executable-p (expand-file-name "../esploro" (file-name-directory (locate-library "esploro")))))
+  (esploro-tests--world
+   (let* ((plan (esploro-tests--path "plan.lisp"))
+          (made (esploro-tests--path "made"))
+          (other (esploro-tests--path "other"))
+          (review nil) (edit nil))
+     (with-temp-file plan (insert (esploro--plan-text (list (list :mkdir made))) "\n"))
+     (setq review (esploro-tests--review plan))
+     (with-current-buffer review (esploro-review-edit))
+     (setq edit (esploro--review-edit-buffer review))
+     (should edit)
+     (with-current-buffer edit
+       (should esploro-plan-edit-mode)
+       ;; A step the core refuses: the review says so, and Apply won't.
+       (erase-buffer)
+       (insert (format "(:trash %S)\n" (esploro-tests--path "not-there")))
+       (save-buffer))
+     (with-current-buffer review
+       (should esploro--review-edited)
+       (should esploro--review-problems)
+       (should (string-match-p "can't be applied" (buffer-string))))
+     (esploro--review-done review t)
+     (should (buffer-live-p review))
+     ;; Mended: the review shows the plan as it now is, and applies that.
+     (with-current-buffer edit
+       (erase-buffer)
+       (insert (format "(:mkdir %S)\n" other))
+       (esploro-plan-edit-done))
+     (should-not (buffer-live-p edit))
+     (with-current-buffer review
+       (should-not esploro--review-problems)
+       (should (string-match-p "edited by you" (buffer-string)))
+       (should (string-match-p "make the folder .*other" (buffer-string))))
+     (esploro--review-done review t)
+     (should (file-directory-p other))
+     (should-not (file-exists-p made))
+     (should-not (file-exists-p plan)))))
 
 ;;; esploro-tests.el ends here

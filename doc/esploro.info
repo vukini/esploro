@@ -362,6 +362,18 @@ why, and each step.  ‘Apply’ makes the changes, journaled, so
 undo takes them back; ‘Cancel’ drops the plan, and nothing
 changes.
 
+   ‘Edit’ (or ‘e’) opens the plan as text, one step a line:
+
+     (:move "/from" "/to")    (:copy "/from" "/to")
+     (:rename "/path" "new name")
+     (:mkdir "/path")         (:trash "/path")
+
+   Change, add or delete lines.  Each save checks the plan
+again, and the review shows it as it now is, marked as edited by
+you, with what's wrong if anything is (a plan with a problem
+isn't applied).  ‘C-c C-c’ saves and goes back to the review;
+‘C-c C-k’ drops your unsaved changes.  Then ‘Apply’ as before.
+
 
 File: esploro.info,  Node: Keys and mouse,  Next: The command line,  Prev: Plans from agents,  Up: Top
 
@@ -488,9 +500,9 @@ Node: Looking around10528
 Node: The Trash11368
 Node: Where files are open11849
 Node: Plans from agents12320
-Node: Keys and mouse12869
-Node: The command line14549
-Node: Writing commands16294
+Node: Keys and mouse13395
+Node: The command line15075
+Node: Writing commands16820
 
 End Tag Table
 

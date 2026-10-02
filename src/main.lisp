@@ -20,6 +20,7 @@ esploro --where [PATH...]   which windows have PATH open (or every file that's o
 
 For the window (each answers with one s-expression):
 esploro apply [FILE]        apply the plan in FILE (or read from standard input)
+esploro check FILE          whether the plan in FILE could be applied; changes nothing
 esploro undo                undo the last applied plan
 esploro where FOLDER        the files in FOLDER that a window has open
 esploro open PATH           go to the window that has PATH, or open it
@@ -175,6 +176,16 @@ or not. Nothing changes here."
                  (progn (answer (list :proposed (length steps))) 0)
                  (progn (answer (list :error "Esploro's window (Emacs's server) isn't answering")) 1)))))))
 
+(defun cli-check (file)
+  "Whether the plan in FILE could be applied now, changing nothing: (:ok N),
+or (:refused PROBLEMS). For a plan you've edited, before you apply it."
+  (let ((steps (handler-case (read-plan-file (absolute file))
+                 (error (e) (answer (list :refused (list (format nil "it can't be read: ~a" e))))
+                   (return-from cli-check 1)))))
+    (let ((problems (check-plan steps)))
+      (cond (problems (answer (list :refused problems)) 1)
+            (t (answer (list :ok (length steps))) 0)))))
+
 (defun cli-dbus ()
   "Make the running Emacs answer org.freedesktop.FileManager1 (the browsers'
 \"Show in folder\"): what the session bus runs when it's first asked."
@@ -206,6 +217,7 @@ or not. Nothing changes here."
           ((equal command "empty-trash") (answer (list :emptied (empty-trash))) 0)
           ((equal command "--dbus") (cli-dbus))
           ((equal command "propose") (cli-propose (second args) (third args)))
+          ((equal command "check") (cli-check (second args)))
           ((equal command "reveal")
            ;; Nothing behind it (a shell at home): the workspace's folder, or home.
            (let ((file (or (reveal-target) (ignore-errors (workspace-folder)) (home-folder))))

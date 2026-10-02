@@ -1482,23 +1482,67 @@ ShowItems and ShowItemProperties open Esploro there."
         (push form steps))
       (nreverse steps))))
 
+;; Edit opens the plan's own file (the core keeps a copy, one step a
+;; line); saving it checks it again and shows it here as it now is.
+
+(defvar-local esploro--review-file nil "The plan under review: its file.")
+(defvar-local esploro--review-why nil "Why the agent proposes it.")
+(defvar-local esploro--review-problems nil
+  "What the core found wrong with the plan as it now is; nil when it can be applied.")
+(defvar-local esploro--review-edited nil "Whether you've changed the plan.")
+(defvar-local esploro--review-of nil "In a plan being edited: its review buffer.")
+
 (defvar-keymap esploro-review-mode-map
   :doc "A plan to review: Esploro's menus."
   :parent special-mode-map
+  "e" #'esploro-review-edit
   "C-x C-c" #'esploro-close)
 (esploro--install-menu-bar esploro-review-mode-map)
 
 (defface esploro-button '((t :box (:line-width 2 :style released-button) :weight bold :inherit default))
-  "Apply and Cancel, under a plan to review.")
+  "Apply, Edit and Cancel, under a plan to review.")
 
 (define-derived-mode esploro-review-mode special-mode "Plan"
-  "A plan proposed to you: Apply or Cancel."
+  "A plan proposed to you: Apply, Edit or Cancel."
   (setq-local tool-bar-map esploro-tool-bar-map)
+  (setq-local revert-buffer-function (lambda (&rest _) (esploro--review-show (current-buffer))))
   (visual-line-mode 1))
+
+(defun esploro--review-show (buffer)
+  "Show in BUFFER the plan in its file, as it now is."
+  (with-current-buffer buffer
+    (let ((steps (esploro--read-plan esploro--review-file))
+          (inhibit-read-only t))
+      (erase-buffer)
+      (insert (propertize "A plan for you to review" 'face 'bold)
+              (if esploro--review-edited (propertize "  (edited by you)" 'face 'shadow) "")
+              "\n")
+      (insert (propertize "An agent proposes these changes. Nothing happens until you apply them; undo takes them back after.\n" 'face 'shadow))
+      (when (and esploro--review-why (not (string-empty-p esploro--review-why)))
+        (insert "\nWhy: " esploro--review-why "\n"))
+      (insert "\n")
+      (let ((n 0))
+        (dolist (step steps)
+          (insert (format "%d. %s\n" (setq n (1+ n)) (esploro--describe-step step)))))
+      (when esploro--review-problems
+        (insert "\n" (propertize "It can't be applied as it is:" 'face 'error) "\n")
+        (dolist (problem esploro--review-problems)
+          (insert "  " problem "\n")))
+      (insert "\n")
+      (insert-text-button " Apply " 'action (lambda (_) (esploro--review-done buffer t))
+                          'follow-link t 'face 'esploro-button 'help-echo "Make these changes (undo takes them back)")
+      (insert "   ")
+      (insert-text-button " Edit " 'action (lambda (_) (with-current-buffer buffer (esploro-review-edit)))
+                          'follow-link t 'face 'esploro-button 'help-echo "Change the plan as text, one step a line (e)")
+      (insert "   ")
+      (insert-text-button " Cancel " 'action (lambda (_) (esploro--review-done buffer nil))
+                          'follow-link t 'face 'esploro-button 'help-echo "Drop the plan: nothing changes")
+      (insert "\n")
+      (goto-char (point-min)))))
 
 (defun esploro-review-plan (file &optional why where)
   "Show the plan in FILE (an agent's, checked by the core) in Esploro, on
-your workspace (WHERE, as `esploro' takes it), with Apply and Cancel."
+your workspace (WHERE, as `esploro' takes it), with Apply, Edit and Cancel."
   (let* ((steps (esploro--read-plan file))
          (first-path (cadr (car steps)))
          (dir (if (and first-path (file-directory-p (file-name-directory first-path)))
@@ -1508,23 +1552,9 @@ your workspace (WHERE, as `esploro' takes it), with Apply and Cancel."
          (buffer (generate-new-buffer "*Esploro: a plan to review*")))
     (with-current-buffer buffer
       (esploro-review-mode)
-      (let ((inhibit-read-only t))
-        (insert (propertize "A plan for you to review" 'face 'bold) "\n")
-        (insert (propertize "An agent proposes these changes. Nothing happens until you apply them; undo takes them back after.\n" 'face 'shadow))
-        (when (and why (not (string-empty-p why)))
-          (insert "\nWhy: " why "\n"))
-        (insert "\n")
-        (let ((n 0))
-          (dolist (step steps)
-            (insert (format "%d. %s\n" (setq n (1+ n)) (esploro--describe-step step)))))
-        (insert "\n")
-        (insert-text-button " Apply " 'action (lambda (_) (esploro--review-done buffer file steps t))
-                            'follow-link t 'face 'esploro-button 'help-echo "Make these changes (undo takes them back)")
-        (insert "   ")
-        (insert-text-button " Cancel " 'action (lambda (_) (esploro--review-done buffer file steps nil))
-                            'follow-link t 'face 'esploro-button 'help-echo "Drop the plan: nothing changes")
-        (insert "\n")
-        (goto-char (point-min))))
+      (setq esploro--review-file file
+            esploro--review-why why))
+    (esploro--review-show buffer)
     (with-selected-frame frame
       (select-window (display-buffer-in-side-window
                       buffer '((side . bottom) (slot . 0) (window-height . 0.35)
@@ -1532,12 +1562,106 @@ your workspace (WHERE, as `esploro' takes it), with Apply and Cancel."
     (message "Esploro: a plan of %d %s to review" (length steps) (if (= (length steps) 1) "step" "steps"))
     buffer))
 
-(defun esploro--review-done (buffer file steps apply)
-  (when apply (esploro--apply steps "the proposed plan, applied"))
-  (unless apply (message "Esploro: the proposed plan was dropped; nothing changed"))
-  (ignore-errors (delete-file file))
-  (when-let* ((window (get-buffer-window buffer t))) (delete-window window))
-  (kill-buffer buffer))
+(defun esploro--review-edit-buffer (review)
+  "The buffer editing REVIEW's plan, if there is one."
+  (seq-find (lambda (b) (eq (buffer-local-value 'esploro--review-of b) review))
+            (buffer-list)))
+
+(defvar-keymap esploro-plan-edit-mode-map
+  :doc "Editing a plan to review."
+  "C-c C-c" #'esploro-plan-edit-done
+  "C-c C-k" #'esploro-plan-edit-abort)
+
+(define-minor-mode esploro-plan-edit-mode
+  "A plan under review, as text: one step a line.
+\\<esploro-plan-edit-mode-map>\\[esploro-plan-edit-done] saves it and goes back to the review, \
+\\[esploro-plan-edit-abort] drops your changes."
+  :lighter " Plan"
+  (if esploro-plan-edit-mode
+      (progn
+        (add-hook 'after-save-hook #'esploro--plan-edit-saved nil t)
+        (setq header-line-format
+              (substitute-command-keys
+               "  One step a line.  \\<esploro-plan-edit-mode-map>\\[esploro-plan-edit-done]: done, back to the review   \\[esploro-plan-edit-abort]: drop your changes")))
+    (remove-hook 'after-save-hook #'esploro--plan-edit-saved t)
+    (setq header-line-format nil)))
+
+(defun esploro-review-edit ()
+  "Edit the plan under review as text, one step a line.
+Saving checks it again and shows it in the review as it now is."
+  (interactive)
+  (let* ((review (current-buffer))
+         (edit (or (esploro--review-edit-buffer review)
+                   (let ((b (find-file-noselect esploro--review-file)))
+                     (with-current-buffer b
+                       (unless (derived-mode-p 'lisp-data-mode) (lisp-data-mode))
+                       (setq esploro--review-of review)
+                       (esploro-plan-edit-mode 1))
+                     b))))
+    (pop-to-buffer edit '((display-buffer-reuse-window display-buffer-use-some-window)))))
+
+(defun esploro--review-check (review)
+  "Ask the core whether REVIEW's plan can be applied, and show it again."
+  (with-current-buffer review
+    (let ((answer (esploro--call (list "check" esploro--review-file) nil nil t)))
+      (setq esploro--review-problems
+            (pcase answer
+              (`(:ok ,_) nil)
+              (`(:refused ,problems) problems)
+              (`(:error ,text) (list text))
+              (_ nil)))))
+  (esploro--review-show review))
+
+(defun esploro--plan-edit-saved ()
+  (let ((review esploro--review-of))
+    (when (buffer-live-p review)
+      (with-current-buffer review (setq esploro--review-edited t))
+      (esploro--review-check review)
+      (message (if (buffer-local-value 'esploro--review-problems review)
+                   "Esploro: saved, but the plan can't be applied as it is (see the review)"
+                 "Esploro: saved; the review shows the plan as it now is")))))
+
+(defun esploro--plan-edit-close (edit review)
+  (let ((window (get-buffer-window edit)))
+    (with-current-buffer edit (set-buffer-modified-p nil))
+    (kill-buffer edit)
+    (when (and (window-live-p window) (not (eq window (get-buffer-window review))))
+      (ignore-errors (delete-window window))))
+  (when-let* ((window (and (buffer-live-p review) (get-buffer-window review t))))
+    (select-window window)))
+
+(defun esploro-plan-edit-done ()
+  "Save the plan, and go back to its review."
+  (interactive)
+  (let ((review esploro--review-of))
+    (save-buffer)
+    (esploro--plan-edit-close (current-buffer) review)))
+
+(defun esploro-plan-edit-abort ()
+  "Drop your unsaved changes to the plan, and go back to its review."
+  (interactive)
+  (esploro--plan-edit-close (current-buffer) esploro--review-of))
+
+(defun esploro--review-done (buffer apply)
+  "Apply BUFFER's plan (APPLY), or drop it; either way the review goes."
+  (let ((edit (esploro--review-edit-buffer buffer))
+        (file (buffer-local-value 'esploro--review-file buffer)))
+    (if (and apply edit (buffer-modified-p edit)
+             (not (y-or-n-p "You've changed the plan without saving it: save, and apply that? ")))
+        (message "Esploro: not applied; the plan is still open for editing")
+      (when (and apply edit (buffer-modified-p edit))
+        (with-current-buffer edit (save-buffer)))
+      (when apply (esploro--review-check buffer))
+      (if (and apply (buffer-local-value 'esploro--review-problems buffer))
+          (message "Esploro: not applied, the plan can't be applied as it is: %s"
+                   (string-join (buffer-local-value 'esploro--review-problems buffer) "; "))
+        (let ((steps (esploro--read-plan file)))
+          (when apply (esploro--apply steps "the proposed plan, applied"))
+          (unless apply (message "Esploro: the proposed plan was dropped; nothing changed"))
+          (when edit (esploro--plan-edit-close edit buffer))
+          (ignore-errors (delete-file file))
+          (when-let* ((window (get-buffer-window buffer t))) (delete-window window))
+          (kill-buffer buffer))))))
 
 ;;; --- The manual ---------------------------------------------------------------------------
 
