@@ -935,6 +935,7 @@ show the pane's sort and history even when the places are selected."
           ["Open With..." esploro-open-with :active (esploro--marked-or-point-p)]
           ["Terminal Here" esploro-terminal-here]
           ["Properties" esploro-properties]
+          ("Commands" :filter esploro--commands-menu)
           "---"
           ["Close Esploro" esploro-close :keys "C-x C-c"])
     (edit "Edit"
@@ -1006,6 +1007,7 @@ show the pane's sort and history even when the places are selected."
   '("File"
     ["Open" esploro-open]
     ["Open With..." esploro-open-with]
+    ("Commands" :filter esploro--commands-menu)
     "---"
     ["Copy" esploro-copy]
     ["Cut" esploro-cut]
@@ -1456,6 +1458,39 @@ ShowItems and ShowItemProperties open Esploro there."
   (when (called-interactively-p 'any)
     (message "Esploro answers Show in folder (%s)" esploro--dbus-name))
   t)
+
+;;; --- File commands: the core's, and yours ----------------------------------------------
+
+;; The commands the core defines for each kind of file (define-file-command;
+;; yours in ~/.config/esploro/commands.lisp), on the File menu and the
+;; right-click menu under Commands. One that changes files proposes a plan,
+;; which waits for you in the review panel.
+
+(defun esploro--commands-menu (_items)
+  "The Commands submenu, made when it opens: what suits the selection."
+  (let ((files (and (esploro--view) (with-current-buffer (esploro--view) (esploro--selection)))))
+    (if (null files)
+        (list ["Select a file first" ignore :active nil])
+      (let ((answer (esploro--call (cons "commands" files) nil nil t)))
+        (if (and (listp answer) (not (keywordp (car answer))) answer)
+            (mapcar (lambda (c)
+                      (vector (concat (nth 1 c) (if (nth 3 c) "..." ""))
+                              (list 'esploro-run-command (nth 0 c))
+                              :help (nth 2 c)))
+                    answer)
+          (list ["No commands for these" ignore :active nil]))))))
+
+(defun esploro-run-command (name &optional files)
+  "Run the file command NAME on FILES (the selection): at once, or, for one
+that changes files, as a plan for your review."
+  (interactive (list (read-string "Command: ")))
+  (let ((files (or files (esploro--in-view (esploro--selection)) (user-error "Nothing selected"))))
+    (esploro--call (append (list "run" name) files) nil
+                   (lambda (answer)
+                     (pcase answer
+                       (`(:done ,_) (message "Esploro: %s, done" name) (esploro--refresh))
+                       (`(:proposed ,n) (message "Esploro: %s proposes %d %s: review it" name n (if (= n 1) "step" "steps")))
+                       (_ (esploro--say answer name)))))))
 
 ;;; --- Plans to review: an agent's proposals ---------------------------------------------
 

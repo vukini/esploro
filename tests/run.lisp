@@ -202,7 +202,7 @@
 (check "duplicate finds a free name"
        (progn (make-file (p "n.org")) (make-file (p "n copy.org"))
               (equal (run-file-command 'duplicate (list (p "n.org"))) `((:copy ,(p "n.org") ,(p "n copy 2.org"))))))
-(check "labels for people" (equal (file-command-label (find-file-command 'open-in-emacs)) "Open in emacs"))
+(check "labels for people" (equal (file-command-label (find-file-command 'open-in-emacs)) "Open in Emacs"))
 (check "redefining replaces" (progn (define-file-command test-shout ((path t)) nil)
                                     (= 1 (count 'test-shout esploro::*file-commands* :key #'file-command-name))))
 
@@ -412,6 +412,36 @@
   ;; and nothing is done either way.
   (check "a sound plan goes to Emacs for review, and changes nothing by itself"
          (and (eq (second r) :error) (not (path-exists-p (p "proposed-folder"))))))
+
+;;; --- Commands, and their other doors ---------------------------------------------------
+
+(check "names keep their capitals in a label"
+       (equal (file-command-label (find-file-command "show-in-esploro")) "Show in Esploro"))
+(esploro::ensure-folder (p "cmd"))
+(make-file (p "cmd/note.txt") "a note")
+(check "commands suit their kinds: no shrinking a text"
+       (let ((names (mapcar (lambda (c) (symbol-name (file-command-name c))) (commands-for (list (p "cmd/note.txt"))))))
+         (and (member "COMPRESS" names :test #'string=) (not (member "SHRINK" names :test #'string=)))))
+(when (esploro::program-p "zip")
+  (check "compress makes a .zip beside it, never over one"
+         (progn (run-cli (list "run" "compress" (p "cmd/note.txt")))
+                (run-cli (list "run" "compress" (p "cmd/note.txt")))
+                (and (path-exists-p (p "cmd/note.txt.zip")) (path-exists-p (p "cmd/note.txt 2.zip")))))
+  (when (or (esploro::program-p "bsdtar") (esploro::program-p "unzip"))
+    (check "extract-here unpacks into a new folder beside it"
+           (progn (run-cli (list "run" "extract-here" (p "cmd/note.txt.zip")))
+                  ;; note.txt is the file itself: the folder is numbered.
+                  (path-exists-p (p "cmd/note.txt 2/note.txt"))))))
+(check "a command that isn't for that kind is refused"
+       (eq (second (run-cli (list "run" "shrink" (p "cmd/note.txt")))) :error))
+(check "a command that changes files only proposes (no Emacs here: nothing happens)"
+       (progn (run-cli (list "run" "trash" (p "cmd/note.txt")))
+              (path-exists-p (p "cmd/note.txt"))))
+(esploro::ensure-folder (p ".config/esploro"))
+(with-open-file (out (p ".config/esploro/commands.lisp") :direction :output :if-exists :supersede)
+  (write-string "(define-file-command shout ((path :text)) \"Says it loud.\" (declare (ignore path)) t)" out))
+(check "your own commands are offered too"
+       (member "shout" (cdr (run-cli (list "commands" (p "cmd/note.txt")))) :key #'first :test #'string=))
 
 ;;; --- The end -------------------------------------------------------------------------
 

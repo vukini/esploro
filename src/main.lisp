@@ -12,7 +12,11 @@
 esploro --new [FOLDER]      a new Esploro window, wherever others are
 esploro FILE                its folder, with FILE selected
 esploro                     (no folder) the workspace's: the project its windows are in
-esploro reveal              the file behind the focused window, selected in its folder
+esploro reveal [--print]    the file behind the focused window, selected in its folder
+                            (--print: only say which)
+esploro commands [--lines] FILE...   the file commands that suit them (yours too:
+                            ~/.config/esploro/commands.lisp)
+esploro run NAME FILE...    run one: at once, or as a plan for your review
 esploro propose FILE [WHY]  a plan for you to review in Esploro (an agent's): checked
                             first; nothing happens until you choose Apply
 esploro --dbus              the running Emacs answers \"Show in folder\" (FileManager1)
@@ -157,8 +161,12 @@ else the one on this workspace (or a new one there)."
   "An agent's plan, FILE: checked whole now (a plan with problems goes back
 to it, with them), then shown to you in Esploro, on your workspace, to apply
 or not. Nothing changes here."
-  (let* ((steps (read-plan-file (absolute file)))
-         (problems (check-plan steps)))
+  (propose-steps (read-plan-file (absolute file)) why))
+
+(defun propose-steps (steps why)
+  "STEPS for your review in Esploro (an agent's, or a command's that changes
+files): checked whole first, then shown with WHY; nothing changes here."
+  (let* ((problems (check-plan steps)))
     (cond (problems (answer (list :refused problems)) 1)
           (t
            ;; Its own copy: the agent's file may go before you decide.
@@ -185,6 +193,36 @@ or (:refused PROBLEMS). For a plan you've edited, before you apply it."
     (let ((problems (check-plan steps)))
       (cond (problems (answer (list :refused problems)) 1)
             (t (answer (list :ok (length steps))) 0)))))
+
+(defun cli-commands (paths lines)
+  "The file commands that suit every one of PATHS: (NAME LABEL DOC CHANGES)
+each, or with LINES one a line, NAME, a tab, LABEL: what it does (for rofi)."
+  (load-user-commands)
+  (let ((commands (commands-for (mapcar #'absolute paths))))
+    (if lines
+        (dolist (c commands)
+          (format t "~(~a~)~c~a~@[: ~a~]~%" (file-command-name c) #\Tab (file-command-label c)
+                  (file-command-doc c)))
+        (answer (mapcar (lambda (c) (list (string-downcase (symbol-name (file-command-name c)))
+                                          (file-command-label c) (or (file-command-doc c) "")
+                                          (and (file-command-changes c) t)))
+                        commands)))
+    0))
+
+(defun cli-run (name paths)
+  "Run the file command NAME on PATHS: one that acts, at once; one that
+changes files, its steps go to Esploro for your review."
+  (load-user-commands)
+  (let* ((paths (mapcar #'absolute paths))
+         (command (find-file-command name)))
+    (cond ((null command) (answer (list :error (format nil "no command ~a" name))) 1)
+          ((not (every (lambda (p) (applies-p command (path-kind p))) paths))
+           (answer (list :error (format nil "~a isn't for ~{~a~^, ~}" (file-command-label command)
+                                        (mapcar #'path-name paths))))
+           1)
+          ((file-command-changes command)
+           (propose-steps (run-file-command command paths) (file-command-label command)))
+          (t (run-file-command command paths) (answer (list :done (length paths))) 0))))
 
 (defun cli-dbus ()
   "Make the running Emacs answer org.freedesktop.FileManager1 (the browsers'
@@ -218,6 +256,15 @@ or (:refused PROBLEMS). For a plan you've edited, before you apply it."
           ((equal command "--dbus") (cli-dbus))
           ((equal command "propose") (cli-propose (second args) (third args)))
           ((equal command "check") (cli-check (second args)))
+          ((equal command "commands")
+           (let ((lines (equal (second args) "--lines")))
+             (cli-commands (if lines (cddr args) (rest args)) lines)))
+          ((equal command "run") (cli-run (second args) (cddr args)))
+          ((and (equal command "reveal") (equal (second args) "--print"))
+           ;; For a script (rofi's menu of commands): the file, or nothing.
+           (let ((file (reveal-target)))
+             (when file (format t "~a~%" file))
+             (if file 0 1)))
           ((equal command "reveal")
            ;; Nothing behind it (a shell at home): the workspace's folder, or home.
            (let ((file (or (reveal-target) (ignore-errors (workspace-folder)) (home-folder))))

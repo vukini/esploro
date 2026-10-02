@@ -421,4 +421,18 @@ without a frame."
      (should-not (file-exists-p made))
      (should-not (file-exists-p plan)))))
 
+(ert-deftest esploro-commands-from-the-menu ()
+  (skip-unless (file-executable-p (expand-file-name "../esploro" (file-name-directory (locate-library "esploro")))))
+  (skip-unless (executable-find "zip"))
+  (esploro-tests--world
+   (esploro-tests--file "c/note.txt" "hello")
+   (esploro-go (esploro-tests--path "c"))
+   (with-current-buffer (esploro--view) (dired-goto-file (esploro-tests--path "c/note.txt")))
+   (let ((labels (mapcar (lambda (v) (aref v 0)) (esploro--commands-menu nil))))
+     (should (member "Compress" labels))
+     (should (member "Duplicate..." labels))     ; it changes files: a plan
+     (should-not (member "Shrink" labels)))      ; not for text
+   (esploro-run-command "compress" (list (esploro-tests--path "c/note.txt")))
+   (should (file-exists-p (esploro-tests--path "c/note.txt.zip")))))
+
 ;;; esploro-tests.el ends here

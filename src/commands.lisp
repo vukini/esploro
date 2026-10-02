@@ -25,7 +25,11 @@
   "The command's name for people: open-in-emacs is \"Open in emacs\"."
   (let ((words (substitute #\Space #\- (string-downcase (symbol-name (file-command-name command))))))
     (setf (char words 0) (char-upcase (char words 0)))
-    words))
+    ;; Names keep their capitals.
+    (dolist (name '("Esploro" "Emacs" "PDF") words)
+      (let ((at (search (string-downcase name) words)))
+        (when at (setf words (concatenate 'string (subseq words 0 at) name
+                                          (subseq words (+ at (length name))))))))))
 
 (defun register-file-command (command)
   (let ((old (position (file-command-name command) *file-commands* :key #'file-command-name)))
@@ -197,3 +201,52 @@ usual program. Returns the window gone to, or NIL."
 (define-file-command trash ((path t) :changes t)
   "Plan putting it in the Trash."
   (list (list :trash path)))
+
+;;; --- More commands: each makes something new beside, never over --------------------
+
+(defun tool-ok (program &rest args)
+  "Run PROGRAM with ARGS, waiting; true when it worked."
+  (ignore-errors
+   (eql 0 (sb-ext:process-exit-code
+           (sb-ext:run-program program args :search t :input nil :output nil :error nil :wait t)))))
+
+(define-file-command copy-path ((path t))
+  "Copy its path, to paste anywhere."
+  (with-input-from-string (in path)
+    (sb-ext:run-program "xclip" (list "-selection" "clipboard") :search t :input in :wait t)))
+
+(define-file-command show-in-esploro ((path t))
+  "Show it in Esploro, selected in its folder."
+  (launch "esploro" path))
+
+(define-file-command extract-here ((path :archive))
+  "Extract it into a new folder beside it."
+  (let* ((name (path-name path))
+         (stem (subseq name 0 (or (search ".tar" name) (position #\. name :from-end t) (length name))))
+         ;; Numbered on the whole name: a folder has no extension.
+         (to (loop for n from 1
+                   for candidate = (join-path (path-parent path) (if (= n 1) stem (format nil "~a ~d" stem n)))
+                   unless (path-exists-p candidate) return candidate)))
+    (ensure-folder to)
+    (or (tool-ok "bsdtar" "-xf" path "-C" to)
+        (tool-ok "tar" "-xf" path "-C" to)
+        (and (string-equal (pathname-type (native path)) "zip") (tool-ok "unzip" "-q" path "-d" to)))))
+
+(define-file-command compress ((path t))
+  "Compress it into a .zip beside it."
+  (let ((to (free-name (concatenate 'string path ".zip") "")))
+    (tool-ok "sh" "-c" "cd \"$1\" && exec zip -qr \"$2\" \"$3\"" "sh" (path-parent path) to (path-name path))))
+
+(define-file-command shrink ((path :image))
+  "A copy at half the size beside it (\"photo small.jpg\")."
+  (tool-ok "magick" path "-auto-orient" "-resize" "50%" (free-name path " small")))
+
+;;; --- Your own commands ---------------------------------------------------------------
+
+(defun load-user-commands ()
+  "~/.config/esploro/commands.lisp: your define-file-command forms, read in
+Esploro's package. A mistake there is said, and the rest goes on."
+  (let ((file (join-path (env-folder "XDG_CONFIG_HOME" ".config") "esploro" "commands.lisp")))
+    (when (path-exists-p file)
+      (handler-case (let ((*package* (find-package '#:esploro))) (load (native file)) t)
+        (error (e) (format *error-output* "esploro: ~a: ~a~%" file e) nil)))))
