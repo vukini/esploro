@@ -111,18 +111,34 @@ Places
      (Documents, Downloads, Pictures, Music, Videos, Projects,
      Dropbox, when they exist), drives plugged in (in
      ‘/run/media’), the bookmarks GTK programs keep
-     (‘~/.config/gtk-3.0/bookmarks’), and the Trash.  Click one
-     to go there.  ‘F9’, or View, Places, hides them or shows
-     them again.
+     (‘~/.config/gtk-3.0/bookmarks’), the searches you kept
+     (*note Searches::), and the Trash.  Click one to go there.
+     ‘F9’, or View, Places, hides them or shows them again.
 
 The tool bar
      Back, Forward, Up, Home, Places, Two Panes, Preview, New
-     Folder, Copy, Cut, Paste, Trash, Undo, Find, Refresh and
+     Folder, Copy, Cut, Paste, Trash, Undo, Search, Refresh and
      Help.
 
 The menus
-     File, Edit, View, Go and Help.  Esploro's frame shows only
-     these; your other Emacs frames keep Emacs's own menus.
+     Esploro's frame shows only these; your other Emacs frames
+     keep Emacs's own menus.
+
+        • File: new window and folder, open, open with, Commands
+          (what else suits the file: copy its path, compress,
+          extract, shrink a picture, yours), properties, a
+          terminal here, closing a project.
+        • Edit: undo, repeat the last change and Recipes, copy,
+          cut, paste and the rest, the Trash, selecting.
+        • View: sorting, hidden files, the filter, searching
+          below, refresh, two panes, the preview, places.
+        • Go: back, forward, up, home, a folder typed, your
+          Searches, the Trash.
+        • Help: this manual, and the keys.
+
+     Right-click a file for what can be done with it;
+     right-click the empty part of the list for the folder:
+     paste, a new folder, searching, sorting.
 
 
 File: esploro.info,  Node: Selecting and opening,  Next: Changing files,  Prev: The window,  Up: Top
@@ -215,10 +231,10 @@ Repeat Last Change): the same is done to them.  A name already
 taken in the folder gets a free one ("report 2.pdf"); a file
 already there isn't moved again.
 
-   Edit ⇒ Save Last Change As... keeps it by name.  Recipes you
-kept are in the right-click menu under Recipes, to do on what's
-selected, with Forget a Recipe... there too.  They're kept in
-‘~/.config/esploro/recipes.lisp’.
+   Edit ⇒ Recipes ⇒ Save Last Change As... keeps it by name.
+Recipes you kept are listed there, and under Recipes in the
+right-click menu, to do on what's selected; Forget a Recipe...
+is there too.  They're kept in ‘~/.config/esploro/recipes.lisp’.
 
    A recipe is a plan like any other: checked whole, done in the
 background, undone with ‘C-/’.
@@ -337,10 +353,10 @@ Filter (‘/’)
      Shows only the names holding some text, in any case, until
      you refresh (‘F5’).
 
-Find Below (‘M-s f’)
-     Every file below this folder whose name matches, as a list
-     you can open, copy and drag from like any folder.  Back
-     returns.
+Search Below (‘M-s s’)
+     Every file below this folder that a few words describe, as
+     a list you can open, copy and drag from like any folder.
+     Back returns.  *Note Searches::.
 
 Going (‘M-Left’, ‘M-Right’, ‘M-Up’, ‘C-l’)
      Back, forward, the folder above, and a folder typed, with
@@ -352,10 +368,11 @@ File: esploro.info,  Node: Searches,  Next: The Trash,  Prev: Looking around,  U
 11 Searches
 ***********
 
-View ⇒ Search... (‘M-s s’) looks below the folder you're in for
-the files a few words describe, and shows them as if they were
-one folder: open them, drag them, copy or move them as anywhere
-else.  Every word must hold:
+View ⇒ Search Below... (‘M-s s’, or right-click the folder)
+looks below the folder you're in for the files a few words
+describe, and shows them as if they were one folder: open them,
+drag them, copy or move them as anywhere else.  Every word must
+hold:
 
 ‘report’
      A name holding "report", in any case.
@@ -376,12 +393,12 @@ that aren't invoices.  Hidden files and folders aren't looked
 in, nor what a project's ‘.gitignore’ leaves out (when ‘fd’ is
 installed), nor ‘node_modules’.  At most 1000 are shown.
 
-   ‘F5’ looks again.  View ⇒ Keep This Search... keeps it by
-name: it's down the side under Searches from then on, a click
-away, and always up to date.  They're kept in
-‘~/.config/esploro/searches.lisp’, where a search can also be
-written as an s-expression: ‘(:and (:kind :pdf) (:or (:name
-"tax") (:name "receipt")))’.
+   ‘F5’ looks again.  Go ⇒ Searches ⇒ Keep This Search... (or
+right-click the list) keeps it by name: it's down the side under
+Searches from then on, a click away, and always up to date.
+They're kept in ‘~/.config/esploro/searches.lisp’, where a
+search can also be written as an s-expression: ‘(:and (:kind
+:pdf) (:or (:name "tax") (:name "receipt")))’.
 
 
 File: esploro.info,  Node: The Trash,  Next: Where files are open,  Prev: Searches,  Up: Top
@@ -495,7 +512,6 @@ z                         the last change again, on the selection
 s                         next sort
 .                         hidden files
 /                         only names with...
-M-s f                     find below
 M-s s                     search below
 F5                        refresh
 F3                        two panes, or one
@@ -603,22 +619,22 @@ Tag Table:
 Node: Top276
 Node: Opening Esploro2038
 Node: The window3854
-Node: Selecting and opening4881
-Node: Changing files5934
-Node: Recipes7441
-Node: Drag and drop8174
-Node: The preview8900
-Node: Two panes10014
-Node: Windows and workspaces10587
-Node: Looking around11450
-Node: Searches12291
-Node: The Trash13673
-Node: Where files are open14148
-Node: Closing a project14619
-Node: Plans from agents15488
-Node: Keys and mouse16948
-Node: The command line18733
-Node: Writing commands21376
+Node: Selecting and opening5668
+Node: Changing files6721
+Node: Recipes8228
+Node: Drag and drop8988
+Node: The preview9714
+Node: Two panes10828
+Node: Windows and workspaces11401
+Node: Looking around12264
+Node: Searches13132
+Node: The Trash14583
+Node: Where files are open15058
+Node: Closing a project15529
+Node: Plans from agents16398
+Node: Keys and mouse17858
+Node: The command line19606
+Node: Writing commands22249
 
 End Tag Table
 

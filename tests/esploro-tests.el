@@ -430,7 +430,8 @@ without a frame."
    (with-current-buffer (esploro--view) (dired-goto-file (esploro-tests--path "c/note.txt")))
    (let ((labels (mapcar (lambda (v) (aref v 0)) (esploro--commands-menu nil))))
      (should (member "Compress" labels))
-     (should (member "Duplicate..." labels))     ; it changes files: a plan
+     (should (member "Copy path" labels))
+     (should-not (member "Duplicate..." labels)) ; Edit has Duplicate already
      (should-not (member "Shrink" labels)))      ; not for text
    (esploro-run-command "compress" (list (esploro-tests--path "c/note.txt")))
    (should (file-exists-p (esploro-tests--path "c/note.txt.zip")))))
@@ -526,5 +527,19 @@ without a frame."
              (kill-buffer)))
        (dolist (b (list saved unsaved outside))
          (when (buffer-live-p b) (with-current-buffer b (set-buffer-modified-p nil)) (kill-buffer b)))))))
+
+(ert-deftest esploro-menus-say-each-thing-once ()
+  ;; No item twice in a menu, and Commands leaves out what the menus have.
+  (cl-labels ((names (items) (delq nil (mapcar (lambda (i) (cond ((vectorp i) (aref i 0)) ((consp i) (car i)))) items))))
+    (dolist (menu (append (mapcar #'cdr esploro--menu-bar)
+                          (list (cdr (assq 'menu-bar nil)))))
+      (let ((n (names (cdr menu))))
+        (should (equal n (seq-uniq n))))))
+  (should (member "trash" esploro--commands-on-menus))
+  (let ((n (mapcar (lambda (v) (aref v 0)) (seq-filter #'vectorp (esploro--recipes-menu nil)))))
+    (should-not (member "Repeat Last Change" n))
+    (should (member "Save Last Change As..." n)))
+  (let ((n (mapcar (lambda (v) (aref v 0)) (seq-filter #'vectorp (esploro--searches-menu nil)))))
+    (should (member "Keep This Search..." n))))
 
 ;;; esploro-tests.el ends here

@@ -882,7 +882,7 @@ a dropped name kept its newline, named no file, and the drop was lost."
   "s" #'esploro-sort-cycle
   "." #'esploro-toggle-hidden
   "/" #'esploro-filter
-  "M-s f" #'esploro-find
+  "M-s f" #'esploro-search
   "M-s s" #'esploro-search
   "<f5>" #'revert-buffer
   "<f9>" #'esploro-places-toggle
@@ -940,16 +940,15 @@ show the pane's sort and history even when the places are selected."
           "---"
           ["Open" esploro-open :active (esploro--file-at)]
           ["Open With..." esploro-open-with :active (esploro--marked-or-point-p)]
-          ["Terminal Here" esploro-terminal-here]
-          ["Properties" esploro-properties]
-          ["Close Project..." esploro-close-project]
           ("Commands" :filter esploro--commands-menu)
+          ["Properties" esploro-properties :active (esploro--file-at)]
           "---"
+          ["Terminal Here" esploro-terminal-here]
+          ["Close Project..." esploro-close-project]
           ["Close Esploro" esploro-close :keys "C-x C-c"])
     (edit "Edit"
           ["Undo" esploro-undo :keys "C-/"]
           ["Repeat Last Change" esploro-repeat :keys "z" :active (esploro--marked-or-point-p)]
-          ["Save Last Change As..." esploro-save-recipe]
           ("Recipes" :filter esploro--recipes-menu)
           "---"
           ["Copy" esploro-copy :keys "M-w" :active (esploro--marked-or-point-p)]
@@ -978,10 +977,7 @@ show the pane's sort and history even when the places are selected."
           "---"
           ["Hidden Files" esploro-toggle-hidden :style toggle :selected (esploro--value 'esploro--hidden)]
           ["Filter..." esploro-filter :keys "/"]
-          ["Find Below..." esploro-find :keys "M-s f"]
-          ["Search..." esploro-search :keys "M-s s"]
-          ["Keep This Search..." esploro-save-search :active (esploro--value 'esploro--search)]
-          ["Forget a Search..." esploro-forget-search :active (esploro--searches)]
+          ["Search Below..." esploro-search :keys "M-s s"]
           ["Refresh" esploro--refresh :keys "F5"]
           "---"
           ["Two Panes" esploro-split :keys "F3" :style toggle :selected (esploro--two-panes-p)]
@@ -994,6 +990,7 @@ show the pane's sort and history even when the places are selected."
         ["Up" esploro-up :keys "M-<up>"]
         ["Home" esploro-home]
         ["Go to Folder..." esploro-go-to :keys "C-l"]
+        ("Searches" :filter esploro--searches-menu)
         "---"
         ["The Trash" esploro-show-trash]
         ["Restore from the Trash" esploro-restore :active (esploro--in-trash-p)]
@@ -1022,7 +1019,6 @@ show the pane's sort and history even when the places are selected."
     ["Open" esploro-open]
     ["Open With..." esploro-open-with]
     ("Commands" :filter esploro--commands-menu)
-    ("Recipes" :filter esploro--recipes-menu)
     "---"
     ["Copy" esploro-copy]
     ["Cut" esploro-cut]
@@ -1033,6 +1029,9 @@ show the pane's sort and history even when the places are selected."
     ["Copy to Other Pane" esploro-copy-to-other-pane :visible (esploro--two-panes-p)]
     ["Move to Other Pane" esploro-move-to-other-pane :visible (esploro--two-panes-p)]
     "---"
+    ["Repeat Last Change" esploro-repeat :keys "z"]
+    ("Recipes" :filter esploro--recipes-menu)
+    "---"
     ["Move to Trash" esploro-trash :visible (not (esploro--in-trash-p))]
     ["Restore" esploro-restore :visible (esploro--in-trash-p)]
     ["Properties" esploro-properties]))
@@ -1042,18 +1041,23 @@ show the pane's sort and history even when the places are selected."
   '("Folder"
     ["Paste" esploro-paste]
     ["New Folder..." esploro-new-folder]
+    ["Select All" esploro-select-all]
+    ["Undo" esploro-undo]
+    "---"
+    ["Search Below..." esploro-search]
+    ["Keep This Search..." esploro-save-search :visible esploro--search]
     ["Terminal Here" esploro-terminal-here]
-    ["Two Panes" esploro-split :style toggle :selected (esploro--two-panes-p)]
-    ["New Window" esploro-new-window]
+    ["Close Project..." esploro-close-project]
     "---"
     ["Hidden Files" esploro-toggle-hidden :style toggle :selected esploro--hidden]
     ["Sort by Name" (esploro-sort 'name) :style radio :selected (eq esploro--sort 'name)]
-    ["Sort by Time" (esploro-sort 'time) :style radio :selected (eq esploro--sort 'time)]
     ["Sort by Size" (esploro-sort 'size) :style radio :selected (eq esploro--sort 'size)]
-    ["Refresh" revert-buffer]
+    ["Sort by Time" (esploro-sort 'time) :style radio :selected (eq esploro--sort 'time)]
+    ["Sort by Kind" (esploro-sort 'kind) :style radio :selected (eq esploro--sort 'kind)]
+    ["Two Panes" esploro-split :style toggle :selected (esploro--two-panes-p)]
+    ["Refresh" esploro--refresh]
     "---"
-    ["Empty the Trash..." esploro-empty-trash :visible (esploro--in-trash-p)]
-    ["Undo" esploro-undo]))
+    ["Empty the Trash..." esploro-empty-trash :visible (esploro--in-trash-p)]))
 
 (defvar esploro-tool-bar-map
   (let ((map (make-sparse-keymap)))
@@ -1072,8 +1076,8 @@ show the pane's sort and history even when the places are selected."
                     (esploro-trash "delete" "Trash")
                     (esploro-undo "undo" "Undo")
                     nil
-                    (esploro-find "search" "Find")
-                    (revert-buffer "refresh" "Refresh")
+                    (esploro-search "search" "Search")
+                    (esploro--refresh "refresh" "Refresh")
                     (esploro-manual "help" "Help")))
       (if (null item)
           (define-key-after map (vector (gensym "sep")) menu-bar-separator)
@@ -1491,8 +1495,13 @@ ShowItems and ShowItemProperties open Esploro there."
 ;; right-click menu under Commands. One that changes files proposes a plan,
 ;; which waits for you in the review panel.
 
+(defconst esploro--commands-on-menus '("duplicate" "trash" "show-in-esploro" "terminal-here")
+  "The core's file commands Esploro's own menus have already, by other names
+or not: left out of Commands, so nothing is there twice.")
+
 (defun esploro--commands-menu (_items)
-  "The Commands submenu, made when it opens: what suits the selection."
+  "The Commands submenu, made when it opens: what suits the selection,
+but what Esploro's own menus already do."
   (let ((files (and (esploro--view) (with-current-buffer (esploro--view) (esploro--selection)))))
     (if (null files)
         (list ["Select a file first" ignore :active nil])
@@ -1502,7 +1511,7 @@ ShowItems and ShowItemProperties open Esploro there."
                       (vector (concat (nth 1 c) (if (nth 3 c) "..." ""))
                               (list 'esploro-run-command (nth 0 c))
                               :help (nth 2 c)))
-                    answer)
+                    (seq-remove (lambda (c) (member (nth 0 c) esploro--commands-on-menus)) answer))
           (list ["No commands for these" ignore :active nil]))))))
 
 (defun esploro-run-command (name &optional files)
@@ -1555,17 +1564,16 @@ that changes files, as a plan for your review."
   "Recipes, made as the menu opens: the last change, and yours by name."
   (let ((files (and (esploro--view) (with-current-buffer (esploro--view) (esploro--selection))))
         (saved (esploro--call (list "recipe" "list") nil nil t)))
+    (setq saved (and (listp saved) (not (keywordp (car saved))) saved))
     (append
-     (list (vector "Repeat Last Change" 'esploro-repeat :active (and files t) :keys "z"))
-     (when (and (listp saved) saved (not (keywordp (car saved))))
-       (cons "---"
-             (mapcar (lambda (r)
-                       (vector (format "%s (%s)" (car r) (cadr r))
-                               (list 'esploro--recipe-run (car r) (list 'quote files) (cadr r))
-                               :active (and files t)))
-                     saved)))
-     (list "---" ["Save Last Change As..." esploro-save-recipe]
-           ["Forget a Recipe..." esploro-forget-recipe]))))
+     (mapcar (lambda (r)
+               (vector (format "%s (%s)" (car r) (cadr r))
+                       (list 'esploro--recipe-run (car r) (list 'quote files) (cadr r))
+                       :active (and files t)))
+             saved)
+     (when saved (list "---"))
+     (list ["Save Last Change As..." esploro-save-recipe]
+           (vector "Forget a Recipe..." 'esploro-forget-recipe :active (and saved t))))))
 
 ;;; --- Searches: folders that are questions ------------------------------------------
 
@@ -1637,6 +1645,16 @@ for not."
     (esploro--call (list "search" "run" name) nil
                    (lambda (answer) (esploro--search-show buffer answer name)
                      (esploro-places-refresh)))))
+
+(defun esploro--searches-menu (_items)
+  "Go > Searches: yours, and keeping or forgetting one."
+  (let ((saved (esploro--searches)))
+    (append
+     (mapcar (lambda (s) (vector (car s) (list 'esploro-run-search (car s)))) saved)
+     (when saved (list "---"))
+     (list ["Search Below..." esploro-search :keys "M-s s"]
+           (vector "Keep This Search..." 'esploro-save-search :active (and (esploro--value 'esploro--search) t))
+           (vector "Forget a Search..." 'esploro-forget-search :active (and saved t))))))
 
 (defun esploro-save-search (name)
   "Keep the search this view shows as NAME, down the side under Searches."

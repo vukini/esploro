@@ -109,16 +109,34 @@ sorted, and when hidden files are shown or a filter is on.
 Down the left side: your home, the usual folders (Documents, Downloads,
 Pictures, Music, Videos, Projects, Dropbox, when they exist), drives
 plugged in (in @file{/run/media}), the bookmarks GTK programs keep
-(@file{~/.config/gtk-3.0/bookmarks}), and the Trash.  Click one to go
+(@file{~/.config/gtk-3.0/bookmarks}), the searches you kept
+(@pxref{Searches}), and the Trash.  Click one to go
 there.  @kbd{F9}, or View, Places, hides them or shows them again.
 
 @item The tool bar
 Back, Forward, Up, Home, Places, Two Panes, Preview, New Folder, Copy,
-Cut, Paste, Trash, Undo, Find, Refresh and Help.
+Cut, Paste, Trash, Undo, Search, Refresh and Help.
 
 @item The menus
-File, Edit, View, Go and Help.  Esploro's frame shows only these; your
-other Emacs frames keep Emacs's own menus.
+Esploro's frame shows only these; your other Emacs frames keep Emacs's
+own menus.
+
+@itemize
+@item File: new window and folder, open, open with, Commands (what
+else suits the file: copy its path, compress, extract, shrink a
+picture, yours), properties, a terminal here, closing a project.
+@item Edit: undo, repeat the last change and Recipes, copy, cut,
+paste and the rest, the Trash, selecting.
+@item View: sorting, hidden files, the filter, searching below,
+refresh, two panes, the preview, places.
+@item Go: back, forward, up, home, a folder typed, your Searches, the
+Trash.
+@item Help: this manual, and the keys.
+@end itemize
+
+Right-click a file for what can be done with it; right-click the
+empty part of the list for the folder: paste, a new folder, searching,
+sorting.
 @end table
 
 @node Selecting and opening
@@ -202,9 +220,10 @@ Repeat Last Change): the same is done to them.  A name already taken
 in the folder gets a free one (``report 2.pdf''); a file already there
 isn't moved again.
 
-Edit @result{} Save Last Change As@dots{} keeps it by name.  Recipes
-you kept are in the right-click menu under Recipes, to do on what's
-selected, with Forget a Recipe@dots{} there too.  They're kept in
+Edit @result{} Recipes @result{} Save Last Change As@dots{} keeps it
+by name.  Recipes you kept are listed there, and under Recipes in the
+right-click menu, to do on what's selected; Forget a Recipe@dots{} is
+there too.  They're kept in
 @file{~/.config/esploro/recipes.lisp}.
 
 A recipe is a plan like any other: checked whole, done in the
@@ -309,9 +328,10 @@ Shows or hides the files whose names start with a dot.
 Shows only the names holding some text, in any case, until you refresh
 (@kbd{F5}).
 
-@item Find Below (@kbd{M-s f})
-Every file below this folder whose name matches, as a list you can
-open, copy and drag from like any folder.  Back returns.
+@item Search Below (@kbd{M-s s})
+Every file below this folder that a few words describe, as a list you
+can open, copy and drag from like any folder.  Back returns.
+@xref{Searches}.
 
 @item Going (@kbd{M-Left}, @kbd{M-Right}, @kbd{M-Up}, @kbd{C-l})
 Back, forward, the folder above, and a folder typed, with completion.
@@ -320,7 +340,7 @@ Back, forward, the folder above, and a folder typed, with completion.
 @node Searches
 @chapter Searches
 
-View @result{} Search@dots{} (@kbd{M-s s}) looks below the folder you're
+View @result{} Search Below@dots{} (@kbd{M-s s}, or right-click the folder) looks below the folder you're
 in for the files a few words describe, and shows them as if they were
 one folder: open them, drag them, copy or move them as anywhere else.
 Every word must hold:
@@ -346,8 +366,8 @@ aren't invoices.  Hidden files and folders aren't looked in, nor what
 a project's @file{.gitignore} leaves out (when @command{fd} is
 installed), nor @file{node_modules}.  At most 1000 are shown.
 
-@kbd{F5} looks again.  View @result{} Keep This Search@dots{} keeps it
-by name: it's down the side under Searches from then on, a click away,
+@kbd{F5} looks again.  Go @result{} Searches @result{} Keep This
+Search@dots{} (or right-click the list) keeps it by name: it's down the side under Searches from then on, a click away,
 and always up to date.  They're kept in
 @file{~/.config/esploro/searches.lisp}, where a search can also be
 written as an s-expression:
@@ -447,7 +467,6 @@ then ask an agent to ``sort the ones I've selected'', or run
 @item s @tab next sort
 @item . @tab hidden files
 @item / @tab only names with...
-@item M-s f @tab find below
 @item M-s s @tab search below
 @item F5 @tab refresh
 @item F3 @tab two panes, or one
