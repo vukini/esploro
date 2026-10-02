@@ -19,6 +19,13 @@ esploro commands [--lines] FILE...   the file commands that suit them (yours too
 esploro run NAME FILE...    run one: at once, or as a plan for your review
 esploro recipe last|list|save NAME|forget NAME|run NAME|last FILE...
                             a change done again: the last one, or one kept by name
+esploro recipe add NAME RECIPE   keep RECIPE, an s-expression, by name:
+                            (:rename-by \"IMG_*\" \"Holiday #n\"), (:move-into \"/folder\")...
+esploro rename-by [--plan] FROM TO FILE...   rename FILE... by a pattern, as a plan
+                            for your review: * and ? in FROM take parts of a name,
+                            #1, #2... in TO give them back, #n numbers them, ## is #;
+                            FROM without * or ? is text to replace. Never two files
+                            to one name, nor onto a name that's taken
 esploro query [--lines] TEXT [FOLDER]   the files below FOLDER (the one you're in)
                             that match TEXT: words a name holds, *.pdf, kind:pdf,
                             newer:7 or older:30 (days), larger:10M, smaller:1k,
@@ -176,26 +183,63 @@ to it, with them), then shown to you in Esploro, on your workspace, to apply
 or not. Nothing changes here."
   (propose-steps (read-plan-file (absolute file)) why))
 
-(defun propose-steps (steps why)
-  "STEPS for your review in Esploro (an agent's, or a command's that changes
-files): checked whole first, then shown with WHY; nothing changes here."
+(defun keep-proposed (steps)
+  "STEPS in a plan file of Esploro's own (the proposer's may go before you
+decide), in the state folder's proposed/: its path."
+  (let ((folder (join-path (state-folder) "proposed"))
+        (stamp (remove #\: (timestamp (get-universal-time) "" "-"))))
+    (loop for n from 1
+          for kept = (join-path folder (format nil "~a~:[-~d~;~*~].lisp" stamp (= n 1) n))
+          unless (path-exists-p kept) return (write-plan steps kept))))
+
+(defun propose-steps (steps why &optional recipe)
+  "STEPS for your review in Esploro (an agent's, or a command's or a
+recipe's that changes files): checked whole first, then shown with WHY;
+nothing changes here. RECIPE, when they're a recipe's: the review offers
+to keep it by name."
   (let* ((problems (check-plan steps)))
     (cond (problems (answer (list :refused problems)) 1)
           (t
-           ;; Its own copy: the agent's file may go before you decide.
-           (let* ((kept (join-path (state-folder) "proposed"
-                                   (format nil "~a.lisp" (remove #\: (timestamp (get-universal-time) "" "-")))))
+           (let* ((kept (keep-proposed steps))
                   (code-file (window-code))
                   (where (workspace-window))
-                  (form (format nil "(progn (unless (featurep 'esploro) ~:[(require 'esploro)~;~:*(load ~a nil t)~]) (esploro-review-plan ~a ~a ~a))"
+                  (form (format nil "(progn (unless (featurep 'esploro) ~:[(require 'esploro)~;~:*(load ~a nil t)~]) (esploro-review-plan ~a ~a ~a~@[ '~a~]))"
                                 (and code-file (lisp-string code-file)) (lisp-string kept)
-                                (lisp-string (or why "")) (or where "nil"))))
-             (write-plan steps kept)
+                                (lisp-string (or why "")) (or where "nil")
+                                (and recipe (recipe-text recipe)))))
              (if (zerop (sb-ext:process-exit-code
                          (sb-ext:run-program "emacsclient" (list "-n" "-e" form)
                                              :search t :input nil :output nil :error nil :wait t)))
                  (progn (answer (list :proposed (length steps))) 0)
                  (progn (answer (list :error "Esploro's window (Emacs's server) isn't answering")) 1)))))))
+
+(defun recipe-text (recipe)
+  "RECIPE as text, for Emacs and the recipes file alike."
+  (with-standard-io-syntax
+    (let ((*print-case* :downcase) (*print-readably* nil))
+      (prin1-to-string recipe))))
+
+(defun offer-plan (recipe paths plan-only)
+  "RECIPE's plan for PATHS, for your review: shown in Esploro (through its
+Emacs), or with PLAN-ONLY kept in a file and answered as (:plan FILE WHY
+STEPS RECIPE), for the window to show itself. Refused with the problems
+when it can't be done whole; (:none WHY) when there's nothing to do."
+  (multiple-value-bind (steps problems why)
+      (handler-case (recipe-plan recipe paths)
+        (error (e) (answer (list :error (princ-to-string e)))
+          (return-from offer-plan 1)))
+    (cond (problems (answer (list :refused problems)) 1)
+          ((null steps) (answer (list :none why)) 1)
+          (plan-only (answer (list :plan (keep-proposed steps) why (length steps) recipe)) 0)
+          (t (propose-steps steps why recipe)))))
+
+(defun cli-rename-by (args)
+  "esploro rename-by [--plan] FROM TO FILE..."
+  (let* ((plan-only (equal (first args) "--plan"))
+         (args (if plan-only (rest args) args)))
+    (if (< (length args) 2)
+        (progn (answer (list :error "esploro rename-by [--plan] FROM TO FILE...")) 2)
+        (offer-plan (list :rename-by (first args) (second args)) (mapcar #'absolute (cddr args)) plan-only))))
 
 (defun cli-check (file)
   "Whether the plan in FILE could be applied now, changing nothing: (:ok N),
@@ -246,7 +290,19 @@ changes files, its steps go to Esploro for your review."
                          (list :none "the last change isn't one thing into one folder (or there's none)")))
              (if recipe 0 1)))
           ((equal what "list")
-           (answer (mapcar (lambda (r) (list (car r) (describe-recipe (cdr r)))) (read-recipes))) 0)
+           ;; :review after the ones whose plan waits for your review.
+           (answer (mapcar (lambda (r) (list* (car r) (describe-recipe (cdr r))
+                                              (and (reviewed-recipe-p (cdr r)) (list :review))))
+                           (read-recipes)))
+           0)
+          ((equal what "add")
+           (destructuring-bind (&optional name text) (rest args)
+             (handler-case
+                 (let ((recipe (parse-recipe (or text ""))))
+                   (cond ((or (null name) (string= name "")) (answer (list :error "a recipe needs a name")) 1)
+                         (t (save-recipe name recipe)
+                            (answer (list :saved name (describe-recipe recipe))) 0)))
+               (error (e) (answer (list :error (princ-to-string e))) 1))))
           ((equal what "save")
            (let ((recipe (plan-recipe (last-applied-steps))))
              (cond ((or (null (second args)) (string= (second args) "")) (answer (list :error "a recipe needs a name")) 1)
@@ -255,19 +311,24 @@ changes files, its steps go to Esploro for your review."
                       (answer (list :saved (second args) (describe-recipe recipe))) 0))))
           ((equal what "forget") (forget-recipe (second args)) (answer (list :forgotten (second args))) 0)
           ((equal what "run")
-           (let* ((name (second args))
+           (let* ((plan-only (equal (second args) "--plan"))
+                  (args (if plan-only (rest args) args))
+                  (name (second args))
                   (recipe (if (equal name "last") (plan-recipe (last-applied-steps))
                               (cdr (assoc name (read-recipes) :test #'string=)))))
-             (if (null recipe)
-                 (progn (answer (list :none (format nil "no recipe ~a" name))) 1)
+             (cond
+               ((null recipe) (answer (list :none (format nil "no recipe ~a" name))) 1)
+               ;; Each file its own way: the plan waits for your review.
+               ((reviewed-recipe-p recipe) (offer-plan recipe (mapcar #'absolute (cddr args)) plan-only))
+               (t
                  (with-input-from-string (*standard-input*
                                           (with-output-to-string (out)
                                             (with-standard-io-syntax
                                               (let ((*print-case* :downcase))
                                                 (dolist (s (recipe-steps recipe (mapcar #'absolute (cddr args))))
                                                   (prin1 s out) (terpri out))))))
-                   (cli-apply "-")))))
-          (t (answer (list :error "esploro recipe last | list | save NAME | forget NAME | run NAME FILE...")) 2))))
+                   (cli-apply "-"))))))
+          (t (answer (list :error "esploro recipe last | list | save NAME | add NAME RECIPE | forget NAME | run [--plan] NAME FILE...")) 2))))
 
 (defun answer-found (query root lines)
   (multiple-value-bind (paths more) (run-query query root)
@@ -368,6 +429,7 @@ changes files, its steps go to Esploro for your review."
              (cli-commands (if lines (cddr args) (rest args)) lines)))
           ((equal command "run") (cli-run (second args) (cddr args)))
           ((equal command "recipe") (cli-recipe (rest args)))
+          ((equal command "rename-by") (cli-rename-by (rest args)))
           ((equal command "query") (cli-query (rest args)))
           ((equal command "search") (cli-search (rest args)))
           ((equal command "selection") (cli-selection (rest args)))

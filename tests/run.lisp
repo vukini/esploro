@@ -470,6 +470,78 @@
             (progn (undo-last) (path-exists-p (p "rec/in/two.txt")))))
 (check "and forgotten" (progn (run-cli (list "recipe" "forget" "Archive it")) (null (esploro::read-recipes))))
 
+;;; --- Renames by a pattern ------------------------------------------------------------
+
+(check "a pattern's wildcards take parts of a name, * as little as will do, in any case"
+       (equal (esploro::pattern-parts "img_*_*.JPG" "IMG_2024_07_01.jpg") '("2024" "07_01")))
+(check "? takes one" (equal (esploro::pattern-parts "?-*" "a-b") '("a" "b")))
+(check "a name that doesn't fit" (equal (multiple-value-list (esploro::pattern-parts "*.pdf" "a.txt")) '(nil nil)))
+(check "an empty part fits" (equal (multiple-value-list (esploro::pattern-parts "a*b" "ab")) '(("") t)))
+(check "a template gives the parts back, numbers and #"
+       (equal (esploro::expand-template "#2 #1 ## #n" '("a" "b") 7 3) "b a # 007"))
+(signals error (esploro::expand-template "#3" '("a") 1 1))
+(signals error (esploro::expand-template "#x" '() 1 1))
+(esploro::ensure-folder (p "ren"))
+(dolist (n '("IMG_1.jpg" "IMG_2.jpg" "IMG_3.jpg" "notes.txt" "a b.txt" "1.txt" "2.txt"))
+  (make-file (p "ren" n) n))
+(flet ((names (steps) (mapcar (lambda (s) (list (path-name (second s)) (third s))) steps))
+       (ren (&rest names) (mapcar (lambda (n) (p "ren" n)) names)))
+  (multiple-value-bind (steps problems why)
+      (esploro::rename-by-plan "IMG_*.jpg" "Holiday #n (#1).jpg" (ren "IMG_1.jpg" "IMG_2.jpg" "notes.txt"))
+    (check "renames by a pattern: each file before and after, the rest left be"
+           (and (null problems)
+                (equal (names steps) '(("IMG_1.jpg" "Holiday 1 (1).jpg") ("IMG_2.jpg" "Holiday 2 (2).jpg")))
+                (search "notes.txt" why))))
+  (check "text without wildcards is replaced wherever a name holds it"
+         (equal (names (esploro::rename-by-plan " " "_" (ren "a b.txt" "notes.txt"))) '(("a b.txt" "a_b.txt"))))
+  (check "numbers are as wide as the count needs"
+         (equal (mapcar #'second (names (esploro::rename-by-plan "*" "#n-#1"
+                                                                  (loop repeat 10 collect (p "ren" "IMG_1.jpg")))))
+                '("01-IMG_1.jpg" "02-IMG_1.jpg" "03-IMG_1.jpg" "04-IMG_1.jpg" "05-IMG_1.jpg"
+                  "06-IMG_1.jpg" "07-IMG_1.jpg" "08-IMG_1.jpg" "09-IMG_1.jpg" "10-IMG_1.jpg")))
+  (multiple-value-bind (steps problems) (esploro::rename-by-plan "*.txt" "same.txt" (ren "notes.txt" "a b.txt"))
+    (check "two files to one name: refused, no steps, saying which"
+           (and (null steps) (equal problems '("notes.txt, a b.txt would all be named same.txt")))))
+  (multiple-value-bind (steps problems) (esploro::rename-by-plan "notes" "1" (ren "notes.txt"))
+    (check "a name already taken: refused" (and (null steps) (search "already there" (first problems)))))
+  (check "a name another file is leaving: renamed after it"
+         (equal (names (esploro::rename-by-plan "?.txt" "#1#1.txt" (ren "1.txt" "2.txt")))
+                '(("1.txt" "11.txt") ("2.txt" "22.txt"))))
+  (check "a chain: the name freed first"
+         (progn (make-file (p "ren/11.txt"))
+                (prog1 (equal (names (esploro::rename-by-plan "1" "11" (ren "1.txt" "11.txt")))
+                              '(("11.txt" "1111.txt") ("1.txt" "11.txt")))
+                  (sb-posix:unlink (p "ren/11.txt")))))
+  (check "names going round each other: refused"
+         (search "each other's" (first (nth-value 1 (esploro::rename-by-plan "?.txt" "#n.txt" (ren "2.txt" "1.txt"))))))
+  (check "a name with a / in it: refused"
+         (search "isn't empty, has no /" (first (nth-value 1 (esploro::rename-by-plan "a b" "a/b" (ren "a b.txt"))))))
+  (check "a name that stays isn't a step" (null (esploro::rename-by-plan "notes" "notes" (ren "notes.txt"))))
+  (check "esploro rename-by --plan: the plan kept in a file, for the window to show"
+         (destructuring-bind (code what file why n recipe)
+             (run-cli (list* "rename-by" "--plan" "IMG_*" "Pic #1" (ren "IMG_1.jpg" "notes.txt")))
+           (and (eql code 0) (eq what :plan) (= n 1) (search "Pic" why)
+                (equal recipe '(:rename-by "IMG_*" "Pic #1"))
+                (equal (read-plan-file file) (list (list :rename (p "ren/IMG_1.jpg") "Pic 1.jpg")))
+                (path-exists-p (p "ren/IMG_1.jpg")))))
+  (check "refused, it says why"
+         (equal (run-cli (list* "rename-by" "--plan" "*.txt" "x" (ren "1.txt" "2.txt")))
+                (list 1 :refused (list "1.txt, 2.txt would all be named x"))))
+  (check "a template that can't be made, said at once"
+         (eq (second (run-cli (list* "rename-by" "--plan" "zzz" "#q" (ren "1.txt")))) :error))
+  (check "nothing fits: nothing to do" (eq (second (run-cli (list* "rename-by" "--plan" "zzz" "y" (ren "1.txt")))) :none))
+  (check "kept as a recipe by name"
+         (equal (run-cli (list "recipe" "add" "Pics" "(:rename-by \"IMG_*\" \"Pic #1\")"))
+                (list 0 :saved "Pics" "rename IMG_* to Pic #1")))
+  (check "listed as one to review" (equal (cdr (run-cli (list "recipe" "list"))) '(("Pics" "rename IMG_* to Pic #1" :review))))
+  (check "run, it's a plan to review, not done at once"
+         (and (eq (second (run-cli (list* "recipe" "run" "--plan" "Pics" (ren "IMG_3.jpg")))) :plan)
+              (path-exists-p (p "ren/IMG_3.jpg"))))
+  (check "what isn't a recipe isn't kept"
+         (and (eq (second (run-cli (list "recipe" "add" "Bad" "(:delete \"/\")"))) :error)
+              (eq (second (run-cli (list "recipe" "add" "Bad" "(:rename-by \"\" \"x\")"))) :error)))
+  (run-cli (list "recipe" "forget" "Pics")))
+
 ;;; --- Searches: folders that are questions ---------------------------------------------
 
 (check "words are a query" (equal (esploro::parse-query "report kind:pdf newer:7 larger:1M -draft")
