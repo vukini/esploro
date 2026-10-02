@@ -271,6 +271,16 @@
     (sb-ext:process-kill shell 15)
     (sb-ext:process-wait shell)))
 
+;;; Esploro itself, and what started it, are no window's files: run under a
+;;; window (as the window asks it from Emacs), it once saw its own argument
+;;; and went to that window instead of opening the file.
+(let* ((parent (esploro::process-parent (sb-posix:getpid)))
+       (window (esploro::make-window :id 7 :class "Shell" :pid parent))
+       (map (scan-where :windows (list window)))
+       (script (esploro::normalize-path (namestring *load-truename*))))
+  (check "the running esploro's own arguments aren't another window's"
+         (null (file-where script map))))
+
 ;;; --- Previews -------------------------------------------------------------------------
 
 (make-file (p "long.txt") (format nil "one~%two~%three~%four~%"))

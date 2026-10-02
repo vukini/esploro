@@ -59,6 +59,31 @@
                  (ppid (and fields (parse-integer (second fields) :junk-allowed t))))
             (when ppid (push pid (gethash ppid children)))))))))
 
+(defun process-parent (pid)
+  "PID's parent, from /proc/PID/stat; NIL when it's gone."
+  (let* ((bytes (read-file-bytes (format nil "/proc/~d/stat" pid)))
+         (stat (and bytes (sb-ext:octets-to-string bytes :external-format :latin-1)))
+         (close (and stat (position #\) stat :from-end t)))
+         (fields (and close (split-on #\Space (subseq stat (+ close 2))))))
+    (and fields (parse-integer (second fields) :junk-allowed t))))
+
+(defun own-processes (children)
+  "This esploro, what started it (a shell, timeout, Emacs's process for it:
+they hold the same file among their arguments), and every other esploro
+running now (the window asks where and open at once): none of them has a
+file open in the sense the map means."
+  (let ((own (list (sb-posix:getpid)))
+        (exe (read-link (format nil "/proc/~d/exe" (sb-posix:getpid)))))
+    (loop for pid = (process-parent (first own)) then (process-parent pid)
+          while (and pid (> pid 1))
+          do (push pid own))
+    (when exe
+      (loop for pid being the hash-keys of children using (hash-value kids)
+            do (dolist (p (cons pid kids))
+                 (when (equal (read-link (format nil "/proc/~d/exe" p)) exe)
+                   (pushnew p own)))))
+    own))
+
 (defun process-tree (pid children)
   (cons pid (loop for child in (gethash pid children)
                   append (process-tree child children))))
@@ -135,9 +160,10 @@ when there's none. timeout keeps a busy Emacs from holding Esploro up."
   "Where each file is open: a table from a path to a list of (WINDOW . HOW),
 HOW being :file (held open), :argument (started on it), :folder (a shell
 or program working in it), :buffer or :modified-buffer (in Emacs)."
-  (let ((map (make-hash-table :test 'equal))
-        (children (process-children))
-        (self (sb-posix:getpid)))
+  (let* ((map (make-hash-table :test 'equal))
+         (children (process-children))
+         (self (sb-posix:getpid))
+         (own (own-processes children)))
     (flet ((note (path window how)
              (let ((path (normalize-path path)))
                (when path
@@ -145,7 +171,7 @@ or program working in it), :buffer or :modified-buffer (in Emacs)."
       (dolist (window windows)
         (let ((pid (window-pid window)))
           (when (and (integerp pid) (/= pid self))
-            (dolist (p (process-tree pid children))
+            (dolist (p (set-difference (process-tree pid children) own))
               (let ((cwd (read-link (format nil "/proc/~d/cwd" p))))
                 (dolist (file (process-open-files p)) (note file window :file))
                 (dolist (arg (process-arguments p cwd)) (note arg window :argument))
