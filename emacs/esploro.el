@@ -942,6 +942,7 @@ show the pane's sort and history even when the places are selected."
           ["Open With..." esploro-open-with :active (esploro--marked-or-point-p)]
           ["Terminal Here" esploro-terminal-here]
           ["Properties" esploro-properties]
+          ["Close Project..." esploro-close-project]
           ("Commands" :filter esploro--commands-menu)
           "---"
           ["Close Esploro" esploro-close :keys "C-x C-c"])
@@ -1082,7 +1083,11 @@ show the pane's sort and history even when the places are selected."
   "Esploro's tool bar.")
 
 (defun esploro--header ()
-  (concat " " (abbreviate-file-name (esploro--dir))
+  (concat " " (if esploro--search
+                  (pcase-let ((`(,words ,root ,name) esploro--search))
+                    (format "%s%s below %s   F5 looks again" (if name (concat name ": ") "") words
+                            (abbreviate-file-name root)))
+                (abbreviate-file-name (esploro--dir)))
           (format "   sorted by %s%s" esploro--sort (if esploro--reverse ", the other way" ""))
           (if esploro--hidden "   hidden shown" "")
           (if esploro--filter (format "   only \"%s\" (F5: all)" esploro--filter) "")
@@ -1565,8 +1570,8 @@ that changes files, as a plan for your review."
 ;;; --- Searches: folders that are questions ------------------------------------------
 
 ;; The core looks (`esploro query'), below a folder, for the files a few
-;; words describe; the view shows them, newest first by default, and F5
-;; looks again.  Kept by name, a search is down the side under Searches.
+;; words describe; the view shows them as one folder, and F5 looks
+;; again.  Kept by name, a search is down the side under Searches.
 
 (defun esploro--searches-file ()
   (expand-file-name "esploro/searches.lisp" (or (getenv "XDG_CONFIG_HOME") "~/.config")))
@@ -1594,7 +1599,7 @@ so the view's history stays as it is."
          (unless again
            (let ((here (and (derived-mode-p 'dired-mode) (expand-file-name default-directory))))
              (when here (push here esploro--back) (setq esploro--forward '()))))
-         (esploro--show (cons root (mapcar (lambda (f) (file-relative-name f root)) paths)) nil buffer)
+         (esploro--show (cons (file-name-as-directory root) (mapcar (lambda (f) (file-relative-name f root)) paths)) nil buffer)
          (setq esploro--search (list words root name))
          (setq-local revert-buffer-function #'esploro--search-again)
          (rename-buffer (format "Esploro: %s" (or name words)) t))
@@ -1654,6 +1659,146 @@ for not."
   (esploro--call (list "search" "forget" name) nil nil t)
   (esploro-places-refresh)
   (message "Esploro: forgot \"%s\"" name))
+
+;;; --- Closing a project: what's open in it ----------------------------------------------
+
+;; Done with a project for now: what's open in it, unsaved first, to save
+;; and close; and the other windows that have something in it, to go to.
+
+(defvar-local esploro--project nil "The project this panel is about: its folder.")
+(put 'esploro--project 'permanent-local t)
+
+(defvar-keymap esploro-project-mode-map
+  :doc "Closing a project."
+  :parent special-mode-map
+  "g" #'esploro-project-refresh
+  "S" #'esploro-project-save-all
+  "C" #'esploro-project-close-all
+  "TAB" #'forward-button
+  "<backtab>" #'backward-button)
+
+(esploro--install-menu-bar esploro-project-mode-map)
+
+(define-derived-mode esploro-project-mode special-mode "Project"
+  "What's open in a project, to save and close."
+  (setq-local tool-bar-map esploro-tool-bar-map)
+  (visual-line-mode 1))
+
+(defun esploro--in-folder-p (file root)
+  (and file (string-prefix-p (file-name-as-directory root) (file-name-as-directory (expand-file-name file)))))
+
+(defun esploro--project-buffers (root)
+  "Emacs's buffers in ROOT: files, dired, and shells or other programs
+working there; not Esploro's own views."
+  (seq-filter (lambda (b)
+                (with-current-buffer b
+                  (and (not (string-prefix-p " " (buffer-name)))
+                       (not esploro--view)
+                       (if buffer-file-name (esploro--in-folder-p buffer-file-name root)
+                         (and (or (derived-mode-p 'dired-mode) (get-buffer-process b)
+                                  (derived-mode-p 'magit-mode))
+                              (esploro--in-folder-p default-directory root))))))
+              (buffer-list)))
+
+(defun esploro--unsaved-p (buffer)
+  (and (buffer-file-name buffer) (buffer-modified-p buffer)))
+
+(defun esploro--project-close-buffer (buffer)
+  "Close BUFFER; unsaved, only when you say its changes may go."
+  (when (buffer-live-p buffer)
+    (if (esploro--unsaved-p buffer)
+        (when (yes-or-no-p (format "%s has changes not saved.  Close it, losing them? " (buffer-name buffer)))
+          (with-current-buffer buffer (set-buffer-modified-p nil))
+          (kill-buffer buffer))
+      (kill-buffer buffer))))
+
+(defun esploro-close-project (&optional dir)
+  "What's open in DIR's project (this folder's), to save and close."
+  (interactive)
+  (let* ((dir (or dir (esploro--dir) default-directory))
+         (answer (esploro--call (list "project" (expand-file-name dir)) nil nil t)))
+    (pcase answer
+      (`(:project ,root ,_)
+       (let ((buffer (get-buffer-create (format "*Esploro: %s*" (abbreviate-file-name root)))))
+         (with-current-buffer buffer
+           (esploro-project-mode)
+           (setq esploro--project root)
+           (esploro--project-show (nth 2 answer)))
+         (pop-to-buffer buffer)))
+      (`(:none ,why) (message "Esploro: %s" why))
+      (_ (esploro--say answer "project")))))
+
+(defun esploro-project-refresh ()
+  "Look again at what's open in the project."
+  (interactive)
+  (let ((answer (esploro--call (list "project" esploro--project) nil nil t)))
+    (esploro--project-show (and (eq (car-safe answer) :project) (nth 2 answer)))))
+
+(defun esploro--project-button (label action)
+  (insert-text-button label 'action (lambda (_) (funcall action) (esploro-project-refresh)) 'follow-link t)
+  (insert " "))
+
+(defun esploro--project-show (windows)
+  "The panel, from Emacs's buffers and the core's WINDOWS."
+  (let* ((inhibit-read-only t)
+         (root esploro--project)
+         (buffers (esploro--project-buffers root))
+         (unsaved (seq-filter #'esploro--unsaved-p buffers))
+         (rest (seq-remove #'esploro--unsaved-p buffers))
+         (line (point)))
+    (erase-buffer)
+    (insert (propertize (format "Closing %s" (abbreviate-file-name root)) 'face 'bold) "\n\n")
+    (cl-flet ((name (b) (if (buffer-file-name b) (file-relative-name (buffer-file-name b) root) (buffer-name b))))
+      (when unsaved
+        (insert (propertize "Not saved" 'face 'warning) "\n")
+        (dolist (b unsaved)
+          (insert "  ")
+          (esploro--project-button "Save" (lambda () (with-current-buffer b (save-buffer))))
+          (esploro--project-button "Close" (lambda () (esploro--project-close-buffer b)))
+          (insert (name b) "\n"))
+        (insert "\n"))
+      (when rest
+        (insert (propertize "Open in Emacs" 'face 'bold) "\n")
+        (dolist (b rest)
+          (insert "  ")
+          (esploro--project-button "Close" (lambda () (esploro--project-close-buffer b)))
+          (insert (name b) "\n"))
+        (insert "\n")))
+    (when windows
+      (insert (propertize "In other windows" 'face 'bold) "\n")
+      (dolist (w windows)
+        (pcase-let ((`(,id ,class ,group ,title ,paths) w))
+          (insert "  ")
+          (esploro--project-button "Go" (lambda () (esploro--call (list "focus" (number-to-string id)))))
+          (insert (format "%s%s%s: %s\n" class (if group (format " on %s" group) "")
+                          (if (and title (not (string-empty-p title))) (format " (%s)" title) "")
+                          (mapconcat (lambda (p) (let ((r (file-relative-name p root))) (if (equal r ".") "the project" r)))
+                                     paths ", ")))))
+      (insert "\n"))
+    (if (or buffers windows)
+        (progn
+          (when unsaved (esploro--project-button "Save All" #'esploro-project-save-all))
+          (when buffers (esploro--project-button "Close All" #'esploro-project-close-all))
+          (insert "\n\n" (propertize "Close All closes what's saved; what isn't stays, to save or close on its own.  Other windows are yours to close.  g looks again." 'face 'shadow) "\n"))
+      (insert "Nothing open in it.\n"))
+    (goto-char (min line (point-max)))))
+
+(defun esploro-project-save-all ()
+  "Save every unsaved file of the project."
+  (interactive)
+  (dolist (b (seq-filter #'esploro--unsaved-p (esploro--project-buffers esploro--project)))
+    (with-current-buffer b (save-buffer)))
+  (when (called-interactively-p 'any) (esploro-project-refresh)))
+
+(defun esploro-project-close-all ()
+  "Close the project's buffers that are saved; the others stay."
+  (interactive)
+  (let* ((buffers (esploro--project-buffers esploro--project))
+         (unsaved (seq-filter #'esploro--unsaved-p buffers)))
+    (mapc #'kill-buffer (seq-remove #'esploro--unsaved-p buffers))
+    (message "Esploro: closed %d%s" (- (length buffers) (length unsaved))
+             (if unsaved (format "; %d not saved, still open" (length unsaved)) "")))
+  (when (called-interactively-p 'any) (esploro-project-refresh)))
 
 ;;; --- Plans to review: an agent's proposals ---------------------------------------------
 

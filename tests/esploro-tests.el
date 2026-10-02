@@ -494,4 +494,37 @@ without a frame."
        (dired-goto-file (esploro-tests--path "sel/c.txt")) (dired-mark 1)
        (should (equal (cadr (eval elisp t)) (list (esploro-tests--path "sel/a.txt") (esploro-tests--path "sel/c.txt"))))))))
 
+(ert-deftest esploro-closing-a-project ()
+  (esploro-tests--world
+   (make-directory (esploro-tests--path "proj/.git") t)
+   (let* ((saved (find-file-noselect (esploro-tests--file "proj/a.txt")))
+          (unsaved (find-file-noselect (esploro-tests--file "proj/src/b.txt")))
+          (outside (find-file-noselect (esploro-tests--file "elsewhere.txt"))))
+     (with-current-buffer unsaved (insert "more"))
+     (unwind-protect
+         (progn
+           (esploro-go (esploro-tests--path "proj/src"))
+           (esploro-close-project)
+           (with-current-buffer (format "*Esploro: %s*" (abbreviate-file-name (directory-file-name (esploro-tests--path "proj"))))
+             (should (equal esploro--project (directory-file-name (esploro-tests--path "proj"))))
+             (let ((text (buffer-string)))
+               ;; Unsaved first; what's outside the project isn't there.
+               (should (< (string-search "Not saved" text) (string-search "src/b.txt" text)
+                          (string-search "Open in Emacs" text)
+                          (string-search "a.txt" text (string-search "Open in Emacs" text))))
+               (should-not (string-search "elsewhere" text)))
+             (esploro-project-close-all)
+             (should-not (buffer-live-p saved))
+             (should (buffer-live-p unsaved))
+             (esploro-project-save-all)
+             (should-not (buffer-modified-p unsaved))
+             (esploro-project-close-all)
+             (should-not (buffer-live-p unsaved))
+             (should (buffer-live-p outside))
+             (esploro-project-refresh)
+             (should (string-search "Nothing open in it" (buffer-string)))
+             (kill-buffer)))
+       (dolist (b (list saved unsaved outside))
+         (when (buffer-live-p b) (with-current-buffer b (set-buffer-modified-p nil)) (kill-buffer b)))))))
+
 ;;; esploro-tests.el ends here

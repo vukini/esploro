@@ -504,6 +504,25 @@
 (check "and run" (= 2 (length (fourth (cdr (run-cli (list "search" "run" "Reports")))))))
 (check "and forgotten" (progn (run-cli (list "search" "forget" "Reports")) (null (esploro::read-searches))))
 
+;;; --- Closing a project: what's open in it ------------------------------------------------
+
+(let* ((term (esploro::make-window :id 5 :class "Alacritty" :group "2"))
+       (emacs (esploro::make-window :id 6 :class "Emacs" :group "2"))
+       (pdf (esploro::make-window :id 7 :class "zathura" :group "3"))
+       (map (make-hash-table :test 'equal)))
+  (setf (gethash "/p/proj" map) (list (cons term :folder))
+        (gethash "/p/proj/doc/a.pdf" map) (list (cons pdf :argument))
+        (gethash "/p/proj/notes.md" map) (list (cons emacs :modified-buffer))
+        (gethash "/p/other/b.pdf" map) (list (cons pdf :argument)))
+  (check "a project's windows: what has something in it, Emacs's buffers left to Emacs"
+         (equal (esploro::project-windows "/p/proj" map)
+                '((5 "Alacritty" "2" nil ("/p/proj")) (7 "zathura" "3" nil ("/p/proj/doc/a.pdf"))))))
+(esploro::ensure-folder (p "proj/.git"))
+(esploro::ensure-folder (p "proj/src"))
+(check "esploro project: the project, from inside it"
+       (equal (subseq (run-cli (list "project" (p "proj/src"))) 0 3) (list 0 :project (p "proj"))))
+(check "and says when there's none" (eq (second (run-cli (list "project" (p "srch")))) :none))
+
 ;;; --- The end -------------------------------------------------------------------------
 
 (sb-ext:run-program "chmod" (list "-R" "u+w" *top*) :search t)

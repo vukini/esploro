@@ -45,6 +45,7 @@ anything happens, done in the background, and kept in a journal.
 * Searches::               Folders that are questions, kept by name.
 * The Trash::              Looking in it, restoring, emptying.
 * Where files are open::   ``open in Emacs on 2'' beside a file.
+* Closing a project::      What's open in it, to save and close.
 * Plans from agents::      Changes an agent proposes, for you to apply.
 * Keys and mouse::         Everything, on one page.
 * The command line::       The esploro command.
@@ -371,6 +372,24 @@ windows and their programs, @file{/proc} for what those hold open or
 were started on, and Emacs for its buffers.  Opening such a file goes to
 its window instead of opening it again.
 
+@node Closing a project
+@chapter Closing a project
+
+Done with a project for now?  File @result{} Close Project@dots{}, in
+any folder of it, lists what's open in it: the files not saved first,
+each with @samp{Save} and @samp{Close}; then the rest open in Emacs
+(files, dired, shells working there), each with @samp{Close}; then the
+other windows that have something in it, a terminal in its folder or a
+PDF open in a viewer, each with @samp{Go}.
+
+@samp{Save All} saves every unsaved file.  @samp{Close All} closes
+what's saved, and leaves what isn't, so nothing is lost by a click:
+save it or close it on its own (closing asks first).  Other windows are
+for you to close.  @kbd{g} looks again.
+
+A project is the nearest folder above with a @file{.git} or a
+@file{log.md} in it.
+
 @node Plans from agents
 @chapter Plans from agents
 
@@ -497,6 +516,10 @@ Undoes the last applied plan.
 The files in @var{folder} a window has open.
 @item esploro open @var{path}
 Goes to the window that has @var{path}, or opens it.
+@item esploro project [@var{path}]
+@var{path}'s project, and the windows that have something in it.
+@item esploro focus @var{id}
+Goes to the window @var{id} (StumpWM's).
 @item esploro preview @var{path}
 A PNG of @var{path} (a picture, a PDF or a video), made once and kept.
 @item esploro trash-list

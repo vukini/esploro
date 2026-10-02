@@ -312,3 +312,25 @@ in; NIL when there's none."
             ;; holds open, not counting a program's own logs and caches.
             (car (or (funcall by :argument) (funcall by :folder)
                      (find-if (lambda (f) (and (eq (cdr f) :file) (not (scratch-path-p (car f))))) files))))))))
+
+;;; --- Closing a project: what's open in it --------------------------------------------------
+
+(defun project-windows (root &optional (map (scan-where)))
+  "The windows that have something below ROOT (or ROOT itself) other than
+Emacs's buffers, which Emacs lists itself: ((ID CLASS GROUP TITLE (PATH ...)) ...)."
+  (let ((windows (make-hash-table :test 'equal)))
+    (maphash (lambda (path places)
+               (when (or (string= path root) (path-inside-p path root))
+                 (dolist (place places)
+                   (unless (member (cdr place) '(:buffer :modified-buffer))
+                     (pushnew path (gethash (car place) windows) :test #'string=)))))
+             map)
+    (let ((rows '()))
+      (maphash (lambda (window paths)
+                 (when (window-id window)
+                   (push (list (window-id window) (window-class window) (window-group window)
+                               (window-title window) (sort paths #'string<))
+                         rows)))
+               windows)
+      (sort rows (lambda (a b) (string< (format nil "~a ~a" (third a) (second a))
+                                        (format nil "~a ~a" (third b) (second b))))))))

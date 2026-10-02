@@ -40,6 +40,7 @@ and kept in a journal.
 * Searches::               Folders that are questions, kept by name.
 * The Trash::              Looking in it, restoring, emptying.
 * Where files are open::   "open in Emacs on 2" beside a file.
+* Closing a project::      What's open in it, to save and close.
 * Plans from agents::      Changes an agent proposes, for you to apply.
 * Keys and mouse::         Everything, on one page.
 * The command line::       The esploro command.
@@ -396,7 +397,7 @@ again.  Empty the Trash deletes everything in it, for good,
 after asking: that one can't be undone.
 
 
-File: esploro.info,  Node: Where files are open,  Next: Plans from agents,  Prev: The Trash,  Up: Top
+File: esploro.info,  Node: Where files are open,  Next: Closing a project,  Prev: The Trash,  Up: Top
 
 13 Where files are open
 ***********************
@@ -408,9 +409,30 @@ open or were started on, and Emacs for its buffers.  Opening
 such a file goes to its window instead of opening it again.
 
 
-File: esploro.info,  Node: Plans from agents,  Next: Keys and mouse,  Prev: Where files are open,  Up: Top
+File: esploro.info,  Node: Closing a project,  Next: Plans from agents,  Prev: Where files are open,  Up: Top
 
-14 Plans from agents
+14 Closing a project
+********************
+
+Done with a project for now?  File ⇒ Close Project..., in any
+folder of it, lists what's open in it: the files not saved
+first, each with ‘Save’ and ‘Close’; then the rest open in Emacs
+(files, dired, shells working there), each with ‘Close’; then
+the other windows that have something in it, a terminal in its
+folder or a PDF open in a viewer, each with ‘Go’.
+
+   ‘Save All’ saves every unsaved file.  ‘Close All’ closes
+what's saved, and leaves what isn't, so nothing is lost by a
+click: save it or close it on its own (closing asks first).
+Other windows are for you to close.  ‘g’ looks again.
+
+   A project is the nearest folder above with a ‘.git’ or a
+‘log.md’ in it.
+
+
+File: esploro.info,  Node: Plans from agents,  Next: Keys and mouse,  Prev: Closing a project,  Up: Top
+
+15 Plans from agents
 ********************
 
 An agent (Claude Code, through Vikix's ‘vikix mcp’) never moves,
@@ -444,7 +466,7 @@ terminal.
 
 File: esploro.info,  Node: Keys and mouse,  Next: The command line,  Prev: Plans from agents,  Up: Top
 
-15 Keys and mouse
+16 Keys and mouse
 *****************
 
 Mouse
@@ -488,7 +510,7 @@ m, u, U                   mark, unmark, unmark all (dired's)
 
 File: esploro.info,  Node: The command line,  Next: Writing commands,  Prev: Keys and mouse,  Up: Top
 
-16 The command line
+17 The command line
 *******************
 
 ‘esploro [FOLDER]’
@@ -544,6 +566,10 @@ File: esploro.info,  Node: The command line,  Next: Writing commands,  Prev: Key
      The files in FOLDER a window has open.
 ‘esploro open PATH’
      Goes to the window that has PATH, or opens it.
+‘esploro project [PATH]’
+     PATH's project, and the windows that have something in it.
+‘esploro focus ID’
+     Goes to the window ID (StumpWM's).
 ‘esploro preview PATH’
      A PNG of PATH (a picture, a PDF or a video), made once and
      kept.
@@ -555,7 +581,7 @@ File: esploro.info,  Node: The command line,  Next: Writing commands,  Prev: Key
 
 File: esploro.info,  Node: Writing commands,  Prev: The command line,  Up: Top
 
-17 Writing commands
+18 Writing commands
 *******************
 
 The core defines commands once, for the kinds of file they're
@@ -575,23 +601,24 @@ the next step.
 
 Tag Table:
 Node: Top276
-Node: Opening Esploro1973
-Node: The window3789
-Node: Selecting and opening4816
-Node: Changing files5869
-Node: Recipes7376
-Node: Drag and drop8109
-Node: The preview8835
-Node: Two panes9949
-Node: Windows and workspaces10522
-Node: Looking around11385
-Node: Searches12226
-Node: The Trash13608
-Node: Where files are open14083
-Node: Plans from agents14554
-Node: Keys and mouse16017
-Node: The command line17802
-Node: Writing commands20289
+Node: Opening Esploro2038
+Node: The window3854
+Node: Selecting and opening4881
+Node: Changing files5934
+Node: Recipes7441
+Node: Drag and drop8174
+Node: The preview8900
+Node: Two panes10014
+Node: Windows and workspaces10587
+Node: Looking around11450
+Node: Searches12291
+Node: The Trash13673
+Node: Where files are open14148
+Node: Closing a project14619
+Node: Plans from agents15488
+Node: Keys and mouse16948
+Node: The command line18733
+Node: Writing commands21376
 
 End Tag Table
 

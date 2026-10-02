@@ -38,6 +38,9 @@ esploro check FILE          whether the plan in FILE could be applied; changes n
 esploro undo                undo the last applied plan
 esploro where FOLDER        the files in FOLDER that a window has open
 esploro open PATH           go to the window that has PATH, or open it
+esploro project [PATH]      PATH's project (.git or log.md above it), and the windows
+                            that have something in it
+esploro focus ID            go to the window ID (StumpWM's)
 esploro preview PATH        a PNG of PATH (a picture, PDF or video), made once and kept
 esploro trash-list          what's in the Trash
 esploro restore NAME...     put these back from the Trash (a plan: undo puts them back)
@@ -318,6 +321,16 @@ changes files, its steps go to Esploro for your review."
                (stream-error () nil))))
     (if files 0 1)))
 
+(defun cli-project (args)
+  "esploro project [PATH]: PATH's project, and the windows that have something in it."
+  (let* ((path (absolute (or (first args) ".")))
+         (root (and path (project-root path))))
+    (if root
+        (progn (answer (list :project root (project-windows root))) 0)
+        (progn (answer (list :none (format nil "~a isn't in a project (a folder with .git or log.md)"
+                                           (short-path path))))
+               1))))
+
 (defun cli-dbus ()
   "Make the running Emacs answer org.freedesktop.FileManager1 (the browsers'
 \"Show in folder\"): what the session bus runs when it's first asked."
@@ -358,6 +371,11 @@ changes files, its steps go to Esploro for your review."
           ((equal command "query") (cli-query (rest args)))
           ((equal command "search") (cli-search (rest args)))
           ((equal command "selection") (cli-selection (rest args)))
+          ((equal command "project") (cli-project (rest args)))
+          ((equal command "focus")
+           (let ((id (and (second args) (parse-integer (second args) :junk-allowed t))))
+             (if id (progn (focus-window id) (answer (list :focused id)) 0)
+                 (progn (answer (list :error "esploro focus WINDOW-ID")) 2))))
           ((and (equal command "reveal") (equal (second args) "--print"))
            ;; For a script (rofi's menu of commands): the file, or nothing.
            (let ((file (reveal-target)))
