@@ -20,7 +20,7 @@
   ((folder :initarg :folder :accessor folder)
    (entries :initform '() :accessor entries)
    (selection :initform (make-hash-table :test 'equal) :accessor selection)
-   (cursor :initform nil :accessor cursor)   ; the index the keys move from
+   (cursor :initform nil :accessor cursor)   ; the index the keys move from, or :up on ".."
    (anchor :initform nil :accessor anchor)   ; where Shift extends from
    (last-click :initform nil :accessor last-click)
    (scroll-wanted :initform nil :accessor scroll-wanted)
@@ -71,7 +71,7 @@
              (unless (path-exists-p path) (remhash path (selection frame))))
            (selection frame))
   (let ((n (length (entries frame))))
-    (when (cursor frame)
+    (when (integerp (cursor frame))
       (setf (cursor frame) (if (zerop n) nil (min (cursor frame) (1- n)))))))
 
 (defun go-to (frame folder &key cursor-on)
@@ -91,7 +91,12 @@ folder just left, going up), nothing selected."
         when (gethash (entry-path entry) (selection frame)) collect (entry-path entry)))
 
 (defun cursor-entry (frame)
-  (and (cursor frame) (nth (cursor frame) (entries frame))))
+  "The entry under the cursor; none on the \"..\" row."
+  (and (integerp (cursor frame)) (nth (cursor frame) (entries frame))))
+
+(defun up-row-p (frame)
+  "True when there is a \"..\" row: anywhere but /."
+  (string/= (folder frame) "/"))
 
 (defun select-only (frame i)
   (clrhash (selection frame))
@@ -101,7 +106,7 @@ folder just left, going up), nothing selected."
 
 (defun select-range (frame i)
   "Select from the anchor to I, and nothing else."
-  (let ((from (or (anchor frame) (cursor frame) i)))
+  (let ((from (or (anchor frame) (and (integerp (cursor frame)) (cursor frame)) i)))
     (clrhash (selection frame))
     (loop for k from (min from i) to (max from i)
           do (setf (gethash (entry-path (nth k (entries frame))) (selection frame)) t))
@@ -121,16 +126,26 @@ Command: line behind."
 
 (defun move-cursor (frame delta how)
   "Move the cursor DELTA rows (clamped). HOW: :only selects just the row
-it lands on, :extend selects from the anchor to it, :keep moves only."
+it lands on, :extend selects from the anchor to it, :keep moves only.
+The \"..\" row above the files is row -1: Up from the first file lands
+on it, and Return there goes up. Selecting more never reaches it."
   (quiet-command-line frame)
-  (let ((n (length (entries frame))))
-    (unless (zerop n)
-      ;; With no cursor yet, Down starts at the top and Up at the bottom.
-      (let ((i (max 0 (min (1- n) (+ (or (cursor frame) (if (plusp delta) -1 n)) delta)))))
-        (ecase how
-          (:only (select-only frame i))
-          (:extend (select-range frame i))
-          (:keep (setf (cursor frame) i (scroll-wanted frame) t)))))))
+  (let* ((n (length (entries frame)))
+         (lowest (if (and (up-row-p frame) (not (eq how :extend))) -1 0))
+         (from (case (cursor frame)
+                 (:up -1)
+                 ;; With no cursor yet, Down starts at the top and Up at the bottom.
+                 ((nil) (if (plusp delta) -1 n))
+                 (t (cursor frame)))))
+    (unless (and (zerop n) (= lowest 0))
+      (let ((i (max lowest (min (1- n) (+ from delta)))))
+        (if (= i -1)
+            (progn (clrhash (selection frame))
+                   (setf (cursor frame) :up (anchor frame) nil (scroll-wanted frame) t))
+            (ecase how
+              (:only (select-only frame i))
+              (:extend (select-range frame i))
+              (:keep (setf (cursor frame) i (scroll-wanted frame) t))))))))
 
 (defun targets (frame entry)
   "The files a command on ENTRY acts on: the whole selection when ENTRY is
@@ -192,7 +207,16 @@ in it, otherwise ENTRY alone."
       (write-string (note frame) pane))
     (terpri pane))
   (terpri pane)
-  (unless (string= (folder frame) "/")
+  (when (up-row-p frame)
+    ;; Under the cursor (Up from the first file), it looks like a selected row.
+    (when (eq (cursor frame) :up)
+      (multiple-value-bind (x y) (clim:stream-cursor-position pane)
+        (declare (ignore x))
+        (let ((h (+ (clim:text-style-height (clim:medium-text-style pane) pane) 2))
+              (w (clim:bounding-rectangle-width (clim:sheet-region pane))))
+          (clim:draw-rectangle* pane 0 (- y 1) w (+ y h) :ink *selected-ink*)
+          (clim:draw-rectangle* pane 1 (- y 1) (- w 2) (+ y h -1)
+                                :filled nil :ink *cursor-ink* :line-thickness 1))))
     (clim:with-output-as-presentation (pane (path-parent (folder frame)) 'folder-up)
       (write-string "..  (up)" pane))
     (terpri pane))
@@ -246,7 +270,9 @@ in it, otherwise ENTRY alone."
     (setf (scroll-wanted frame) nil)
     (let* ((pane (clim:find-pane-named frame 'files))
            (viewport (clim:pane-viewport-region pane))
-           (y (+ (rows-top frame) (* (cursor frame) (row-height frame))))
+           (y (if (eq (cursor frame) :up)
+                  0                      ; the ".." row, above the files
+                  (+ (rows-top frame) (* (cursor frame) (row-height frame)))))
            (bottom (+ y (row-height frame))))
       (clim:with-bounding-rectangle* (vx vy vx2 vy2) viewport
         (declare (ignore vx2))
@@ -369,14 +395,15 @@ in it, otherwise ENTRY alone."
 (define-esploro-command (com-open-current :name nil :keystroke (:down :meta)) ()
   (let* ((frame clim:*application-frame*)
          (entry (cursor-entry frame)))
-    (when entry (open-entry frame entry))))
+    (cond (entry (open-entry frame entry))
+          ((eq (cursor frame) :up) (com-up)))))
 
 ;;; Return on an empty command line opens the file under the cursor. (As a
 ;;; key of its own, Return couldn't also end a typed command.)
 (defmethod clim:read-frame-command :around ((frame esploro) &key stream)
   (declare (ignore stream))
   (let ((command (call-next-method)))
-    (if (and (null command) (cursor-entry frame))
+    (if (and (null command) (or (cursor-entry frame) (eq (cursor frame) :up)))
         '(com-open-current)
         command)))
 
@@ -490,7 +517,7 @@ in it, otherwise ENTRY alone."
 (define-esploro-command (com-toggle-current :name nil :keystroke (#\Space :control)) ()
   (let ((frame clim:*application-frame*))
     (quiet-command-line frame)
-    (when (cursor frame) (toggle-select frame (cursor frame)))))
+    (when (integerp (cursor frame)) (toggle-select frame (cursor frame)))))
 
 (define-esploro-command (com-select-all :name t :keystroke (#\a :control)) ()
   (let ((frame clim:*application-frame*))
@@ -628,7 +655,7 @@ in /), else, for one file, to that path."
      ("Shift+click" "select everything from the last one clicked to here")
      ("right-click" "what can be done with it (with all of the selection when it's in it)"))
     ("Keys"
-     ("Up, Down" "select the one above or below")
+     ("Up, Down" "select the one above or below; Up from the first is \"..\", where Return goes up")
      ("Shift+Up, Shift+Down" "select more, up or down")
      ("Ctrl+Up, Ctrl+Down" "move without selecting; Ctrl+Space then adds or takes out")
      ("Page Up, Page Down" "a page at a time; Ctrl+Home, Ctrl+End to the first or last")
