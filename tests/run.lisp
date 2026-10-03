@@ -829,6 +829,15 @@
     (unwind-protect (check "without ripgrep too" (equal (found "has:tender") '("a.txt" "c.txt")))
       (sb-posix:setenv "PATH" path 1))))
 
+;;; --- Emacs waiting: never asked back ----------------------------------------------------------
+
+(sb-posix:setenv "ESPLORO_NO_EMACS" "1" 1)
+(let ((start (get-internal-real-time)))
+  (check "Emacs waiting for the core isn't asked anything back (no emacsclient, no wait)"
+         (and (null (esploro::emacs-ask "t"))
+              (< (- (get-internal-real-time) start) (/ internal-time-units-per-second 10)))))
+(sb-posix:unsetenv "ESPLORO_NO_EMACS")
+
 ;;; --- The end -------------------------------------------------------------------------
 
 (sb-ext:run-program "chmod" (list "-R" "u+w" *top*) :search t)

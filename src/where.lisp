@@ -124,12 +124,16 @@ file open in the sense the map means."
 
 (defun emacs-ask (elisp)
   "ELISP's value from the running Emacs (its server), read as data; NIL
-when there's none. timeout keeps a busy Emacs from holding Esploro up."
-  (ignore-errors
-   (let ((out (with-output-to-string (s)
-                (sb-ext:run-program "timeout" (list "2" "emacsclient" "-e" elisp)
-                                    :search t :output s :error nil :wait t))))
-     (and (plusp (length out)) (read-foreign out)))))
+when there's none. timeout keeps a busy Emacs from holding Esploro up.
+Never when Emacs itself is waiting for this answer (ESPLORO_NO_EMACS=1,
+which the window sets for a call it waits on): it couldn't answer, and the
+two would wait for each other until the timeout."
+  (unless (equal (sb-posix:getenv "ESPLORO_NO_EMACS") "1")
+    (ignore-errors
+     (let ((out (with-output-to-string (s)
+                  (sb-ext:run-program "timeout" (list "2" "emacsclient" "-e" elisp)
+                                      :search t :output s :error nil :wait t))))
+       (and (plusp (length out)) (read-foreign out))))))
 
 (defun emacs-buffers ()
   "Emacs's file buffers and its frames' windows: (VALUES ((FILE MODIFIED) ...) IDS)."

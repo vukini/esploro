@@ -134,7 +134,10 @@ In the background, so a long copy never stops Emacs; SYNC waits (tests)."
           (default-directory "/"))
       (with-current-buffer out (setq default-directory "/"))
       (if (or sync esploro--wait)
-          (let ((answer (with-current-buffer out
+          ;; Emacs waits for this answer, so the core mustn't ask Emacs
+          ;; anything (emacsclient would wait for Emacs, and Emacs for it).
+          (let* ((process-environment (cons "ESPLORO_NO_EMACS=1" process-environment))
+                 (answer (with-current-buffer out
                           (when input (insert input))
                           (apply #'call-process-region (point-min) (point-max)
                                  esploro-program t t nil args)
