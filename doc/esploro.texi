@@ -419,6 +419,16 @@ in the background (a big folder fills in as it goes) and kept, so
 they're there at once the next time.  Their size is
 @code{esploro-thumbnail-height} (48 pixels).
 
+@item Grid (@kbd{G})
+The folder as tiles, side by side: a picture of each picture, PDF and
+video, a folder or a page (with its type) for the rest, the name under
+it.  Everything works as in the list: click selects (the tile is
+outlined), Ctrl+click and Shift+click select more (shaded), a double
+click opens, right-click has the same menu, and copy, paste, rename,
+the Trash and undo act on the tiles selected.  The arrow keys go from
+tile to tile.  Each window remembers whether it's a grid; going into a
+folder keeps it.  The size is @code{esploro-grid-size} (128 pixels).
+
 @item Filter (@kbd{/})
 Shows only the names holding some text, in any case, until you refresh
 (@kbd{F5}).
@@ -594,6 +604,7 @@ then ask an agent to ``sort the ones I've selected'', or run
 @item s @tab next sort
 @item . @tab hidden files
 @item T @tab thumbnails in the list
+@item G @tab the grid, or the list
 @item / @tab only names with...
 @item M-s s @tab search below
 @item F5 @tab refresh

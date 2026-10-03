@@ -33,6 +33,8 @@
 (require 'seq)
 (require 'subr-x)
 (require 'url-util)
+(require 'svg)
+(require 'color)
 
 (defgroup esploro nil
   "A file explorer on dired, for Lisp desktops."
@@ -968,6 +970,7 @@ a dropped name kept its newline, named no file, and the drop was lost."
   "<f11>" #'esploro-preview-toggle
   "z" #'esploro-repeat
   "T" #'esploro-thumbnails-toggle
+  "G" #'esploro-grid-toggle
   "C-c C-k" #'esploro-cancel
   "<f6>" #'esploro-move-to-other-pane
   "C-c C-c" #'esploro-copy-to-other-pane
@@ -1061,6 +1064,7 @@ show the pane's sort and history even when the places are selected."
           "---"
           ["Hidden Files" esploro-toggle-hidden :style toggle :selected (esploro--value 'esploro--hidden)]
           ["Thumbnails" esploro-thumbnails-toggle :keys "T" :style toggle :selected (esploro--value 'esploro--thumbnails)]
+          ["Grid" esploro-grid-toggle :keys "G" :style toggle :selected (esploro--value 'esploro--grid)]
           ["Filter..." esploro-filter :keys "/"]
           ["Search Below..." esploro-search :keys "M-s s"]
           ["Refresh" esploro--refresh :keys "F5"]
@@ -1202,7 +1206,8 @@ through the core, journaled so they can be undone."
     (add-hook 'post-command-hook #'esploro--preview-schedule nil t)
     (add-hook 'dired-after-readin-hook #'esploro--whole-row-drag nil t)
     (add-hook 'dired-after-readin-hook #'esploro--annotate nil t)
-    (add-hook 'dired-after-readin-hook #'esploro--thumbnails-show nil t)))
+    (add-hook 'dired-after-readin-hook #'esploro--thumbnails-show nil t)
+    (add-hook 'dired-after-readin-hook #'esploro--grid-after-readin nil t)))
 
 ;;; --- Places, down the side --------------------------------------------------------------
 
@@ -1695,6 +1700,232 @@ time, putting each in its overlay, while BUFFER still shows that ROUND."
                              (when (and (stringp png) (overlay-buffer (cdr pair)))
                                (overlay-put (cdr pair) 'before-string (esploro--thumbnail-string png)))))
                          (esploro--thumbnails-fill buffer round rest)))))))
+
+;;; --- The grid: pictures side by side ------------------------------------------------------
+
+;; View > Grid (G) shows the folder as tiles: a thumbnail for each picture,
+;; PDF and video, a drawn folder or page for the rest, the name under it.
+;; Underneath it's still the list, one file a line; each line is drawn as
+;; a tile and the lines of a row joined, so everything that works on the
+;; list (selecting, the menus, copy and paste, the Trash, undo, the
+;; preview) works on the grid.  The arrow keys go between tiles.
+
+(defcustom esploro-grid-size 128
+  "How big a picture in the grid is, in pixels."
+  :type 'integer :group 'esploro)
+
+(defvar-local esploro--grid nil "Non-nil: this view is a grid of tiles.")
+(defvar-local esploro--grid-columns 0 "Tiles in a row, as laid out.")
+(defvar-local esploro--grid-pngs nil "Thumbnails found for the grid: FILE -> PNG, or :none.")
+(defvar-local esploro--grid-round 0 "Which laying out the thumbnails asked for are for.")
+(dolist (v '(esploro--grid esploro--grid-columns esploro--grid-pngs esploro--grid-round))
+  (put v 'permanent-local t))
+
+(defvar-keymap esploro-grid-mode-map
+  :doc "Esploro's keys in a grid, on top of its others."
+  "<right>" #'esploro-grid-right
+  "<left>" #'esploro-grid-left
+  "<down>" #'esploro-grid-down
+  "<up>" #'esploro-grid-up
+  "C-f" #'esploro-grid-right
+  "C-b" #'esploro-grid-left
+  "C-n" #'esploro-grid-down
+  "C-p" #'esploro-grid-up
+  "n" #'esploro-grid-down
+  "p" #'esploro-grid-up
+  ;; A tile is drawn over its line: a double click on it opens it.
+  "<double-mouse-1>" #'esploro-mouse-open)
+
+(define-minor-mode esploro-grid-mode
+  "The folder as a grid of tiles (Esploro's View > Grid)."
+  :keymap esploro-grid-mode-map
+  (if esploro-grid-mode
+      (progn
+        (setq-local cursor-type nil)
+        (add-hook 'post-command-hook #'esploro--grid-refresh-tiles nil t)
+        (add-hook 'window-size-change-functions #'esploro--grid-resized nil t))
+    (kill-local-variable 'cursor-type)
+    (remove-hook 'post-command-hook #'esploro--grid-refresh-tiles t)
+    (remove-hook 'window-size-change-functions #'esploro--grid-resized t)))
+
+(defun esploro-grid-toggle ()
+  "The folder as a grid of tiles, or as the list."
+  (interactive)
+  (esploro--in-view
+   (setq esploro--grid (not esploro--grid))
+   (esploro--grid-layout)
+   (message "Esploro: %s" (if esploro--grid "a grid (arrows go between tiles)" "the list"))))
+
+(defun esploro--grid-tile-size ()
+  "A tile's width and height, in pixels."
+  (cons (+ esploro-grid-size 24) (+ esploro-grid-size (* 2 (frame-char-height)) 12)))
+
+(defun esploro--grid-file ()
+  "The file on this line, for a tile; nil for . and .., and the lines
+that aren't files."
+  (let ((file (dired-get-filename nil t)))
+    (and file (not (member (file-name-nondirectory (directory-file-name file)) '("." ".."))) file)))
+
+(defun esploro--grid-layout ()
+  "Lay the view out as a grid (or as the list again), and ask for the
+thumbnails it hasn't got."
+  (remove-overlays (point-min) (point-max) 'esploro-grid t)
+  (setq esploro--grid-round (1+ esploro--grid-round))
+  (esploro-grid-mode (if esploro--grid 1 -1))
+  (when esploro--grid
+    (unless esploro--grid-pngs (setq esploro--grid-pngs (make-hash-table :test #'equal)))
+    (let* ((window (get-buffer-window (current-buffer)))
+           (width (if window (window-body-width window t) 800))
+           (columns (max 1 (/ width (car (esploro--grid-tile-size)))))
+           (n 0) (wanted '()))
+      (setq esploro--grid-columns columns)
+      (save-excursion
+        (goto-char (point-min))
+        (while (not (eobp))
+          (let* ((start (line-beginning-position))
+                 (end (line-end-position))
+                 (file (esploro--grid-file)))
+            (if (not file)
+                ;; Headings and . and ..: not in the grid.
+                (let ((o (make-overlay start (min (point-max) (1+ end)))))
+                  (overlay-put o 'esploro-grid t)
+                  (overlay-put o 'display ""))
+              (setq n (1+ n))
+              (let ((o (make-overlay start end)))
+                (overlay-put o 'esploro-grid t)
+                (overlay-put o 'esploro-grid-file file)
+                (esploro--grid-draw o))
+              ;; The line's end joins it to the next tile, but at a row's end.
+              (when (and (/= 0 (mod n columns)) (< end (point-max)))
+                (let ((o (make-overlay end (1+ end))))
+                  (overlay-put o 'esploro-grid t)
+                  (overlay-put o 'display "")))
+              (when (and (memq (esploro--kind file) '(image pdf video))
+                         (not (gethash file esploro--grid-pngs)))
+                (push file wanted))))
+          (forward-line 1)))
+      (esploro--grid-thumbnails (current-buffer) esploro--grid-round (nreverse wanted)))))
+
+(defun esploro--grid-after-readin ()
+  "A folder shown again: its grid laid out again, when it's a grid."
+  (if esploro--grid (esploro--grid-layout) (when esploro-grid-mode (esploro-grid-mode -1))))
+
+(defun esploro--grid-resized (window)
+  "Lay out again when the window's width changes how many tiles fit."
+  (with-current-buffer (window-buffer window)
+    (when (and esploro--grid
+               (/= esploro--grid-columns
+                   (max 1 (/ (window-body-width window t) (car (esploro--grid-tile-size))))))
+      (esploro--grid-layout))))
+
+(defun esploro--grid-state (o)
+  "What O's tile looks like now: (FILE MARKED CURRENT PNG)."
+  (let ((file (overlay-get o 'esploro-grid-file))
+        (start (overlay-start o)))
+    (list file
+          (and start (not (eq (char-after start) ?\s)))
+          (and start (= (line-beginning-position) (save-excursion (goto-char start) (line-beginning-position))))
+          (gethash file esploro--grid-pngs))))
+
+(defun esploro--grid-draw (o)
+  "Draw the tile of overlay O, as it now is."
+  (let ((state (esploro--grid-state o)))
+    (unless (equal state (overlay-get o 'esploro-grid-state))
+      (overlay-put o 'esploro-grid-state state)
+      (overlay-put o 'display (apply #'esploro--grid-tile state)))))
+
+(defun esploro--grid-refresh-tiles ()
+  "After each command: the tiles whose selection or place changed, drawn again."
+  (when esploro--grid
+    (dolist (o (overlays-in (point-min) (point-max)))
+      (when (overlay-get o 'esploro-grid-file)
+        (esploro--grid-draw o)))))
+
+(defun esploro--grid-color (face attribute fallback)
+  "FACE's ATTRIBUTE colour as #rrggbb, which SVG reads (Emacs's names, like
+gtk_selection_bg_color, it doesn't); FALLBACK when there's none."
+  (let* ((c (face-attribute face attribute nil t))
+         (rgb (and (stringp c) (not (string-prefix-p "unspecified" c)) (color-name-to-rgb c))))
+    (if rgb (apply #'color-rgb-to-hex (append rgb '(2))) fallback)))
+
+(defun esploro--grid-tile (file marked current png)
+  "FILE's tile: its thumbnail PNG (or a drawn folder or page), its name under
+it; MARKED shades it, CURRENT outlines it."
+  (let* ((size (esploro--grid-tile-size))
+         (w (car size)) (h (cdr size)) (box esploro-grid-size)
+         (fg (esploro--grid-color 'default :foreground "#333333"))
+         (bg (esploro--grid-color 'default :background "#ffffff"))
+         (sel (esploro--grid-color 'region :background "#b5d5ff"))
+         (ring (esploro--grid-color 'link :foreground "#3366cc"))
+         (svg (svg-create w h))
+         (name (file-name-nondirectory (directory-file-name file)))
+         (font-size (* 0.85 (frame-char-height)))
+         ;; A character is about 0.6 of the font's size wide.
+         (chars (max 4 (floor (- w 12) (* 0.6 font-size)))))
+    (svg-rectangle svg 2 2 (- w 4) (- h 4) :rx 6 :fill (if marked sel bg)
+                   :stroke (if current ring "none") :stroke-width 3)
+    (cond ((stringp png)
+           (svg-embed svg png "image/png" nil :x 12 :y 6 :width box :height box))
+          ((file-directory-p file) (esploro--grid-folder svg 12 6 box fg))
+          (t (esploro--grid-page svg 12 6 box fg (upcase (or (file-name-extension file) "")))))
+    ;; The name, on one line or two, shortened in the middle when longer.
+    (let* ((lines (if (<= (length name) chars) (list name)
+                    (list (substring name 0 chars)
+                          (let ((rest (substring name chars)))
+                            (if (<= (length rest) chars) rest
+                              (concat (substring rest 0 (max 1 (- chars 6))) "…" (substring rest (- (length rest) 5))))))))
+           (y (+ box 6 (frame-char-height))))
+      (dolist (line lines)
+        (svg-text svg line :x (/ w 2) :y y :text-anchor "middle" :fill fg
+                  :font-family (face-attribute 'default :family nil t)
+                  :font-size font-size)
+        (setq y (+ y (frame-char-height)))))
+    (svg-image svg :ascent 'center)))
+
+(defun esploro--grid-folder (svg x y box color)
+  (let ((top (+ y (* 0.22 box))) (w box) (h (* 0.62 box)))
+    (svg-polygon svg (list (cons x top) (cons (+ x (* 0.38 w)) top) (cons (+ x (* 0.45 w)) (+ top (* 0.1 h)))
+                           (cons (+ x w) (+ top (* 0.1 h))) (cons (+ x w) (+ top h)) (cons x (+ top h)))
+                 :fill "#e8c46a" :stroke color :stroke-width 1)))
+
+(defun esploro--grid-page (svg x y box color label)
+  (let* ((w (* 0.62 box)) (h (* 0.8 box)) (left (+ x (/ (- box w) 2))) (top (+ y (* 0.08 box))) (fold (* 0.22 w)))
+    (svg-polygon svg (list (cons left top) (cons (- (+ left w) fold) top) (cons (+ left w) (+ top fold))
+                           (cons (+ left w) (+ top h)) (cons left (+ top h)))
+                 :fill "#f4f4f4" :stroke color :stroke-width 1)
+    (unless (string-empty-p label)
+      (svg-text svg (truncate-string-to-width label 5) :x (+ left (/ w 2)) :y (+ top (* 0.6 h))
+                :text-anchor "middle" :fill color :font-size (* 0.16 box) :font-weight "bold"))))
+
+(defun esploro--grid-thumbnails (buffer round wanted)
+  "Ask the core for WANTED's thumbnails, a batch at a time, drawing each
+tile again as its thumbnail comes, while BUFFER is still laid out as ROUND."
+  (when wanted
+    (let ((batch (seq-take wanted 12)) (rest (seq-drop wanted 12)))
+      (esploro--call (append (list "thumbnails" "--size" (number-to-string (* 2 esploro-grid-size))) batch) nil
+                     (lambda (answer)
+                       (when (and (buffer-live-p buffer)
+                                  (= round (buffer-local-value 'esploro--grid-round buffer)))
+                         (with-current-buffer buffer
+                           (dolist (file batch)
+                             (puthash file (or (cdr (assoc file (and (listp answer) answer))) :none)
+                                      esploro--grid-pngs))
+                           (esploro--grid-refresh-tiles))
+                         (esploro--grid-thumbnails buffer round rest)))))))
+
+(defun esploro--grid-move (lines)
+  "LINES files on (or back, when negative), in the list's order."
+  (let ((start (point)) (moved 0) (step (if (< lines 0) -1 1)))
+    (while (and (< moved (abs lines)) (zerop (forward-line step)))
+      (when (esploro--grid-file) (setq moved (1+ moved))))
+    (if (and (= moved (abs lines)) (esploro--grid-file))
+        (dired-move-to-filename)
+      (goto-char start))))
+
+(defun esploro-grid-right () "The next tile." (interactive) (esploro--grid-move 1))
+(defun esploro-grid-left () "The tile before." (interactive) (esploro--grid-move -1))
+(defun esploro-grid-down () "The tile below." (interactive) (esploro--grid-move esploro--grid-columns))
+(defun esploro-grid-up () "The tile above." (interactive) (esploro--grid-move (- esploro--grid-columns)))
 
 ;;; --- Archives, opened like folders (read-only) --------------------------------------
 

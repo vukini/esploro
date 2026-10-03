@@ -779,4 +779,41 @@ without a frame."
        (esploro-thumbnails-toggle)
        (should-not (seq-some (lambda (o) (overlay-get o 'esploro-thumbnail)) (overlays-in (point-min) (point-max))))))))
 
+(ert-deftest esploro-grid ()
+  (skip-unless (file-executable-p (expand-file-name "../esploro" (file-name-directory (locate-library "esploro")))))
+  (esploro-tests--world
+   (let ((process-environment (cons (concat "XDG_CACHE_HOME=" esploro-tests--top "cache") process-environment)))
+     (dolist (n '("a.txt" "b.txt" "c.txt" "d.txt" "e.txt" "f.txt" "g.txt"))
+       (esploro-tests--file (concat "g/" n)))
+     (make-directory (esploro-tests--path "g/sub"))
+     (esploro-go (esploro-tests--path "g"))
+     (with-current-buffer (esploro--view)
+       (esploro-grid-toggle)
+       (should esploro-grid-mode)
+       (let ((tiles (seq-filter (lambda (o) (overlay-get o 'esploro-grid-file)) (overlays-in (point-min) (point-max)))))
+         (should (= 8 (length tiles)))
+         (should (seq-every-p (lambda (o) (eq (car-safe (overlay-get o 'display)) 'image)) tiles)))
+       ;; The arrows: along a row, and a row down.
+       (setq esploro--grid-columns 3)
+       (goto-char (point-min)) (esploro--grid-move 1)
+       (let ((first (esploro--file-at)))
+         (esploro-grid-right)
+         (should-not (equal first (esploro--file-at)))
+         (esploro-grid-left)
+         (should (equal first (esploro--file-at)))
+         (esploro-grid-down)
+         (should (equal (esploro--file-at) (nth 3 (seq-filter #'identity
+                                                              (save-excursion (goto-char (point-min))
+                                                                              (let (fs) (while (not (eobp)) (push (esploro--grid-file) fs) (forward-line 1)) (nreverse fs))))))))
+       ;; A selected tile is drawn as selected; the list's commands work.
+       (dired-mark 1) (esploro--grid-refresh-tiles)
+       (should (seq-some (lambda (o) (nth 1 (overlay-get o 'esploro-grid-state))) (overlays-in (point-min) (point-max))))
+       (should (= 1 (length (dired-get-marked-files nil nil nil nil))))
+       ;; A grid stays a grid when the folder is shown again; and back to the list.
+       (revert-buffer)
+       (should (seq-some (lambda (o) (overlay-get o 'esploro-grid-file)) (overlays-in (point-min) (point-max))))
+       (esploro-grid-toggle)
+       (should-not esploro-grid-mode)
+       (should-not (seq-some (lambda (o) (overlay-get o 'esploro-grid)) (overlays-in (point-min) (point-max))))))))
+
 ;;; esploro-tests.el ends here

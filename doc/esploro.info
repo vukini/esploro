@@ -446,6 +446,18 @@ Thumbnails (‘T’)
      goes) and kept, so they're there at once the next time.
      Their size is ‘esploro-thumbnail-height’ (48 pixels).
 
+Grid (‘G’)
+     The folder as tiles, side by side: a picture of each
+     picture, PDF and video, a folder or a page (with its type)
+     for the rest, the name under it.  Everything works as in
+     the list: click selects (the tile is outlined), Ctrl+click
+     and Shift+click select more (shaded), a double click opens,
+     right-click has the same menu, and copy, paste, rename, the
+     Trash and undo act on the tiles selected.  The arrow keys
+     go from tile to tile.  Each window remembers whether it's a
+     grid; going into a folder keeps it.  The size is
+     ‘esploro-grid-size’ (128 pixels).
+
 Filter (‘/’)
      Shows only the names holding some text, in any case, until
      you refresh (‘F5’).
@@ -647,6 +659,7 @@ z                         the last change again, on the selection
 s                         next sort
 .                         hidden files
 T                         thumbnails in the list
+G                         the grid, or the list
 /                         only names with...
 M-s s                     search below
 F5                        refresh
@@ -804,15 +817,15 @@ Node: The preview13723
 Node: Two panes14837
 Node: Windows and workspaces15410
 Node: Looking around16273
-Node: Searches17413
-Node: Archives18863
-Node: The Trash19701
-Node: Where files are open20176
-Node: Closing a project20647
-Node: Plans from agents21516
-Node: Keys and mouse23780
-Node: The command line25620
-Node: Writing commands29521
+Node: Searches18032
+Node: Archives19482
+Node: The Trash20320
+Node: Where files are open20795
+Node: Closing a project21266
+Node: Plans from agents22135
+Node: Keys and mouse24399
+Node: The command line26287
+Node: Writing commands30188
 
 End Tag Table
 
