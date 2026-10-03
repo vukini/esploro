@@ -433,11 +433,24 @@
          (progn (run-cli (list "run" "compress" (p "cmd/note.txt")))
                 (run-cli (list "run" "compress" (p "cmd/note.txt")))
                 (and (path-exists-p (p "cmd/note.txt.zip")) (path-exists-p (p "cmd/note.txt 2.zip")))))
+  (check "compress says what it made"
+         (let ((r (run-cli (list "run" "compress" (p "cmd/note.txt")))))
+           (and (eql (car r) 0) (equal (getf (cddr (cdr r)) :made) (list (p "cmd/note.txt 3.zip"))))))
   (when (or (esploro::program-p "bsdtar") (esploro::program-p "unzip"))
     (check "extract-here unpacks into a new folder beside it"
            (progn (run-cli (list "run" "extract-here" (p "cmd/note.txt.zip")))
                   ;; note.txt is the file itself: the folder is numbered.
                   (path-exists-p (p "cmd/note.txt 2/note.txt"))))))
+(make-file (p "cmd/broken.zip") "not a zip at all")
+(check "a command that makes nothing says so, naming the file"
+       (let ((r (run-cli (list "run" "extract-here" (p "cmd/broken.zip")))))
+         (and (eql (car r) 1) (eq (second r) :error) (search "broken.zip" (third r))
+              (not (path-exists-p (p "cmd/broken"))))))
+(check "the terminal: Esploro's own choice first, read when it's wanted"
+       (progn (sb-posix:setenv "ESPLORO_TERMINAL" "foot" 1)
+              (prog1 (and (equal (esploro::terminal-command) "foot")
+                          (let ((esploro::*terminal* "kitty -1")) (equal (esploro::terminal-command) "kitty -1")))
+                (sb-posix:unsetenv "ESPLORO_TERMINAL"))))
 (check "a command that isn't for that kind is refused"
        (eq (second (run-cli (list "run" "shrink" (p "cmd/note.txt")))) :error))
 (check "a command that changes files only proposes (no Emacs here: nothing happens)"

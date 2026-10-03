@@ -286,6 +286,9 @@ changes files, its steps go to Esploro for your review."
            1)
           ((file-command-changes command)
            (propose-steps (run-file-command command paths) (file-command-label command)))
+          ((file-command-makes command)
+           (handler-case (progn (answer (list :done (length paths) :made (run-file-command command paths))) 0)
+             (error (e) (answer (list :error (princ-to-string e))) 1)))
           (t (run-file-command command paths) (answer (list :done (length paths))) 0))))
 
 (defun cli-recipe (args)

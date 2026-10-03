@@ -16,7 +16,7 @@
 (in-package #:esploro)
 
 (defstruct file-command
-  name kinds doc function changes)
+  name kinds doc function changes makes)
 
 (defvar *file-commands* '()
   "Every file command, in the order they were defined.")
@@ -41,7 +41,8 @@
 (defmacro define-file-command (name ((var kinds) &rest options) &body body)
   "Define the file command NAME for files of KINDS (a kind, a list of them,
 or T for anything). OPTIONS: :changes T when BODY returns plan steps
-rather than acting. BODY may start with a docstring, shown in menus."
+rather than acting; :makes T when it makes a file and returns its path, or
+NIL when it couldn't, so you hear which. BODY may start with a docstring, shown in menus."
   (let ((doc (when (and (stringp (first body)) (rest body)) (first body))))
     `(progn
        (register-file-command
@@ -49,6 +50,7 @@ rather than acting. BODY may start with a docstring, shown in menus."
                            :kinds ',(if (listp kinds) kinds (list kinds))
                            :doc ,doc
                            :changes ,(getf options :changes)
+                           :makes ,(getf options :makes)
                            :function (lambda (,var) ,@body)))
        ',name)))
 
@@ -67,13 +69,20 @@ rather than acting. BODY may start with a docstring, shown in menus."
 
 (defun run-file-command (command paths)
   "Run COMMAND (one, or its name) on each of PATHS. Returns the steps it
-proposes, for a command that changes files; NIL for one that acted."
+proposes, for a command that changes files; for one that makes files, the
+paths made (an error names a file it couldn't make one from); else NIL."
   (let ((command (if (file-command-p command) command (find-file-command command))))
     (unless command (error "No file command ~a" command))
-    (if (file-command-changes command)
-        (loop for path in paths append (funcall (file-command-function command) path))
-        (progn (dolist (path paths) (funcall (file-command-function command) path))
-               nil))))
+    (cond ((file-command-changes command)
+           (loop for path in paths append (funcall (file-command-function command) path)))
+          ((file-command-makes command)
+           (loop for path in paths
+                 for made = (funcall (file-command-function command) path)
+                 unless (stringp made)
+                   do (error "~a didn't work on ~a" (file-command-label command) (path-name path))
+                 collect made))
+          (t (dolist (path paths) (funcall (file-command-function command) path))
+             nil))))
 
 ;;; --- Starting programs ---------------------------------------------------------
 
@@ -96,7 +105,34 @@ Esploro and leaves no process to wait for."
                                      (format nil "~a~a~:[ ~d~;~*~]~a" stem suffix (= n 1) n type))
           unless (path-exists-p candidate) return candidate)))
 
-(defparameter *terminal* (or (sb-posix:getenv "TERMINAL") "alacritty"))
+(defvar *terminal* nil
+  "The terminal to open, as a shell would read it (\"kitty --single-instance\");
+NIL: the one terminal-command finds.")
+
+(defun terminal-command ()
+  "The terminal, found when it's wanted (a value read at build time would
+stay the builder's): *terminal*, ESPLORO_TERMINAL, Vikix's (StumpWM's
+*vikix-terminal*, what Super+Enter opens), TERMINAL, else alacritty."
+  (flet ((given (value) (and (stringp value) (plusp (length (string-trim " " value))) value)))
+    (or (given *terminal*)
+        (given (sb-posix:getenv "ESPLORO_TERMINAL"))
+        (given (handler-case (stumpwm-eval "(and (boundp '*vikix-terminal*) *vikix-terminal*)" :timeout 2)
+                 (error () nil)))
+        (given (sb-posix:getenv "TERMINAL"))
+        "alacritty")))
+
+(defun launch-terminal (folder &rest command)
+  "A terminal in FOLDER, running COMMAND (a program and its arguments), or a
+shell. Its folder is the process's own: every terminal starts there, where
+--working-directory is alacritty's word alone (kitty's is --directory)."
+  (sb-ext:run-program "setsid"
+                      (list* "-f" "sh" "-c"
+                             (if command
+                                 (format nil "exec ~a -e \"$@\"" (terminal-command))
+                                 (format nil "exec ~a" (terminal-command)))
+                             "sh" command)
+                      :search t :directory (native folder) :input nil :output nil :error nil :wait t)
+  t)
 
 (defun command-output (program &rest args)
   "What PROGRAM prints, first line, or NIL."
@@ -170,7 +206,7 @@ outside a big desktop, would start it with no terminal, unseen."
                 (file (and entry (desktop-file entry))))
            (multiple-value-bind (exec terminal) (if file (desktop-entry file) (values nil nil))
              (if (and exec terminal)
-                 (apply #'launch *terminal* "-e" (exec-arguments exec path))
+                 (apply #'launch-terminal (path-parent path) (exec-arguments exec path))
                  (launch "xdg-open" path)))))))
 
 (defun open-path (path &key (where (scan-where)))
@@ -200,7 +236,7 @@ usual program. Returns the window gone to, or NIL."
 
 (define-file-command terminal-here ((path :folder))
   "Open a terminal in this folder."
-  (launch *terminal* "--working-directory" path))
+  (launch-terminal path))
 
 (define-file-command open-with-default ((path :file))
   "Open with its usual program, even when a window has it already."
@@ -231,7 +267,7 @@ usual program. Returns the window gone to, or NIL."
   "Show it in Esploro, selected in its folder."
   (launch "esploro" path))
 
-(define-file-command extract-here ((path :archive))
+(define-file-command extract-here ((path :archive) :makes t)
   "Extract it into a new folder beside it."
   (let* ((name (path-name path))
          (stem (subseq name 0 (or (search ".tar" name) (position #\. name :from-end t) (length name))))
@@ -240,18 +276,23 @@ usual program. Returns the window gone to, or NIL."
                    for candidate = (join-path (path-parent path) (if (= n 1) stem (format nil "~a ~d" stem n)))
                    unless (path-exists-p candidate) return candidate)))
     (ensure-folder to)
-    (or (tool-ok "bsdtar" "-xf" path "-C" to)
-        (tool-ok "tar" "-xf" path "-C" to)
-        (and (string-equal (pathname-type (native path)) "zip") (tool-ok "unzip" "-q" path "-d" to)))))
+    (if (or (tool-ok "bsdtar" "-xf" path "-C" to)
+            (tool-ok "tar" "-xf" path "-C" to)
+            (and (string-equal (pathname-type (native path)) "zip") (tool-ok "unzip" "-q" path "-d" to)))
+        to
+        ;; Not an archive after all: the folder made for it goes, while empty.
+        (progn (ignore-errors (sb-posix:rmdir to)) nil))))
 
-(define-file-command compress ((path t))
+(define-file-command compress ((path t) :makes t)
   "Compress it into a .zip beside it."
   (let ((to (free-name (concatenate 'string path ".zip") "")))
-    (tool-ok "sh" "-c" "cd \"$1\" && exec zip -qr \"$2\" \"$3\"" "sh" (path-parent path) to (path-name path))))
+    (and (tool-ok "sh" "-c" "cd \"$1\" && exec zip -qr \"$2\" \"$3\"" "sh" (path-parent path) to (path-name path))
+         to)))
 
-(define-file-command shrink ((path :image))
+(define-file-command shrink ((path :image) :makes t)
   "A copy at half the size beside it (\"photo small.jpg\")."
-  (tool-ok "magick" path "-auto-orient" "-resize" "50%" (free-name path " small")))
+  (let ((to (free-name path " small")))
+    (and (tool-ok "magick" path "-auto-orient" "-resize" "50%" to) to)))
 
 ;;; --- Your own commands ---------------------------------------------------------------
 

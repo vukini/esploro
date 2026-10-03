@@ -1526,6 +1526,10 @@ that changes files, as a plan for your review."
     (esploro--call (append (list "run" name) files) nil
                    (lambda (answer)
                      (pcase answer
+                       (`(:done ,_ :made ,made)
+                        (message "Esploro: %s made %s" name
+                                 (mapconcat #'file-name-nondirectory made ", "))
+                        (esploro--refresh))
                        (`(:done ,_) (message "Esploro: %s, done" name) (esploro--refresh))
                        (`(:proposed ,n) (message "Esploro: %s proposes %d %s: review it" name n (if (= n 1) "step" "steps")))
                        (_ (esploro--say answer name)))))))
