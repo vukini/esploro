@@ -999,7 +999,9 @@ show the pane's sort and history even when the places are selected."
         ["Empty the Trash..." esploro-empty-trash])
     (help-menu "Help"
                ["Esploro Manual" esploro-manual :keys "?"]
-               ["Keys and Mouse" esploro-manual-keys])))
+               ["Keys and Mouse" esploro-manual-keys]
+               "---"
+               ["Your Sorting Rules" esploro-sorting-rules])))
 
 (defconst esploro--hidden-menus
   '(options buffer tools operate mark regexp immediate subdir)
@@ -1924,6 +1926,8 @@ which the review offers to keep by name.")
 (defvar-local esploro--review-problems nil
   "What the core found wrong with the plan as it now is; nil when it can be applied.")
 (defvar-local esploro--review-edited nil "Whether you've changed the plan.")
+(defvar-local esploro--review-proposed nil
+  "A copy of the agent's plan as it came, to learn from what you changed.")
 (defvar-local esploro--review-of nil "In a plan being edited: its review buffer.")
 
 (defvar-keymap esploro-review-mode-map
@@ -2001,7 +2005,8 @@ where it is): WHY says what it does, RECIPE what made it, if one did."
       (esploro-review-mode)
       (setq esploro--review-file file
             esploro--review-why why
-            esploro--review-recipe recipe))
+            esploro--review-recipe recipe)
+      (unless recipe (esploro--review-keep-proposed)))
     (esploro--review-show buffer)
     (with-selected-frame frame
       (select-window (display-buffer-in-side-window
@@ -2009,6 +2014,13 @@ where it is): WHY says what it does, RECIPE what made it, if one did."
                                (window-parameters (no-delete-other-windows . t))))))
     (message "Esploro: a plan of %d %s to review" (length steps) (if (= (length steps) 1) "step" "steps"))
     buffer))
+
+(defun esploro--review-keep-proposed ()
+  "Keep the agent's plan under review as it came, so what you change in it
+can become a rule for the next one."
+  (let ((proposed (concat esploro--review-file ".proposed")))
+    (when (ignore-errors (copy-file esploro--review-file proposed t) t)
+      (setq esploro--review-proposed proposed))))
 
 (defun esploro--review-insert-steps (steps)
   "STEPS, numbered.  Renames all in one folder are a table, each name
@@ -2129,13 +2141,61 @@ Saving checks it again and shows it in the review as it now is."
       (if (and apply (buffer-local-value 'esploro--review-problems buffer))
           (message "Esploro: not applied, the plan can't be applied as it is: %s"
                    (string-join (buffer-local-value 'esploro--review-problems buffer) "; "))
-        (let ((steps (esploro--read-plan file)))
-          (when apply (esploro--apply steps "the proposed plan, applied"))
-          (unless apply (message "Esploro: the proposed plan was dropped; nothing changed"))
+        (let ((steps (esploro--read-plan file))
+              (proposed (buffer-local-value 'esploro--review-proposed buffer))
+              (edited (buffer-local-value 'esploro--review-edited buffer)))
+          (if apply
+              (esploro--review-apply steps file proposed edited)
+            (message "Esploro: the proposed plan was dropped; nothing changed")
+            (ignore-errors (delete-file file))
+            (when proposed (ignore-errors (delete-file proposed))))
           (when edit (esploro--plan-edit-close edit buffer))
-          (ignore-errors (delete-file file))
           (when-let* ((window (get-buffer-window buffer t))) (delete-window window))
           (kill-buffer buffer))))))
+
+(defun esploro--review-apply (steps file proposed edited)
+  "Apply STEPS, the plan in FILE; when you EDITED it, offer what you changed
+from PROPOSED (the agent's) as rules for agents.  The files go after."
+  (message "Esploro: the proposed plan, applying...")
+  (esploro--call (list "apply") (esploro--plan-text steps)
+                 (lambda (answer)
+                   (esploro--say answer "the proposed plan, applied")
+                   (esploro--refresh)
+                   (let ((learn (and edited proposed (eq (car-safe answer) :done)
+                                     (esploro--call (list "learn" proposed file) nil nil t))))
+                     (ignore-errors (delete-file file))
+                     (when proposed (ignore-errors (delete-file proposed)))
+                     (pcase learn
+                       (`(:corrections ,rules)
+                        (when rules
+                          ;; Asked from Emacs's command loop, not from the
+                          ;; core's answer coming in.
+                          (if esploro--wait (esploro--offer-rules rules)
+                            (run-at-time 0 nil #'esploro--offer-rules rules)))))))))
+
+(defvar esploro-learn-ask t
+  "Non-nil: after you apply an agent's plan you edited, offer what you
+changed as rules in ~/.config/esploro/sorting.md.")
+
+(defun esploro--offer-rules (rules)
+  "Offer RULES, what you changed in an agent's plan in words, one by one:
+each shown first, to edit into something general, and written only on
+your yes."
+  (when (and esploro-learn-ask
+             (y-or-n-p (format "You changed %d of the agent's steps.  Keep %s as %s for agents (sorting.md)? "
+                               (length rules) (if (cdr rules) "them" "it") (if (cdr rules) "rules" "a rule"))))
+    (let ((added 0))
+      (dolist (rule rules)
+        (let ((text (string-trim (read-string "Rule (make it general; empty skips it): " rule))))
+          (unless (string-empty-p text)
+            (when (eq (car-safe (esploro--call (list "learn" "--add" text) nil nil t)) :added)
+              (setq added (1+ added))))))
+      (message "Esploro: %d %s added to ~/.config/esploro/sorting.md" added (if (= added 1) "rule" "rules")))))
+
+(defun esploro-sorting-rules ()
+  "Open your rules for where files go: what agents read before proposing."
+  (interactive)
+  (find-file (expand-file-name "esploro/sorting.md" (or (getenv "XDG_CONFIG_HOME") "~/.config"))))
 
 ;;; --- The manual ---------------------------------------------------------------------------
 

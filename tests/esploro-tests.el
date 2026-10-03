@@ -352,7 +352,8 @@ without a frame."
   (let ((buffer (generate-new-buffer "review")))
     (with-current-buffer buffer
       (esploro-review-mode)
-      (setq esploro--review-file plan esploro--review-why "a test"))
+      (setq esploro--review-file plan esploro--review-why "a test")
+      (esploro--review-keep-proposed))
     (esploro--review-show buffer)
     buffer))
 
@@ -613,5 +614,37 @@ without a frame."
     (should (member "Save Last Change As..." n)))
   (let ((n (mapcar (lambda (v) (aref v 0)) (seq-filter #'vectorp (esploro--searches-menu nil)))))
     (should (member "Keep This Search..." n))))
+
+(ert-deftest esploro-learn-from-your-edits ()
+  (skip-unless (file-executable-p (expand-file-name "../esploro" (file-name-directory (locate-library "esploro")))))
+  (esploro-tests--world
+   (let* ((process-environment (cons (concat "XDG_CONFIG_HOME=" esploro-tests--top "config") process-environment))
+          (zip (esploro-tests--file "Downloads/Dataroom LME.zip"))
+          (plan (esploro-tests--path "plan.lisp"))
+          (rules (esploro-tests--path "config/esploro/sorting.md"))
+          (asked nil) review)
+     (make-directory (esploro-tests--path "Archives")) (make-directory (esploro-tests--path "Work"))
+     (with-temp-file plan
+       (insert (esploro--plan-text (list (list :move zip (esploro-tests--path "Archives/Dataroom LME.zip")))) "\n"))
+     (setq review (esploro-tests--review plan))
+     ;; You send it to Work instead.
+     (with-current-buffer review (esploro-review-edit))
+     (with-current-buffer (esploro--review-edit-buffer review)
+       (erase-buffer)
+       (insert (esploro--plan-text (list (list :move zip (esploro-tests--path "Work/Dataroom LME.zip")))) "\n")
+       (esploro-plan-edit-done))
+     (cl-letf (((symbol-function 'y-or-n-p) (lambda (q) (setq asked q) t))
+               ((symbol-function 'read-string)
+                (lambda (_prompt initial) (should (string-match-p "goes in ~/Work, not in ~/Archives" initial))
+                  "A work zip goes in Work, not in Archives.")))
+       (esploro--review-done review t))
+     (should (file-exists-p (esploro-tests--path "Work/Dataroom LME.zip")))
+     (should (string-match-p "1 of the agent's steps" asked))
+     (should (string-match-p "## Learnt from my corrections\n\n- A work zip goes in Work, not in Archives\\."
+                             (with-temp-buffer (insert-file-contents rules) (buffer-string))))
+     ;; The plan's files are gone; the correction is kept for later.
+     (should-not (file-exists-p plan))
+     (should-not (file-exists-p (concat plan ".proposed")))
+     (should (file-exists-p (esploro-tests--path ".local/state/esploro/corrections.lisp"))))))
 
 ;;; esploro-tests.el ends here

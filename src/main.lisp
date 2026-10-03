@@ -36,6 +36,9 @@ esploro query [--lines] TEXT [FOLDER]   the files below FOLDER (the one you're i
                             -word for not; or a query as an s-expression
 esploro search list|save NAME TEXT [FOLDER]|forget NAME|run [--lines] NAME
                             searches kept by name (Searches, down the side)
+esploro learn PROPOSED APPLIED   what you changed in an agent's plan, as rules in words
+                            (kept in the state folder's corrections.lisp)
+esploro learn --add RULE    RULE into ~/.config/esploro/sorting.md, under its learnt rules
 esploro selection [--sexp]  the files selected in Esploro (or dired), the view used
                             last: one a line, for a shell or an agent
 esploro propose FILE [WHY]  a plan for you to review in Esploro (an agent's): checked
@@ -404,6 +407,20 @@ changes files, its steps go to Esploro for your review."
                                            (short-path path))))
                1))))
 
+(defun cli-learn (args)
+  "esploro learn PROPOSED APPLIED | learn --add RULE"
+  (cond ((equal (first args) "--add")
+         (if (and (second args) (string/= (string-trim " " (second args)) ""))
+             (progn (answer (list :added (add-sorting-rule (second args)))) 0)
+             (progn (answer (list :error "esploro learn --add RULE")) 2)))
+        ((and (first args) (second args))
+         (let ((corrections (plan-corrections (read-plan-file (absolute (first args)))
+                                              (read-plan-file (absolute (second args))))))
+           (keep-corrections corrections)
+           (answer (list :corrections (mapcar #'correction-rule corrections)))
+           0))
+        (t (answer (list :error "esploro learn PROPOSED APPLIED | learn --add RULE")) 2)))
+
 (defun cli-dbus ()
   "Make the running Emacs answer org.freedesktop.FileManager1 (the browsers'
 \"Show in folder\"): what the session bus runs when it's first asked."
@@ -446,6 +463,7 @@ changes files, its steps go to Esploro for your review."
           ((equal command "query") (cli-query (rest args)))
           ((equal command "search") (cli-search (rest args)))
           ((equal command "selection") (cli-selection (rest args)))
+          ((equal command "learn") (cli-learn (rest args)))
           ((equal command "project") (cli-project (rest args)))
           ((equal command "focus")
            (let ((id (and (second args) (parse-integer (second args) :junk-allowed t))))

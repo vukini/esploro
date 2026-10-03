@@ -487,6 +487,19 @@ wrong if anything is (a plan with a problem isn't applied).
 @kbd{C-c C-c} saves and goes back to the review; @kbd{C-c C-k} drops
 your unsaved changes.  Then @samp{Apply} as before.
 
+What you changed is a correction, and Esploro can teach it to every
+agent.  After you apply a plan you edited, it says how many of the
+agent's steps you changed and asks whether to keep them as rules.  On
+yes, each comes as a sentence to make general before it's kept:
+``"Dataroom LME.zip" goes in ~/Work, not in ~/Archives.'' might become
+``A work zip goes in Work, not in Archives.''  Leave one empty to skip
+it.  Kept rules go at the end of your rules for where files go,
+@file{~/.config/esploro/sorting.md}, under ``Learnt from my
+corrections'', and every agent that proposes changes reads that file
+first.  Nothing is written there without your yes; the file is yours to
+change (Help @result{} Your Sorting Rules).  Every correction is also
+noted, as data, in @file{~/.local/state/esploro/corrections.lisp}.
+
 Agents, and shells, can read what you've selected: @command{esploro
 selection} prints the files selected in the Esploro window you used
 last (or a dired buffer, if you used one since), one a line; with
@@ -571,6 +584,12 @@ The files below @var{folder} that @var{words} describe
 @itemx esploro search forget @var{name}
 @itemx esploro search run [--lines] @var{name}
 Searches kept by name.
+@item esploro learn @var{proposed} @var{applied}
+What @var{applied} (your plan) changed in @var{proposed} (an agent's),
+as rules in words.
+@item esploro learn --add @var{rule}
+@var{rule} into @file{~/.config/esploro/sorting.md}, under its learnt
+rules.
 @item esploro selection [--sexp]
 The files selected in Esploro, or dired, used last, one a line;
 @option{--sexp} gives @code{(:selection @var{folder} (@var{file}@dots{}))}.

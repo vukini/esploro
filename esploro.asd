@@ -21,6 +21,7 @@
                (:file "commands")
                (:file "recipes")
                (:file "searches")
+               (:file "learn")
                (:file "preview")))
 
 (defsystem "esploro"

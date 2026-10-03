@@ -526,6 +526,21 @@ you, with what's wrong if anything is (a plan with a problem
 isn't applied).  ‘C-c C-c’ saves and goes back to the review;
 ‘C-c C-k’ drops your unsaved changes.  Then ‘Apply’ as before.
 
+   What you changed is a correction, and Esploro can teach it to
+every agent.  After you apply a plan you edited, it says how
+many of the agent's steps you changed and asks whether to keep
+them as rules.  On yes, each comes as a sentence to make general
+before it's kept: ""Dataroom LME.zip" goes in ~/Work, not in
+~/Archives."  might become "A work zip goes in Work, not in
+Archives."  Leave one empty to skip it.  Kept rules go at the
+end of your rules for where files go,
+‘~/.config/esploro/sorting.md’, under "Learnt from my
+corrections", and every agent that proposes changes reads that
+file first.  Nothing is written there without your yes; the file
+is yours to change (Help ⇒ Your Sorting Rules).  Every
+correction is also noted, as data, in
+‘~/.local/state/esploro/corrections.lisp’.
+
    Agents, and shells, can read what you've selected: ‘esploro
 selection’ prints the files selected in the Esploro window you
 used last (or a dired buffer, if you used one since), one a
@@ -619,6 +634,12 @@ File: esploro.info,  Node: The command line,  Next: Writing commands,  Prev: Key
 ‘esploro search forget NAME’
 ‘esploro search run [--lines] NAME’
      Searches kept by name.
+‘esploro learn PROPOSED APPLIED’
+     What APPLIED (your plan) changed in PROPOSED (an agent's),
+     as rules in words.
+‘esploro learn --add RULE’
+     RULE into ‘~/.config/esploro/sorting.md’, under its learnt
+     rules.
 ‘esploro selection [--sexp]’
      The files selected in Esploro, or dired, used last, one a
      line; ‘--sexp’ gives ‘(:selection FOLDER (FILE...))’.
@@ -695,9 +716,9 @@ Node: The Trash17165
 Node: Where files are open17640
 Node: Closing a project18111
 Node: Plans from agents18980
-Node: Keys and mouse20440
-Node: The command line22188
-Node: Writing commands25316
+Node: Keys and mouse21244
+Node: The command line22992
+Node: Writing commands26356
 
 End Tag Table
 

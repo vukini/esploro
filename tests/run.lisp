@@ -667,6 +667,32 @@
        (equal (subseq (run-cli (list "project" (p "proj/src"))) 0 3) (list 0 :project (p "proj"))))
 (check "and says when there's none" (eq (second (run-cli (list "project" (p "srch")))) :none))
 
+;;; --- Learning from your edits to a plan -------------------------------------------------
+
+(let ((proposed '((:move "/h/D/a.zip" "/h/Archives/a.zip") (:trash "/h/D/x.iso") (:move "/h/D/p.png" "/h/Images/p.png")
+                  (:move "/h/D/n.txt" "/h/Notes/n.txt")))
+      (applied '((:move "/h/D/a.zip" "/h/Work/a.zip") (:move "/h/D/p.png" "/h/Images/p.png") (:trash "/h/D/n.txt"))))
+  (check "what you changed in an agent's plan, file by file"
+         (equal (esploro::plan-corrections proposed applied)
+                '((:elsewhere "/h/D/a.zip" "/h/Archives" "/h/Work") (:left "/h/D/x.iso" :trash)
+                  (:elsewhere "/h/D/n.txt" "/h/Notes" :trash))))
+  (check "as rules in words"
+         (equal (mapcar #'esploro::correction-rule (esploro::plan-corrections proposed applied))
+                '("\"a.zip\" goes in /h/Work, not in /h/Archives." "Don't put \"x.iso\" in the Trash; leave it in /h/D."
+                  "\"n.txt\" goes in the Trash, not in /h/Notes.")))
+  (check "the same plan teaches nothing" (null (esploro::plan-corrections proposed proposed))))
+(esploro::ensure-folder (p ".config/esploro"))
+(with-open-file (out (p ".config/esploro/sorting.md") :direction :output :if-exists :supersede)
+  (format out "# Where my files go~%~%## Sorting~%~%- By what it's for.~%~%## Learnt from my corrections~%~%- One.~%~%## Always~%~%- Ask.~%"))
+(run-cli (list "learn" "--add" "Two."))
+(check "a rule goes at the end of the learnt ones, before the next heading"
+       (equal (esploro::file-text (p ".config/esploro/sorting.md"))
+              (format nil "# Where my files go~%~%## Sorting~%~%- By what it's for.~%~%## Learnt from my corrections~%~%- One.~%- Two.~%~%## Always~%~%- Ask.~%")))
+(delete-file (p ".config/esploro/sorting.md"))
+(run-cli (list "learn" "--add" "First."))
+(check "with no rules file, one is made"
+       (search (format nil "## Learnt from my corrections~%~%- First.~%") (esploro::file-text (p ".config/esploro/sorting.md"))))
+
 ;;; --- The end -------------------------------------------------------------------------
 
 (sb-ext:run-program "chmod" (list "-R" "u+w" *top*) :search t)
