@@ -208,6 +208,15 @@ Changes run in the background, so a long copy doesn't stop Emacs.  Each
 one is kept in a journal (@file{~/.local/state/esploro/journal/}),
 which is what undo reads.
 
+A long copy (or a move to another disk) says how it goes at the
+bottom of the window: the file, how much is done of how much, and
+@kbd{C-c C-k} to stop it (Edit @result{} Stop Copying).  Stopped, the
+file being copied is taken back, as if it had never started; the files
+done before stay, and undo takes them back too.  A move to another disk
+is a copy, then the original deleted: stopped during the copy, the
+original is as it was; once the delete has begun, it finishes, so a
+file is never lost between the two.
+
 Dired's own keys (@kbd{C}, @kbd{R}, @kbd{D} and the rest) still work
 in the list, but around the journal: what they do can't be undone from
 Esploro.
@@ -555,6 +564,7 @@ then ask an agent to ``sort the ones I've selected'', or run
 @item F2 @tab rename
 @item + @tab new folder
 @item C-/ @tab undo the last change
+@item C-c C-k @tab stop a long copy
 @item z @tab the last change again, on the selection
 @item s @tab next sort
 @item . @tab hidden files

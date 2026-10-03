@@ -204,14 +204,78 @@ NIL when it can be applied."
       (error 'step-failed :step step
                           :reason (format nil "~a failed (exit ~a)" (first command) code)))))
 
+;;; --- Long copies: progress, and stopping safely ------------------------------------
+
+(defvar *progress* nil
+  "Non-nil: say how a long copy goes, on standard error, a form a line:
+(:progress BYTES-DONE BYTES-ALL NAME).  The window asks for it.")
+(defvar *bytes-done* 0 "Bytes copied by the plan's steps done so far.")
+(defvar *steps-done* 0 "How many of the plan's steps are done, as it goes.")
+(defvar *bytes-all* 0 "Bytes the plan's copies come to.")
+
+(defun tree-size (path)
+  "The bytes in PATH, a file or a folder and everything in it (links as links)."
+  (let ((stat (file-stat path :follow nil)))
+    (cond ((null stat) 0)
+          ((= (stat-type stat) sb-posix:s-ifdir)
+           (loop for name in (ignore-errors (folder-names path))
+                 sum (tree-size (join-path path name))))
+          (t (sb-posix:stat-size stat)))))
+
+(defun same-disk-p (from to-folder)
+  (let ((a (file-stat from :follow nil)) (b (file-stat to-folder)))
+    (and a b (= (sb-posix:stat-dev a) (sb-posix:stat-dev b)))))
+
+(defun say-progress (done name)
+  (when *progress*
+    (handler-case
+        (with-standard-io-syntax
+          (format *error-output* "(:progress ~d ~d ~s)~%" done *bytes-all* name)
+          (finish-output *error-output*))
+      (stream-error () nil))))
+
+(defun copy-tree-step (step from to)
+  "cp -a FROM to TO, saying how it goes. Stopped part way (the window's
+Cancel, an interrupt), the part copied goes: TO wasn't there before."
+  (let ((process (sb-ext:run-program "cp" (list "-a" "-T" "--" from to)
+                                     :search t :output nil :error nil :wait nil))
+        (finished nil))
+    (unwind-protect
+         (progn
+           (loop for ticks from 0
+                 while (sb-ext:process-alive-p process)
+                 do (sleep 0.25)
+                    (when (and *progress* (plusp ticks) (zerop (mod ticks 2)))
+                      (say-progress (+ *bytes-done* (tree-size to)) (path-name from))))
+           (unless (eql (sb-ext:process-exit-code process) 0)
+             (error 'step-failed :step step
+                                 :reason (format nil "cp failed (exit ~a)" (sb-ext:process-exit-code process))))
+           (setf finished t))
+      (unless finished
+        (when (sb-ext:process-alive-p process)
+          (sb-ext:process-kill process sb-unix:sigterm)
+          (sb-ext:process-wait process))
+        (when (path-exists-p to)
+          (sb-ext:run-program "rm" (list "-rf" "--" to) :search t :output nil :error nil :wait t))))))
+
 (defun move-path (step from to)
   (when (path-exists-p to)
     (error 'step-failed :step step :reason (format nil "~a is there now" to)))
   (handler-case (sb-posix:rename from to)
     (sb-posix:syscall-error (e)
       (if (= (sb-posix:syscall-errno e) sb-posix:exdev)
-          ;; Another disk: rename(2) can't, mv copies then deletes.
-          (run-tool step "mv" "-T" "--" from to)
+          ;; Another disk: rename(2) can't. A copy (which a stop takes back,
+          ;; leaving FROM as it was), then FROM deleted, which nothing stops
+          ;; half way: never the copy gone and FROM too.
+          (progn
+            (copy-tree-step step from to)
+            ;; In a session of its own (setsid), so Cancel's interrupt,
+            ;; sent to the whole group, doesn't reach it.
+            (sb-sys:without-interrupts
+              (let ((setsid (find-if #'path-exists-p '("/usr/bin/setsid" "/bin/setsid"))))
+                (if setsid
+                    (run-tool step setsid "-w" "rm" "-rf" "--" from)
+                    (run-tool step "rm" "-rf" "--" from)))))
           (error 'step-failed :step step :reason (syscall-reason e))))))
 
 (defun percent-encode (path)
@@ -275,7 +339,7 @@ the name it has there."
            (list :rename (step-target step) (path-name a)))
           (:copy (when (path-exists-p b)
                    (error 'step-failed :step step :reason (format nil "~a is there now" b)))
-           (run-tool step "cp" "-a" "-T" "--" a b)
+           (copy-tree-step step a b)
            (list :trash b))
           (:mkdir (sb-posix:mkdir a #o777) (list :rmdir a))
           (:trash (list :restore (trash-path step a) a))
@@ -357,7 +421,15 @@ what's done) and UNDO-DONE (put back what's done). What was done goes in
 the journal, so UNDO-LAST can take it back. Returns the steps done."
   (let ((problems (check-plan steps :allowed allowed)))
     (when problems (error 'plan-refused :problems problems)))
-  (let ((done '()) (inverse '()))
+  (let ((done '()) (inverse '())
+        (*bytes-done* 0)
+        ;; What the copies (and moves to another disk) come to, for progress.
+        (*bytes-all* (if *progress*
+                         (loop for (op a b) in steps
+                               when (or (eq op :copy)
+                                        (and (eq op :move) (stringp b) (not (same-disk-p a (path-parent b)))))
+                                 sum (tree-size a))
+                         0)))
     (unwind-protect
          (block steps
            (dolist (step steps)
@@ -365,6 +437,10 @@ the journal, so UNDO-LAST can take it back. Returns the steps done."
                (restart-case
                    (progn (push (do-step step) inverse)
                           (push step done)
+                          (incf *steps-done*)
+                          (when (and *progress* (member (first step) '(:copy :move)))
+                            (incf *bytes-done* (tree-size (third step)))
+                            (say-progress *bytes-done* (path-name (second step))))
                           (return))
                  (retry-step ()
                    :report "Try this step again")

@@ -744,6 +744,27 @@
   (check "waved away, it isn't offered again" (null (cdr (run-cli (list "habits"))))))
 (undo-last) (undo-last)
 
+;;; --- Long copies: progress, and stopping part way --------------------------------------------
+
+(esploro::ensure-folder (p "long/bin"))
+(make-file (p "long/src.bin") "all of it")
+;; A cp that writes part of the copy, then takes its time.
+(with-open-file (out (p "long/bin/cp") :direction :output)
+  (format out "#!/bin/sh~%for last; do :; done~%echo part > \"$last\"~%sleep 30~%"))
+(sb-posix:chmod (p "long/bin/cp") #o755)
+(let ((path (sb-posix:getenv "PATH")))
+  (sb-posix:setenv "PATH" (format nil "~a:~a" (p "long/bin") path) 1)
+  (unwind-protect
+       (check "a copy stopped part way takes back what it copied, and leaves the original"
+              (and (eq :stopped (handler-case (sb-ext:with-timeout 1
+                                                (esploro::copy-tree-step '(:copy "a" "b") (p "long/src.bin") (p "long/dst.bin")))
+                                  (sb-ext:timeout () :stopped)))
+                   (not (path-exists-p (p "long/dst.bin")))
+                   (path-exists-p (p "long/src.bin"))))
+    (sb-posix:setenv "PATH" path 1)))
+(check "a copy's progress: the bytes in a folder, all of it"
+       (= (esploro::tree-size (p "long")) (+ 9 (esploro::tree-size (p "long/bin")))))
+
 ;;; --- The end -------------------------------------------------------------------------
 
 (sb-ext:run-program "chmod" (list "-R" "u+w" *top*) :search t)

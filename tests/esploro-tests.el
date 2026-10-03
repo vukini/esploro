@@ -703,4 +703,19 @@ without a frame."
        (esploro-file-commands file))
      (should (file-exists-p (esploro-tests--path "e/notes.txt.zip"))))))
 
+(ert-deftest esploro-progress-of-a-long-copy ()
+  ;; The core's progress lines, however they arrive, reach the reporter.
+  (let* ((got '())
+         (filter (esploro--progress-filter (lambda (done all name) (push (list done all name) got)))))
+    (funcall filter nil "(:progress 10 100 \"big")
+    (funcall filter nil ".iso\")\n(:progress 50 100 \"big.iso\")\nnoise\n(:prog")
+    (should (equal (reverse got) '((10 100 "big.iso") (50 100 "big.iso")))))
+  (let ((said nil))
+    (cl-letf (((symbol-function 'message) (lambda (fmt &rest args) (setq said (apply #'format fmt args)))))
+      (funcall (esploro--progress-reporter "copied") 524288000 1048576000 "big.iso")
+      (should (string-match-p "big.iso, 500M of 1000M (50%).*C-c C-k stops" said))
+      (esploro--say '(:cancelled 2) "copied")
+      (should (string-match-p "stopped; 2 steps done stay" said))))
+  (should (eq (keymap-lookup esploro-mode-map "C-c C-k") #'esploro-cancel)))
+
 ;;; esploro-tests.el ends here

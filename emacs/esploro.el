@@ -97,6 +97,23 @@ Its menu bar and tool bar are on even when they're off elsewhere."
       (car (read-from-string text))
     (error (list :error (string-trim text)))))
 
+(defvar esploro--progress nil
+  "When non-nil, a function: the call it's bound around reports progress
+to it, (BYTES-DONE BYTES-ALL NAME), as the core copies.")
+
+(defvar esploro--running '() "The core's plans being applied now: processes.")
+
+(defun esploro--progress-filter (report)
+  "A filter for the core's standard error: its (:progress ...) lines to REPORT."
+  (let ((pending ""))
+    (lambda (_process text)
+      (setq pending (concat pending text))
+      (while (string-match "\\`\\([^\n]*\\)\n" pending)
+        (let ((line (match-string 1 pending)))
+          (setq pending (substring pending (match-end 0)))
+          (pcase (ignore-errors (car (read-from-string line)))
+            (`(:progress ,done ,all ,name) (funcall report done all name))))))))
+
 (defun esploro--call (args &optional input then sync)
   "Run the core with ARGS, INPUT on its standard input; THEN gets its answer.
 In the background, so a long copy never stops Emacs; SYNC waits (tests)."
@@ -119,15 +136,28 @@ In the background, so a long copy never stops Emacs; SYNC waits (tests)."
             ;; above may be the view's own folder, bound for the while.
             (when then (let ((default-directory here)) (funcall then answer)))
             answer)
-        (let ((process (make-process
-                        :name "esploro" :buffer out :command (cons esploro-program args)
-                        :connection-type 'pipe :noquery t
-                        :sentinel (lambda (process _event)
-                                    (unless (process-live-p process)
-                                      (let ((answer (with-current-buffer (process-buffer process)
-                                                      (esploro--read-answer (buffer-string)))))
-                                        (kill-buffer (process-buffer process))
-                                        (when then (funcall then answer))))))))
+        (let* ((report esploro--progress)
+               (process-environment (if report (cons "ESPLORO_PROGRESS=1" process-environment)
+                                      process-environment))
+               (err (when report
+                      (make-pipe-process :name "esploro-progress" :noquery t
+                                         :filter (esploro--progress-filter report))))
+               (process (make-process
+                         :name "esploro" :buffer out :command (cons esploro-program args)
+                         :connection-type 'pipe :noquery t
+                         :stderr err
+                         :sentinel (lambda (process _event)
+                                     (unless (process-live-p process)
+                                       (setq esploro--running (delq process esploro--running))
+                                       (when-let* ((err (process-get process 'esploro-stderr)))
+                                         (delete-process err))
+                                       (let ((answer (with-current-buffer (process-buffer process)
+                                                       (esploro--read-answer (buffer-string)))))
+                                         (kill-buffer (process-buffer process))
+                                         (when then (funcall then answer))))))))
+          (when report
+            (process-put process 'esploro-stderr err)
+            (push process esploro--running))
           (when input (process-send-string process input))
           (process-send-eof process)
           process)))))
@@ -141,6 +171,9 @@ In the background, so a long copy never stops Emacs; SYNC waits (tests)."
     (`(:refused ,problems) (message "Esploro: not done, nothing changed: %s" (string-join problems "; ")))
     (`(:failed ,step ,reason . ,_) (message "Esploro: stopped at %s: %s (what was done before stays)" step reason))
     (`(:emptied ,n) (message "Esploro: the Trash is empty (%d deleted)" n))
+    (`(:cancelled ,n) (message "Esploro: stopped; %s (undo takes %s back)"
+                               (if (= n 0) "nothing was done" (format "%d %s done stay%s" n (if (= n 1) "step" "steps") (if (= n 1) "s" "")))
+                               (if (= n 1) "it" "them")))
     (`(:error ,text) (message "Esploro: %s" text))
     (_ (message "Esploro: %s" what))))
 
@@ -154,14 +187,34 @@ In the background, so a long copy never stops Emacs; SYNC waits (tests)."
 WHAT says what it was, for the message after.  SYNC waits (tests)."
   (when steps
     (message "Esploro: %s..." what)
-    (esploro--call (list "apply") (esploro--plan-text steps)
-                   (lambda (answer)
-                     (esploro--say answer what)
-                     (esploro--refresh)
-                     (when (and (eq (car-safe answer) :done)
-                                (seq-some (lambda (s) (memq (car s) '(:move :copy))) steps))
-                       (esploro--habits-nudge)))
-                   sync)))
+    (let ((esploro--progress (esploro--progress-reporter what)))
+      (esploro--call (list "apply") (esploro--plan-text steps)
+                     (lambda (answer)
+                       (esploro--say answer what)
+                       (esploro--refresh)
+                       (when (and (eq (car-safe answer) :done)
+                                  (seq-some (lambda (s) (memq (car s) '(:move :copy))) steps))
+                         (esploro--habits-nudge)))
+                     sync))))
+
+(defun esploro--progress-reporter (_what)
+  "Say how a long copy goes, as the core reports it: which file, how much,
+and how to stop it."
+  (lambda (done all name)
+    (when (> all 0)
+      (message "Esploro: %s, %s of %s (%d%%)   C-c C-k stops"
+               name (file-size-human-readable done) (file-size-human-readable all)
+               (min 100 (/ (* 100 done) all))))))
+
+(defun esploro-cancel ()
+  "Stop the copy under way: the step being done is taken back, the ones
+done stay (undo takes them back)."
+  (interactive)
+  (let ((process (car esploro--running)))
+    (if (not (process-live-p process))
+        (message "Esploro: nothing is being copied")
+      (message "Esploro: stopping...")
+      (interrupt-process process))))
 
 ;;; --- Showing a folder -------------------------------------------------------------
 
@@ -894,6 +947,7 @@ a dropped name kept its newline, named no file, and the drop was lost."
   "<f3>" #'esploro-split
   "<f11>" #'esploro-preview-toggle
   "z" #'esploro-repeat
+  "C-c C-k" #'esploro-cancel
   "<f6>" #'esploro-move-to-other-pane
   "C-c C-c" #'esploro-copy-to-other-pane
   "C-x 5 2" #'esploro-new-window
@@ -953,6 +1007,7 @@ show the pane's sort and history even when the places are selected."
           ["Close Esploro" esploro-close :keys "C-x C-c"])
     (edit "Edit"
           ["Undo" esploro-undo :keys "C-/"]
+          ["Stop Copying" esploro-cancel :keys "C-c C-k" :visible esploro--running]
           ["Repeat Last Change" esploro-repeat :keys "z" :active (esploro--marked-or-point-p)]
           ("Recipes" :filter esploro--recipes-menu)
           ["Habits Noticed..." esploro-habits]
@@ -2312,21 +2367,22 @@ Saving checks it again and shows it in the review as it now is."
   "Apply STEPS, the plan in FILE; when you EDITED it, offer what you changed
 from PROPOSED (the agent's) as rules for agents.  The files go after."
   (message "Esploro: the proposed plan, applying...")
-  (esploro--call (list "apply") (esploro--plan-text steps)
-                 (lambda (answer)
-                   (esploro--say answer "the proposed plan, applied")
-                   (esploro--refresh)
-                   (let ((learn (and edited proposed (eq (car-safe answer) :done)
-                                     (esploro--call (list "learn" proposed file) nil nil t))))
-                     (ignore-errors (delete-file file))
-                     (when proposed (ignore-errors (delete-file proposed)))
-                     (pcase learn
-                       (`(:corrections ,rules)
-                        (when rules
-                          ;; Asked from Emacs's command loop, not from the
-                          ;; core's answer coming in.
-                          (if esploro--wait (esploro--offer-rules rules)
-                            (run-at-time 0 nil #'esploro--offer-rules rules)))))))))
+  (let ((esploro--progress (esploro--progress-reporter "the proposed plan")))
+    (esploro--call (list "apply") (esploro--plan-text steps)
+                   (lambda (answer)
+                     (esploro--say answer "the proposed plan, applied")
+                     (esploro--refresh)
+                     (let ((learn (and edited proposed (eq (car-safe answer) :done)
+                                       (esploro--call (list "learn" proposed file) nil nil t))))
+                       (ignore-errors (delete-file file))
+                       (when proposed (ignore-errors (delete-file proposed)))
+                       (pcase learn
+			 (`(:corrections ,rules)
+                          (when rules
+                            ;; Asked from Emacs's command loop, not from the
+                            ;; core's answer coming in.
+                            (if esploro--wait (esploro--offer-rules rules)
+                              (run-at-time 0 nil #'esploro--offer-rules rules))))))))))
 
 (defvar esploro-learn-ask t
   "Non-nil: after you apply an agent's plan you edited, offer what you

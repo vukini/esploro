@@ -216,6 +216,16 @@ message says why.  Changes run in the background, so a long copy
 doesn't stop Emacs.  Each one is kept in a journal
 (‘~/.local/state/esploro/journal/’), which is what undo reads.
 
+   A long copy (or a move to another disk) says how it goes at
+the bottom of the window: the file, how much is done of how
+much, and ‘C-c C-k’ to stop it (Edit ⇒ Stop Copying).  Stopped,
+the file being copied is taken back, as if it had never started;
+the files done before stay, and undo takes them back too.  A
+move to another disk is a copy, then the original deleted:
+stopped during the copy, the original is as it was; once the
+delete has begun, it finishes, so a file is never lost between
+the two.
+
    Dired's own keys (‘C’, ‘R’, ‘D’ and the rest) still work in
 the list, but around the journal: what they do can't be undone
 from Esploro.
@@ -603,6 +613,7 @@ Delete                    to the Trash
 F2                        rename
 +                         new folder
 C-/                       undo the last change
+C-c C-k                   stop a long copy
 z                         the last change again, on the selection
 s                         next sort
 .                         hidden files
@@ -749,20 +760,20 @@ Node: Opening Esploro2038
 Node: The window3854
 Node: Selecting and opening5726
 Node: Changing files6779
-Node: Recipes8286
-Node: Drag and drop12416
-Node: The preview13142
-Node: Two panes14256
-Node: Windows and workspaces14829
-Node: Looking around15692
-Node: Searches16560
-Node: The Trash18011
-Node: Where files are open18486
-Node: Closing a project18957
-Node: Plans from agents19826
-Node: Keys and mouse22090
-Node: The command line23838
-Node: Writing commands27418
+Node: Recipes8798
+Node: Drag and drop12928
+Node: The preview13654
+Node: Two panes14768
+Node: Windows and workspaces15341
+Node: Looking around16204
+Node: Searches17072
+Node: The Trash18523
+Node: Where files are open18998
+Node: Closing a project19469
+Node: Plans from agents20338
+Node: Keys and mouse22602
+Node: The command line24393
+Node: Writing commands27973
 
 End Tag Table
 

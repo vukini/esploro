@@ -102,6 +102,8 @@ esploro --help")
                     (read-forms *standard-input*)
                     (read-plan-file (absolute source))))
          (failed nil)
+         (*progress* (equal (sb-posix:getenv "ESPLORO_PROGRESS") "1"))
+         (*steps-done* 0)
          (done (handler-case
                    (handler-bind ((step-failed
                                     (lambda (e)
@@ -110,7 +112,12 @@ esploro --help")
                                       (invoke-restart 'stop-here))))
                      (apply-plan steps))
                  (plan-refused (e) (answer (list :refused (plan-refused-problems e)))
-                   (return-from cli-apply 1)))))
+                   (return-from cli-apply 1))
+                 ;; Cancel (the window interrupts it): the step under way is
+                 ;; taken back, what's done stays, journaled, so undo works.
+                 (sb-sys:interactive-interrupt ()
+                   (answer (list :cancelled *steps-done*))
+                   (return-from cli-apply 130)))))
     (if failed
         (progn (answer (list :failed (first failed) (second failed) :done (length done))) 1)
         (progn (answer (list :done (length done))) 0))))
