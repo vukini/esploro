@@ -906,4 +906,17 @@ without a frame."
   (should (equal (esploro--git-branch-words "main...origin/main [ahead 2, behind 1]") "main, 2 to push, 1 to pull"))
   (should (equal (esploro--git-branch-words "No commits yet on main") "main")))
 
+(ert-deftest esploro-opens-on-this-workspace ()
+  ;; A frame on another workspace is iconified to Emacs: not where a file goes.
+  (cl-letf (((symbol-function 'frame-list) (lambda () '(other here)))
+            ((symbol-function 'frame-visible-p) (lambda (f) (if (eq f 'other) 'icon t)))
+            ((symbol-function 'frame-parameter) (lambda (_f _p) nil))
+            ((symbol-function 'display-graphic-p) (lambda (&optional _) t)))
+    (should (eq (esploro--other-frame) 'here)))
+  (cl-letf (((symbol-function 'frame-list) (lambda () '(other)))
+            ((symbol-function 'frame-visible-p) (lambda (_f) 'icon))
+            ((symbol-function 'frame-parameter) (lambda (_f _p) nil))
+            ((symbol-function 'display-graphic-p) (lambda (&optional _) t)))
+    (should-not (esploro--other-frame))))
+
 ;;; esploro-tests.el ends here

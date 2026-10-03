@@ -463,8 +463,10 @@ for Back; point on FILE when given."
 ;;; --- Opening ------------------------------------------------------------------------
 
 (defun esploro--other-frame ()
-  "An Emacs frame to show a file in: a visible one that isn't Esploro's."
-  (seq-find (lambda (f) (and (frame-visible-p f) (not (frame-parameter f 'esploro))
+  "An Emacs frame to show a file in: one on the screen now (on this
+workspace) that isn't Esploro's.  A frame on another workspace is `icon'
+to Emacs, not t: a file sent there would open out of sight."
+  (seq-find (lambda (f) (and (eq (frame-visible-p f) t) (not (frame-parameter f 'esploro))
                              (display-graphic-p f)))
             (frame-list)))
 
