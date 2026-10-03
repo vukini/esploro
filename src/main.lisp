@@ -62,6 +62,7 @@ esploro open PATH           go to the window that has PATH, or open it
 esploro project [PATH]      PATH's project (.git or log.md above it), and the windows
                             that have something in it
 esploro focus ID            go to the window ID (StumpWM's)
+esploro thumbnails [--size N] PATH...   small PNGs for the list (each made once)
 esploro preview PATH        a PNG of PATH (a picture, PDF or video), made once and kept
 esploro trash-list          what's in the Trash
 esploro restore NAME...     put these back from the Trash (a plan: undo puts them back)
@@ -466,6 +467,18 @@ changes files, its steps go to Esploro for your review."
           ((equal what "list") (answer (open-archives)) 0)
           (t (answer (list :error "esploro archive open PATH | close MOUNTPOINT | list")) 2))))
 
+(defun cli-thumbnails (args)
+  "esploro thumbnails [--size N] PATH...: small PNGs for a list, each made once."
+  (let* ((size (if (equal (first args) "--size")
+                   (or (parse-integer (or (second args) "") :junk-allowed t) 96)
+                   96))
+         (paths (if (equal (first args) "--size") (cddr args) args))
+         (size (max 16 (min size 1024))))
+    (answer (loop for p in paths
+                  for path = (absolute p)
+                  collect (cons path (and path (path-exists-p path) (ignore-errors (thumbnail path :size size))))))
+    0))
+
 (defun cli-dbus ()
   "Make the running Emacs answer org.freedesktop.FileManager1 (the browsers'
 \"Show in folder\"): what the session bus runs when it's first asked."
@@ -511,6 +524,7 @@ changes files, its steps go to Esploro for your review."
           ((equal command "learn") (cli-learn (rest args)))
           ((equal command "habits") (cli-habits (rest args)))
           ((equal command "archive") (cli-archive (rest args)))
+          ((equal command "thumbnails") (cli-thumbnails (rest args)))
           ((equal command "project") (cli-project (rest args)))
           ((equal command "focus")
            (let ((id (and (second args) (parse-integer (second args) :junk-allowed t))))

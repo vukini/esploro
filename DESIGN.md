@@ -84,7 +84,7 @@ What PCManFM does today in Vikix (Super+e, folders by default, new drives, "Show
 
 - Dropping files on a workspace.
 - Habits beyond moves into one folder: renames you keep making, files you keep trashing, folders you keep opening at a time of day.
-- Thumbnails in the list. (Archives opened like folders, read-only, with archivemount: done 2026-10-03. Progress and cancel for long copies: done 2026-10-03; C-c C-k, a stopped copy taken back, a move to another disk never losing a file.)
+- A grid of pictures (icons) for a folder of photos. (Thumbnails in the list, T: done 2026-10-03. Archives opened like folders, read-only, with archivemount: done 2026-10-03. Progress and cancel for long copies: done 2026-10-03; C-c C-k, a stopped copy taken back, a move to another disk never losing a file.)
 
 ## The risk
 

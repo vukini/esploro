@@ -752,4 +752,31 @@ without a frame."
        (dolist (a esploro--archives)
          (let ((default-directory "/")) (call-process "fusermount" nil nil nil "-u" (cdr a))))))))
 
+(ert-deftest esploro-thumbnails-in-the-list ()
+  (skip-unless (file-executable-p (expand-file-name "../esploro" (file-name-directory (locate-library "esploro")))))
+  (skip-unless (or (executable-find "magick") (executable-find "convert")))
+  (esploro-tests--world
+   (let ((process-environment (cons (concat "XDG_CACHE_HOME=" esploro-tests--top "cache") process-environment)))
+     (make-directory (esploro-tests--path "t") t)
+     (let ((default-directory "/"))
+       (call-process (if (executable-find "magick") "magick" "convert") nil nil nil
+                     "-size" "300x200" "xc:red" (esploro-tests--path "t/red.png")))
+     (esploro-tests--file "t/notes.txt")
+     (esploro-go (esploro-tests--path "t"))
+     (with-current-buffer (esploro--view)
+       (esploro-thumbnails-toggle)
+       (should esploro--thumbnails)
+       (let ((shown (seq-filter (lambda (o) (overlay-get o 'esploro-thumbnail))
+                                (overlays-in (point-min) (point-max)))))
+         ;; A row each; the picture's has its thumbnail, the text's a blank.
+         (should (= 2 (length shown)))
+         (should (seq-some (lambda (o) (let ((d (get-text-property 0 'display (overlay-get o 'before-string))))
+                                         (eq (car-safe d) 'image)))
+                           shown)))
+       ;; Kept across a refresh, and gone when toggled off.
+       (revert-buffer)
+       (should (seq-some (lambda (o) (overlay-get o 'esploro-thumbnail)) (overlays-in (point-min) (point-max))))
+       (esploro-thumbnails-toggle)
+       (should-not (seq-some (lambda (o) (overlay-get o 'esploro-thumbnail)) (overlays-in (point-min) (point-max))))))))
+
 ;;; esploro-tests.el ends here

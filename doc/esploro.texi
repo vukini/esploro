@@ -413,6 +413,12 @@ through them in turn.
 @item Hidden files (@kbd{.})
 Shows or hides the files whose names start with a dot.
 
+@item Thumbnails (@kbd{T})
+A small picture before each picture, PDF and video in the list, made
+in the background (a big folder fills in as it goes) and kept, so
+they're there at once the next time.  Their size is
+@code{esploro-thumbnail-height} (48 pixels).
+
 @item Filter (@kbd{/})
 Shows only the names holding some text, in any case, until you refresh
 (@kbd{F5}).
@@ -587,6 +593,7 @@ then ask an agent to ``sort the ones I've selected'', or run
 @item z @tab the last change again, on the selection
 @item s @tab next sort
 @item . @tab hidden files
+@item T @tab thumbnails in the list
 @item / @tab only names with...
 @item M-s s @tab search below
 @item F5 @tab refresh
@@ -685,6 +692,8 @@ Goes to the window that has @var{path}, or opens it.
 @var{path}'s project, and the windows that have something in it.
 @item esploro focus @var{id}
 Goes to the window @var{id} (StumpWM's).
+@item esploro thumbnails [--size @var{n}] @var{path}@dots{}
+Small PNGs of pictures, PDFs and videos for the list, each made once.
 @item esploro preview @var{path}
 A PNG of @var{path} (a picture, a PDF or a video), made once and kept.
 @item esploro trash-list

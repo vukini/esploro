@@ -78,8 +78,9 @@ Its menu bar and tool bar are on even when they're off elsewhere."
 (defvar-local esploro--hidden nil "Non-nil: files starting with a dot are shown.")
 (defvar-local esploro--filter nil "Only names holding this text are shown, until refreshed.")
 (defvar-local esploro--search nil "In a view of a search's files: (WORDS FOLDER NAME).")
+(defvar-local esploro--thumbnails nil "Non-nil: pictures, PDFs and videos show a thumbnail in the list.")
 (dolist (v '(esploro--view esploro--back esploro--forward esploro--sort esploro--reverse esploro--hidden
-             esploro--search))
+             esploro--search esploro--thumbnails))
   (put v 'permanent-local t))
 
 (defvar esploro--clipboard nil "(copy . FILES) or (cut . FILES), from Esploro's own copy or cut.")
@@ -966,6 +967,7 @@ a dropped name kept its newline, named no file, and the drop was lost."
   "<f3>" #'esploro-split
   "<f11>" #'esploro-preview-toggle
   "z" #'esploro-repeat
+  "T" #'esploro-thumbnails-toggle
   "C-c C-k" #'esploro-cancel
   "<f6>" #'esploro-move-to-other-pane
   "C-c C-c" #'esploro-copy-to-other-pane
@@ -1058,6 +1060,7 @@ show the pane's sort and history even when the places are selected."
            :style toggle :selected (esploro--value 'esploro--reverse)]
           "---"
           ["Hidden Files" esploro-toggle-hidden :style toggle :selected (esploro--value 'esploro--hidden)]
+          ["Thumbnails" esploro-thumbnails-toggle :keys "T" :style toggle :selected (esploro--value 'esploro--thumbnails)]
           ["Filter..." esploro-filter :keys "/"]
           ["Search Below..." esploro-search :keys "M-s s"]
           ["Refresh" esploro--refresh :keys "F5"]
@@ -1198,7 +1201,8 @@ through the core, journaled so they can be undone."
     (add-hook 'post-command-hook #'esploro--note-window nil t)
     (add-hook 'post-command-hook #'esploro--preview-schedule nil t)
     (add-hook 'dired-after-readin-hook #'esploro--whole-row-drag nil t)
-    (add-hook 'dired-after-readin-hook #'esploro--annotate nil t)))
+    (add-hook 'dired-after-readin-hook #'esploro--annotate nil t)
+    (add-hook 'dired-after-readin-hook #'esploro--thumbnails-show nil t)))
 
 ;;; --- Places, down the side --------------------------------------------------------------
 
@@ -1614,6 +1618,83 @@ that changes files, as a plan for your review."
                        (`(:done ,_) (message "Esploro: %s, done" name) (esploro--refresh))
                        (`(:proposed ,n) (message "Esploro: %s proposes %d %s: review it" name n (if (= n 1) "step" "steps")))
                        (_ (esploro--say answer name)))))))
+
+;;; --- Thumbnails in the list ------------------------------------------------------------
+
+;; With View > Thumbnails (T), each picture, PDF and video has a small
+;; thumbnail before its name; the core makes them (once: they're kept),
+;; a batch at a time in the background, so a big folder fills in as it
+;; goes.  Other rows get the same width, blank, so the names line up.
+
+(defcustom esploro-thumbnail-height 48
+  "How tall a thumbnail in the list is, in pixels."
+  :type 'integer :group 'esploro)
+
+(defvar-local esploro--thumbnails-round 0
+  "Which showing of the list the thumbnails being made are for.")
+
+(defun esploro-thumbnails-toggle ()
+  "Thumbnails in the list, or none."
+  (interactive)
+  (esploro--in-view
+   (setq esploro--thumbnails (not esploro--thumbnails))
+   (esploro--thumbnails-show)
+   (message "Esploro: thumbnails %s" (if esploro--thumbnails "on" "off"))))
+
+(defun esploro--thumbnail-wanted-p (file)
+  (memq (esploro--kind file) '(image pdf video)))
+
+(defun esploro--thumbnails-show ()
+  "Thumbnails before the names (or none), the missing ones asked for in the
+background, a batch at a time."
+  (remove-overlays (point-min) (point-max) 'esploro-thumbnail t)
+  (setq esploro--thumbnails-round (1+ esploro--thumbnails-round))
+  (when esploro--thumbnails
+    (let ((blank (propertize " " 'display `(space :width (,(round (* 1.34 esploro-thumbnail-height))))))
+          (wanted '()))
+      (save-excursion
+        (goto-char (point-min))
+        (while (not (eobp))
+          (let ((file (dired-get-filename nil t)))
+            (when (and file (not (member (file-name-nondirectory file) '("." "..")))
+                       (dired-move-to-filename))
+              (let ((o (make-overlay (point) (point))))
+                (overlay-put o 'esploro-thumbnail t)
+                (overlay-put o 'before-string (concat blank " "))
+                (when (esploro--thumbnail-wanted-p file)
+                  (push (cons file o) wanted)))))
+          (forward-line 1)))
+      (esploro--thumbnails-fill (current-buffer) esploro--thumbnails-round (nreverse wanted)))))
+
+(defun esploro--thumbnail-string (png)
+  "PNG as the start of a row: the picture, then blank to the slot's width,
+so every name starts in the same place."
+  (let* ((slot (round (* 1.34 esploro-thumbnail-height)))
+         ;; A thin edge: a white page is seen on a white background.
+         (image (create-image png nil nil :max-height esploro-thumbnail-height
+                              :max-width slot :ascent 'center :relief -1))
+         (width (or (ignore-errors (car (image-size image t))) slot)))
+    (concat (propertize " " 'display image)
+            (propertize " " 'display `(space :width (,(max 0 (- slot width)))))
+            " ")))
+
+(defun esploro--thumbnails-fill (buffer round wanted)
+  "Ask the core for WANTED's thumbnails ((FILE . OVERLAY) ...), a batch at a
+time, putting each in its overlay, while BUFFER still shows that ROUND."
+  (when wanted
+    (let ((batch (seq-take wanted 12))
+          (rest (seq-drop wanted 12)))
+      (esploro--call (append (list "thumbnails" "--size" (number-to-string (* 2 esploro-thumbnail-height)))
+                             (mapcar #'car batch))
+                     nil
+                     (lambda (answer)
+                       (when (and (buffer-live-p buffer)
+                                  (= round (buffer-local-value 'esploro--thumbnails-round buffer)))
+                         (dolist (pair batch)
+                           (let ((png (cdr (assoc (car pair) (and (listp answer) answer)))))
+                             (when (and (stringp png) (overlay-buffer (cdr pair)))
+                               (overlay-put (cdr pair) 'before-string (esploro--thumbnail-string png)))))
+                         (esploro--thumbnails-fill buffer round rest)))))))
 
 ;;; --- Archives, opened like folders (read-only) --------------------------------------
 

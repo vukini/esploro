@@ -52,10 +52,11 @@ changed file gets a new one."
       (:video (and (program-p "ffmpegthumbnailer")
                    (tool-runs "ffmpegthumbnailer" "-i" path "-o" out "-s" size))))))
 
-(defun thumbnail (path)
-  "A PNG of PATH (a picture, PDF or video), made once and kept; NIL when
-there's no way to make one."
-  (let ((out (thumbnail-path path)))
+(defun thumbnail (path &key (size *thumbnail-size*))
+  "A PNG of PATH (a picture, PDF or video), SIZE pixels on its longest side,
+made once and kept; NIL when there's no way to make one."
+  (let* ((*thumbnail-size* size)
+         (out (thumbnail-path path)))
     (cond ((path-exists-p out) out)
           (t (ensure-folder (path-parent out))
              (and (make-thumbnail path out) (path-exists-p out) out)))))
