@@ -857,4 +857,20 @@ without a frame."
        (should (equal asked (list "open-on" "3" file)))
        (should (eq (keymap-lookup esploro-mode-map "M-o") #'esploro-open-on-workspace))))))
 
+(ert-deftest esploro-bookmark-this-folder ()
+  (esploro-tests--world
+   (let ((process-environment (cons (concat "XDG_CONFIG_HOME=" esploro-tests--top "config") process-environment))
+         (dir (esploro-tests--path "Work/Tenders")))
+     (make-directory dir t)
+     (esploro-go dir)
+     (esploro-bookmark-folder "Tenders 2026")
+     (should (equal (assoc "Tenders 2026" (esploro--bookmarks)) (cons "Tenders 2026" dir)))
+     ;; GTK's own form, which PCManFM and the file dialogs read.
+     (should (string-match-p "\\`file:///.*/Work/Tenders Tenders 2026\n\\'"
+                             (with-temp-buffer (insert-file-contents (esploro--bookmarks-file)) (buffer-string))))
+     (should (esploro--bookmarked-p dir))
+     (should-error (esploro-bookmark-folder "again") :type 'user-error)
+     (esploro-remove-bookmark)
+     (should-not (esploro--bookmarked-p dir)))))
+
 ;;; esploro-tests.el ends here

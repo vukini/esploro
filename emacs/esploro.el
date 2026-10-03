@@ -972,6 +972,7 @@ a dropped name kept its newline, named no file, and the drop was lost."
   "T" #'esploro-thumbnails-toggle
   "G" #'esploro-grid-toggle
   "M-o" #'esploro-open-on-workspace
+  "C-c b" #'esploro-bookmark-folder
   "C-c C-k" #'esploro-cancel
   "<f6>" #'esploro-move-to-other-pane
   "C-c C-c" #'esploro-copy-to-other-pane
@@ -1029,6 +1030,10 @@ show the pane's sort and history even when the places are selected."
           ["Properties" esploro-properties :active (esploro--file-at)]
           "---"
           ["Terminal Here" esploro-terminal-here]
+          ["Bookmark This Folder..." esploro-bookmark-folder
+           :visible (not (and (esploro--view) (esploro--bookmarked-p (esploro--dir (esploro--view)))))]
+          ["Remove Bookmark" esploro-remove-bookmark
+           :visible (and (esploro--view) (esploro--bookmarked-p (esploro--dir (esploro--view))))]
           ["Close Project..." esploro-close-project]
           ["Close Esploro" esploro-close :keys "C-x C-c"])
     (esploro-edit "Edit"
@@ -1185,6 +1190,8 @@ Esploro's that has turned up since is hidden too."
     ["Search Below..." esploro-search]
     ["Keep This Search..." esploro-save-search :visible esploro--search]
     ["Terminal Here" esploro-terminal-here]
+    ["Bookmark This Folder..." esploro-bookmark-folder :visible (not (esploro--bookmarked-p (esploro--dir)))]
+    ["Remove Bookmark" esploro-remove-bookmark :visible (esploro--bookmarked-p (esploro--dir))]
     ["Close Project..." esploro-close-project]
     "---"
     ["Hidden Files" esploro-toggle-hidden :style toggle :selected esploro--hidden]
@@ -1272,6 +1279,53 @@ through the core, journaled so they can be undone."
                                       (file-name-nondirectory (directory-file-name dir)))
                                     dir)))
                           (split-string (buffer-string) "\n" t)))))))
+
+(defun esploro--bookmarks-file ()
+  (expand-file-name "gtk-3.0/bookmarks" (or (getenv "XDG_CONFIG_HOME") "~/.config")))
+
+(defun esploro--bookmarked-p (dir)
+  (rassoc (directory-file-name (expand-file-name dir))
+          (mapcar (lambda (b) (cons (car b) (directory-file-name (cdr b)))) (esploro--bookmarks))))
+
+(defun esploro-bookmark-folder (name)
+  "Bookmark this folder as NAME: down the side under Bookmarks, and in
+PCManFM's and the file dialogs' (GTK's bookmarks, which they share)."
+  (interactive (list (esploro--in-view
+                      (read-string "Bookmark this folder as: "
+                                   (file-name-nondirectory (directory-file-name (esploro--dir)))))))
+  (let* ((dir (directory-file-name (esploro--in-view (esploro--dir))))
+         (file (esploro--bookmarks-file))
+         (default (file-name-nondirectory dir)))
+    (when (esploro--bookmarked-p dir) (user-error "%s is bookmarked already" (abbreviate-file-name dir)))
+    (make-directory (file-name-directory file) t)
+    (with-temp-buffer
+      (when (file-readable-p file) (insert-file-contents file))
+      (goto-char (point-max))
+      (unless (or (bobp) (eq (char-before) ?\n)) (insert "\n"))
+      ;; GTK's form: the folder's URI, then its name when it isn't the folder's own.
+      (insert (esploro--uri dir) (if (or (string-empty-p name) (equal name default)) "" (concat " " name)) "\n")
+      (write-region nil nil file nil 'silent))
+    (esploro-places-refresh)
+    (message "Esploro: %s is under Bookmarks" (abbreviate-file-name dir))))
+
+(defun esploro-remove-bookmark ()
+  "Take this folder out of the bookmarks."
+  (interactive)
+  (let* ((dir (directory-file-name (esploro--in-view (esploro--dir))))
+         (file (esploro--bookmarks-file)))
+    (unless (esploro--bookmarked-p dir) (user-error "%s isn't bookmarked" (abbreviate-file-name dir)))
+    (with-temp-buffer
+      (insert-file-contents file)
+      (goto-char (point-min))
+      (while (not (eobp))
+        (let* ((line (buffer-substring (line-beginning-position) (line-end-position)))
+               (uri-dir (esploro--uri-file (car (split-string line " ")))))
+          (if (and uri-dir (equal (directory-file-name uri-dir) dir))
+              (delete-region (line-beginning-position) (min (point-max) (1+ (line-end-position))))
+            (forward-line 1))))
+      (write-region nil nil file nil 'silent))
+    (esploro-places-refresh)
+    (message "Esploro: %s is no longer bookmarked" (abbreviate-file-name dir))))
 
 (defun esploro--drives ()
   "Mounted drives (udiskie mounts them in /run/media/USER): (NAME . FOLDER)."

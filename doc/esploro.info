@@ -112,9 +112,12 @@ Places
      (Documents, Downloads, Pictures, Music, Videos, Projects,
      Dropbox, when they exist), drives plugged in (in
      ‘/run/media’), the bookmarks GTK programs keep
-     (‘~/.config/gtk-3.0/bookmarks’), the searches you kept
-     (*note Searches::), and the Trash.  Click one to go there.
-     ‘F9’, or View, Places, hides them or shows them again.
+     (‘~/.config/gtk-3.0/bookmarks’: File ⇒ Bookmark This
+     Folder, or ‘C-c b’, adds the folder you're in, and Remove
+     Bookmark takes it out; PCManFM and the file dialogs share
+     the list), the searches you kept (*note Searches::), and
+     the Trash.  Click one to go there.  ‘F9’, or View, Places,
+     hides them or shows them again.
 
 The tool bar
      Back, Forward, Up, Home, Places, Two Panes, Preview, New
@@ -671,6 +674,7 @@ F2                        rename
 C-/                       undo the last change
 C-c C-k                   stop a long copy
 M-o 1..9                  open the selection on that workspace
+C-c b                     bookmark this folder
 z                         the last change again, on the selection
 s                         next sort
 .                         hidden files
@@ -830,23 +834,23 @@ Tag Table:
 Node: Top276
 Node: Opening Esploro2107
 Node: The window3923
-Node: Selecting and opening5795
-Node: Changing files6848
-Node: Recipes8867
-Node: Drag and drop12997
-Node: The preview13723
-Node: Two panes14837
-Node: Windows and workspaces15410
-Node: Looking around16858
-Node: Searches18617
-Node: Archives20067
-Node: The Trash20905
-Node: Where files are open21380
-Node: Closing a project21851
-Node: Plans from agents22720
-Node: Keys and mouse24984
-Node: The command line26935
-Node: Writing commands31017
+Node: Selecting and opening5964
+Node: Changing files7017
+Node: Recipes9036
+Node: Drag and drop13166
+Node: The preview13892
+Node: Two panes15006
+Node: Windows and workspaces15579
+Node: Looking around17027
+Node: Searches18786
+Node: Archives20236
+Node: The Trash21074
+Node: Where files are open21549
+Node: Closing a project22020
+Node: Plans from agents22889
+Node: Keys and mouse25153
+Node: The command line27151
+Node: Writing commands31233
 
 End Tag Table
 

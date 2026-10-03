@@ -110,7 +110,9 @@ sorted, and when hidden files are shown or a filter is on.
 Down the left side: your home, the usual folders (Documents, Downloads,
 Pictures, Music, Videos, Projects, Dropbox, when they exist), drives
 plugged in (in @file{/run/media}), the bookmarks GTK programs keep
-(@file{~/.config/gtk-3.0/bookmarks}), the searches you kept
+(@file{~/.config/gtk-3.0/bookmarks}: File @result{} Bookmark This Folder, or
+@kbd{C-c b}, adds the folder you're in, and Remove Bookmark takes it
+out; PCManFM and the file dialogs share the list), the searches you kept
 (@pxref{Searches}), and the Trash.  Click one to go
 there.  @kbd{F9}, or View, Places, hides them or shows them again.
 
@@ -613,6 +615,7 @@ then ask an agent to ``sort the ones I've selected'', or run
 @item C-/ @tab undo the last change
 @item C-c C-k @tab stop a long copy
 @item M-o 1..9 @tab open the selection on that workspace
+@item C-c b @tab bookmark this folder
 @item z @tab the last change again, on the selection
 @item s @tab next sort
 @item . @tab hidden files

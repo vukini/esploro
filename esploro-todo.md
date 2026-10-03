@@ -6,11 +6,6 @@ list (DESIGN.md says what was done).
 
 ## File-manager basics
 
-1. **Bookmark this folder.** Places shows GTK's bookmarks
-   (`~/.config/gtk-3.0/bookmarks`), but Esploro can't add one. File >
-   Bookmark This Folder (and Remove Bookmark when it is one) writes the
-   same file, so PCManFM and the file dialogs see it too. *Small.*
-
 2. **Search inside files.** Search Below matches names, kinds, dates and
    sizes, not what's in a file. A word like `has:invoice` would look
    inside: ripgrep for text, pdftotext for PDFs (a cache of each PDF's
