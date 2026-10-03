@@ -2,7 +2,7 @@
 ;;;;
 ;;;;   (define-file-command open-in-emacs ((path :text))
 ;;;;     "Open in Emacs."
-;;;;     (launch "emacsclient" "-n" path))
+;;;;     (open-in-emacs-frame path))
 ;;;;
 ;;;;   (define-file-command duplicate ((path :file) :changes t)
 ;;;;     "Make a copy beside it."
@@ -141,17 +141,29 @@ the other field codes left out."
     (unless used (push path args))
     (nreverse args)))
 
+;;; emacsclient -n opens in Emacs's selected frame, which may be an Esploro
+;;; window, perhaps on another workspace: the file took its folder's place
+;;; there and nothing seemed to happen. So an editing frame is chosen here.
+(defun open-in-emacs-frame (path)
+  "Open PATH in an Emacs frame that isn't Esploro's, and bring it to the front;
+a new frame when there's none (Emacs started, when it isn't running)."
+  (let ((id (emacs-ask (format nil "(let ((f (seq-find (lambda (f) (and (frame-parameter f 'outer-window-id)
+                                                                   (not (frame-parameter f 'esploro))))
+                                                  (frame-list))))
+                                 (when f
+                                   (with-selected-frame f (find-file ~a))
+                                   (frame-parameter f 'outer-window-id)))"
+                               (lisp-string path)))))
+    (if (and (stringp id) (parse-integer id :junk-allowed t))
+        (focus-window (parse-integer id :junk-allowed t))
+        (launch "emacsclient" "-c" "-n" "-a" "" path))))
+
 (defun open-default (path)
   "Open PATH with its usual program. Text goes to Emacs when its server is
 running. A program meant for a terminal (nvim, less) gets one: xdg-open,
 outside a big desktop, would start it with no terminal, unseen."
   (cond ((and (kind-is (path-kind path) :text) (emacs-ask "t"))
-         (let ((frames (nth-value 1 (emacs-buffers))))
-           (cond (frames
-                  (launch "emacsclient" "-n" path)
-                  (focus-window (first frames)))
-                 ;; A daemon with no frame: -n alone would open nothing to see.
-                 (t (launch "emacsclient" "-c" "-n" path)))))
+         (open-in-emacs-frame path))
         (t
          (let* ((mime (command-output "xdg-mime" "query" "filetype" path))
                 (entry (and mime (command-output "xdg-mime" "query" "default" mime)))
@@ -184,7 +196,7 @@ usual program. Returns the window gone to, or NIL."
 
 (define-file-command open-in-emacs ((path (:text :folder)))
   "Open in Emacs (dired for a folder)."
-  (launch "emacsclient" "-n" path))
+  (open-in-emacs-frame path))
 
 (define-file-command terminal-here ((path :folder))
   "Open a terminal in this folder."
