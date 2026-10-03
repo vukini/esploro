@@ -388,6 +388,18 @@ The places and the tool bar act on the pane used last.
 @node Windows and workspaces
 @chapter Windows and workspaces
 
+@section Opening on another workspace
+
+Right-click a file (or File) @result{} Open on Workspace lists your
+workspaces, each with what it's about: the project its windows are in
+(``3   ~/src/vikix''), ``empty'', or how many windows it has.  Pick one
+and you're there, with the file open: text in an Emacs frame on that
+workspace (one already there, or a new one), a folder in an Esploro
+window there, anything else in its usual program.  @kbd{M-o} then the
+workspace's number does the same from the keyboard.
+
+@section One Esploro per workspace
+
 Each workspace can have its own Esploro window, at its own folder.
 A new one opens in the workspace's project: the folder most of its
 windows are about (a terminal's folder, Emacs's files, a viewer's
@@ -600,6 +612,7 @@ then ask an agent to ``sort the ones I've selected'', or run
 @item + @tab new folder
 @item C-/ @tab undo the last change
 @item C-c C-k @tab stop a long copy
+@item M-o 1..9 @tab open the selection on that workspace
 @item z @tab the last change again, on the selection
 @item s @tab next sort
 @item . @tab hidden files
@@ -673,6 +686,10 @@ That one, never offered again.
 @itemx esploro archive list
 An archive opened read-only like a folder (@pxref{Archives}), closed,
 and the ones open.
+@item esploro workspaces
+StumpWM's workspaces, each with the project its windows are about.
+@item esploro open-on @var{n} @var{path}@dots{}
+Goes to workspace @var{n} and opens @var{path} there.
 @item esploro selection [--sexp]
 The files selected in Esploro, or dired, used last, one a line;
 @option{--sexp} gives @code{(:selection @var{folder} (@var{file}@dots{}))}.

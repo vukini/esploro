@@ -411,6 +411,21 @@ File: esploro.info,  Node: Windows and workspaces,  Next: Looking around,  Prev:
 9 Windows and workspaces
 ************************
 
+9.1 Opening on another workspace
+================================
+
+Right-click a file (or File) ⇒ Open on Workspace lists your
+workspaces, each with what it's about: the project its windows
+are in ("3 ~/src/vikix"), "empty", or how many windows it has.
+Pick one and you're there, with the file open: text in an Emacs
+frame on that workspace (one already there, or a new one), a
+folder in an Esploro window there, anything else in its usual
+program.  ‘M-o’ then the workspace's number does the same from
+the keyboard.
+
+9.2 One Esploro per workspace
+=============================
+
 Each workspace can have its own Esploro window, at its own
 folder.  A new one opens in the workspace's project: the folder
 most of its windows are about (a terminal's folder, Emacs's
@@ -655,6 +670,7 @@ F2                        rename
 +                         new folder
 C-/                       undo the last change
 C-c C-k                   stop a long copy
+M-o 1..9                  open the selection on that workspace
 z                         the last change again, on the selection
 s                         next sort
 .                         hidden files
@@ -730,6 +746,11 @@ File: esploro.info,  Node: The command line,  Next: Writing commands,  Prev: Key
 ‘esploro archive list’
      An archive opened read-only like a folder (*note
      Archives::), closed, and the ones open.
+‘esploro workspaces’
+     StumpWM's workspaces, each with the project its windows are
+     about.
+‘esploro open-on N PATH...’
+     Goes to workspace N and opens PATH there.
 ‘esploro selection [--sexp]’
      The files selected in Esploro, or dired, used last, one a
      line; ‘--sexp’ gives ‘(:selection FOLDER (FILE...))’.
@@ -816,16 +837,16 @@ Node: Drag and drop12997
 Node: The preview13723
 Node: Two panes14837
 Node: Windows and workspaces15410
-Node: Looking around16273
-Node: Searches18032
-Node: Archives19482
-Node: The Trash20320
-Node: Where files are open20795
-Node: Closing a project21266
-Node: Plans from agents22135
-Node: Keys and mouse24399
-Node: The command line26287
-Node: Writing commands30188
+Node: Looking around16858
+Node: Searches18617
+Node: Archives20067
+Node: The Trash20905
+Node: Where files are open21380
+Node: Closing a project21851
+Node: Plans from agents22720
+Node: Keys and mouse24984
+Node: The command line26935
+Node: Writing commands31017
 
 End Tag Table
 

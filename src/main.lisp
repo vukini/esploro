@@ -46,6 +46,9 @@ esploro habits --dismiss KEY   that one, never offered again
 esploro archive open PATH  PATH (a zip, a tarball, 7z, an ISO) opened read-only, like a
                             folder (archivemount): where it is
 esploro archive close POINT | list   closing one; the ones open
+esploro workspaces          StumpWM's workspaces, each with the project its windows are about
+esploro open-on N PATH...   go to workspace N and open PATH there (a folder in Esploro,
+                            text in an Emacs frame there, the rest in its program)
 esploro selection [--sexp]  the files selected in Esploro (or dired), the view used
                             last: one a line, for a shell or an agent
 esploro propose FILE [WHY]  a plan for you to review in Esploro (an agent's): checked
@@ -479,6 +482,34 @@ changes files, its steps go to Esploro for your review."
                   collect (cons path (and path (path-exists-p path) (ignore-errors (thumbnail path :size size))))))
     0))
 
+(defun cli-workspaces ()
+  (answer (loop for (number name count folder current) in (workspaces)
+                collect (list number name count (and folder (short-path folder)) (and current t))))
+  0)
+
+(defun cli-open-on (number paths)
+  "Go to workspace NUMBER and open PATHS there: a folder in an Esploro window,
+text in an Emacs frame there (a new one when it has none), anything else in
+its usual program."
+  (let ((n (and number (parse-integer number :junk-allowed t)))
+        (paths (remove nil (mapcar #'absolute paths))))
+    (cond ((or (null n) (null paths)) (answer (list :error "esploro open-on NUMBER PATH...")) 2)
+          ((not (go-to-workspace n)) (answer (list :error (format nil "there's no workspace ~a" number))) 1)
+          (t
+           (let* ((windows (stumpwm-windows))
+                  (frame (emacs-frame-on (princ-to-string n) windows)))
+             (dolist (path paths)
+               (cond ((directory-p path) (cli-show path))
+                     ((kind-is (path-kind path) :text)
+                      (if (and frame (emacs-ask (format nil "(let ((f (seq-find (lambda (f) (equal (frame-parameter f 'outer-window-id) ~s)) (frame-list))))
+                                                               (when f (with-selected-frame f (find-file ~a)) t))"
+                                                        (princ-to-string frame) (lisp-string path))))
+                          (focus-window frame)
+                          (launch "emacsclient" "-c" "-n" "-a" "" path)))
+                     (t (open-default path)))))
+           (answer (list :opened n (length paths)))
+           0))))
+
 (defun cli-dbus ()
   "Make the running Emacs answer org.freedesktop.FileManager1 (the browsers'
 \"Show in folder\"): what the session bus runs when it's first asked."
@@ -524,6 +555,8 @@ changes files, its steps go to Esploro for your review."
           ((equal command "learn") (cli-learn (rest args)))
           ((equal command "habits") (cli-habits (rest args)))
           ((equal command "archive") (cli-archive (rest args)))
+          ((equal command "workspaces") (cli-workspaces))
+          ((equal command "open-on") (cli-open-on (second args) (cddr args)))
           ((equal command "thumbnails") (cli-thumbnails (rest args)))
           ((equal command "project") (cli-project (rest args)))
           ((equal command "focus")

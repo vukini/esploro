@@ -836,4 +836,25 @@ without a frame."
          (should-not (lookup-key esploro-menu-hider-map [menu-bar esploro-file]))
          (should (keymapp (lookup-key esploro-mode-map [menu-bar esploro-file]))))))))
 
+(ert-deftest esploro-open-on-a-workspace ()
+  (esploro-tests--world
+   (let ((file (esploro-tests--file "w/notes.txt")) (asked nil))
+     (esploro-go (esploro-tests--path "w"))
+     (with-current-buffer (esploro--view) (dired-goto-file file))
+     (cl-letf (((symbol-function 'esploro--call)
+                (lambda (args &optional _input then _sync)
+                  (setq asked args)
+                  (let ((answer (if (equal args '("workspaces"))
+                                    '((1 "1" 2 "~/src/vikix" nil) (2 "2" 3 nil t) (3 "3" 0 nil nil))
+                                  '(:opened 3 1))))
+                    (if then (funcall then answer) answer)))))
+       ;; Each workspace, and what it's about.
+       (let ((labels (mapcar (lambda (v) (aref v 0)) (esploro--workspaces-menu nil))))
+         (should (equal labels '("1   ~/src/vikix" "2   3 windows   (this one)" "3   empty"))))
+       ;; M-o, then a number: the core is asked to go there and open it.
+       (cl-letf (((symbol-function 'read-char) (lambda (&rest _) ?3)))
+         (with-current-buffer (esploro--view) (call-interactively #'esploro-open-on-workspace)))
+       (should (equal asked (list "open-on" "3" file)))
+       (should (eq (keymap-lookup esploro-mode-map "M-o") #'esploro-open-on-workspace))))))
+
 ;;; esploro-tests.el ends here

@@ -280,7 +280,8 @@ project; NIL when its windows say nothing (an empty workspace)."
                               (not (and (eq (cdr place) :argument) (program-file-p path))))
                      (let* ((folder (if (eq (cdr place) :folder) path (path-parent path)))
                             (key (or (project-root path) folder)))
-                       (when (and key (string/= key (home-folder)) (directory-p key))
+                       ;; Home and / say nothing about what a workspace is for.
+                       (when (and key (string/= key (home-folder)) (string/= key "/") (directory-p key))
                          (incf (gethash key counts 0)))))))
                map)
       (let ((best nil) (n 0))
@@ -334,3 +335,37 @@ Emacs's buffers, which Emacs lists itself: ((ID CLASS GROUP TITLE (PATH ...)) ..
                windows)
       (sort rows (lambda (a b) (string< (format nil "~a ~a" (third a) (second a))
                                         (format nil "~a ~a" (third b) (second b))))))))
+
+;;; --- Workspaces: what each is about, and opening a file on one --------------------------
+
+(defun workspaces ()
+  "StumpWM's workspaces (not its hidden ones): ((NUMBER NAME WINDOWS FOLDER
+CURRENT) ...), FOLDER the project or folder its windows are about, if any."
+  (let* ((groups (handler-case
+                     (stumpwm-eval "(let ((here (current-group)))
+                                      (mapcar (lambda (g) (list (group-number g) (group-name g)
+                                                                (length (group-windows g)) (eq g here)))
+                                              (sort (remove-if (lambda (g) (< (group-number g) 1))
+                                                               (copy-list (screen-groups (current-screen))))
+                                                    (function <) :key (function group-number))))")
+                   (stumpwm-unreachable () nil)))
+         (windows (and groups (stumpwm-windows)))
+         (map (and windows (scan-where :windows windows))))
+    (loop for (number name count current) in groups
+          collect (list number name count
+                        (and (plusp count) (workspace-folder :windows windows :group name :map map))
+                        (and current (not (null current)) (string/= (format nil "~a" current) "NIL"))))))
+
+(defun go-to-workspace (number)
+  "Make workspace NUMBER the current one: T, or NIL when there's none."
+  (handler-case
+      (stumpwm-eval (format nil "(let ((g (find ~d (screen-groups (current-screen)) :key (function group-number))))
+                                   (when g (switch-to-group g) t))" number))
+    (stumpwm-unreachable () nil)))
+
+(defun emacs-frame-on (group windows)
+  "An Emacs frame (not Esploro's) on the workspace GROUP: its window id, or NIL."
+  (let ((w (find-if (lambda (w) (and (equal (window-group w) group) (equal (window-class w) "Emacs")
+                                     (not (equal (window-title w) "Esploro"))))
+                    windows)))
+    (and w (window-id w))))

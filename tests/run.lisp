@@ -797,6 +797,16 @@
                   (not (path-exists-p point))
                   (null (esploro::open-archives)))))))
 
+;;; --- Opening on a workspace ------------------------------------------------------------------
+
+(let ((windows (list (esploro::make-window :id 1 :class "Emacs" :title "Esploro" :group "3")
+                     (esploro::make-window :id 2 :class "Emacs" :title "notes.org" :group "3")
+                     (esploro::make-window :id 3 :class "Emacs" :title "x" :group "4"))))
+  (check "an Emacs frame on the workspace, not Esploro's" (eql 2 (esploro::emacs-frame-on "3" windows)))
+  (check "none there, none" (null (esploro::emacs-frame-on "5" windows))))
+(check "without StumpWM, open-on says there's no such workspace"
+       (eq :error (second (run-cli (list "open-on" "3" (p "rec/in/two.txt"))))))
+
 ;;; --- The end -------------------------------------------------------------------------
 
 (sb-ext:run-program "chmod" (list "-R" "u+w" *top*) :search t)

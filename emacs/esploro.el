@@ -971,6 +971,7 @@ a dropped name kept its newline, named no file, and the drop was lost."
   "z" #'esploro-repeat
   "T" #'esploro-thumbnails-toggle
   "G" #'esploro-grid-toggle
+  "M-o" #'esploro-open-on-workspace
   "C-c C-k" #'esploro-cancel
   "<f6>" #'esploro-move-to-other-pane
   "C-c C-c" #'esploro-copy-to-other-pane
@@ -1023,6 +1024,7 @@ show the pane's sort and history even when the places are selected."
           "---"
           ["Open" esploro-open :active (esploro--file-at)]
           ["Open With..." esploro-open-with :active (esploro--marked-or-point-p)]
+          ("Open on Workspace" :filter esploro--workspaces-menu)
           ("Commands" :filter esploro--commands-menu)
           ["Properties" esploro-properties :active (esploro--file-at)]
           "---"
@@ -1153,6 +1155,7 @@ Esploro's that has turned up since is hidden too."
   '("File"
     ["Open" esploro-open]
     ["Open With..." esploro-open-with]
+    ("Open on Workspace" :filter esploro--workspaces-menu)
     ("Commands" :filter esploro--commands-menu)
     "---"
     ["Copy" esploro-copy]
@@ -2045,6 +2048,42 @@ tile again as its thumbnail comes, while BUFFER is still laid out as ROUND."
         (when (and (file-directory-p point)
                    (not (seq-some (lambda (d) (string-prefix-p point (file-name-as-directory d))) dirs)))
           (esploro--call (list "archive" "close" (cdr a))))))))
+
+;;; --- Open on a workspace -----------------------------------------------------------------
+
+;; Right-click > Open on Workspace (or M-o, then its number): StumpWM goes to
+;; that workspace and the file opens there: text in an Emacs frame there, a
+;; folder in Esploro, the rest in its program.  The menu says what each
+;; workspace is about (the project its windows are in).
+
+(defun esploro--workspaces-menu (_items)
+  "The workspaces, made as the menu opens: number, what it's about."
+  (let ((files (and (esploro--view) (with-current-buffer (esploro--view) (esploro--selection))))
+        (spaces (esploro--call (list "workspaces") nil nil t)))
+    (if (not (and (consp spaces) (consp (car spaces))))
+        (list ["StumpWM isn't answering" ignore :active nil])
+      (mapcar (lambda (w)
+                (pcase-let ((`(,number ,_name ,count ,folder ,current) w))
+                  (vector (format "%d   %s%s" number
+                                  (cond (folder folder)
+                                        ((zerop count) "empty")
+                                        (t (format "%d %s" count (if (= count 1) "window" "windows"))))
+                                  (if current "   (this one)" ""))
+                          (list 'esploro-open-on-workspace number (list 'quote files))
+                          :active (and files t))))
+              spaces))))
+
+(defun esploro-open-on-workspace (number &optional files)
+  "Go to workspace NUMBER, and open FILES (the selection) there."
+  (interactive
+   (list (let ((c (read-char "Open on workspace (1-9): ")))
+           (if (and (>= c ?1) (<= c ?9)) (- c ?0) (user-error "A workspace is 1 to 9")))))
+  (let ((files (or files (esploro--in-view (esploro--selection)) (user-error "Nothing selected"))))
+    (esploro--call (append (list "open-on" (number-to-string number)) files) nil
+                   (lambda (answer)
+                     (pcase answer
+                       (`(:opened ,n ,count) (message "Esploro: opened %d on workspace %d" count n))
+                       (_ (esploro--say answer "open on a workspace")))))))
 
 ;;; --- Commands in embark: on any file name in Emacs ----------------------------------
 
