@@ -807,6 +807,28 @@
 (check "without StumpWM, open-on says there's no such workspace"
        (eq :error (second (run-cli (list "open-on" "3" (p "rec/in/two.txt"))))))
 
+;;; --- Searching inside files ----------------------------------------------------------------
+
+(check "has:WORD looks inside, asked last"
+       (equal (esploro::parse-query "has:tender kind:text") '(:and (:kind :text) (:has "tender"))))
+(check "and says so back" (equal (esploro::query-words '(:and (:kind :text) (:has "tender"))) "kind:text has:tender"))
+(signals error (esploro::parse-query "has:"))
+(esploro::ensure-folder (p "inside/sub"))
+(make-file (p "inside/a.txt") "the LME tender, due Friday")
+(make-file (p "inside/sub/b.md") "nothing here")
+(make-file (p "inside/c.txt") "Tender documents")
+(flet ((found (text) (sort (mapcar (lambda (f) (esploro::short-path f (p "inside")))
+                                   (fourth (cdr (run-cli (list "query" text (p "inside"))))))
+                           #'string<)))
+  (check "files holding a word, any case" (equal (found "has:tender") '("a.txt" "c.txt")))
+  (check "with the rest of a query" (equal (found "has:tender has:lme") '("a.txt")))
+  (check "and not" (equal (found "kind:file -has:tender") '("sub/b.md")))
+  ;; Without ripgrep, read by Esploro itself.
+  (let ((path (sb-posix:getenv "PATH")))
+    (sb-posix:setenv "PATH" "/nonexistent" 1)
+    (unwind-protect (check "without ripgrep too" (equal (found "has:tender") '("a.txt" "c.txt")))
+      (sb-posix:setenv "PATH" path 1))))
+
 ;;; --- The end -------------------------------------------------------------------------
 
 (sb-ext:run-program "chmod" (list "-R" "u+w" *top*) :search t)

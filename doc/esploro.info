@@ -512,13 +512,19 @@ hold:
      Changed in the last 7 days, or not for 30.
 ‘larger:10M’, ‘smaller:1k’
      By size (k, M, G).
+‘has:tender’
+     A file holding "tender" inside it, in any case: text files
+     (found by ‘ripgrep’, quick), and PDFs (their text taken out
+     once with ‘pdftotext’ and kept, so the first search of many
+     PDFs takes a while and the next ones don't).
 ‘-draft’
      Not: a word with ‘-’ in front.
 
    So ‘kind:pdf newer:30 -invoice’ is the PDFs of the last month
-that aren't invoices.  Hidden files and folders aren't looked
-in, nor what a project's ‘.gitignore’ leaves out (when ‘fd’ is
-installed), nor ‘node_modules’.  At most 1000 are shown.
+that aren't invoices, and ‘kind:pdf has:LME’ the PDFs that
+mention LME. Hidden files and folders aren't looked in, nor what
+a project's ‘.gitignore’ leaves out (when ‘fd’ is installed),
+nor ‘node_modules’.  At most 1000 are shown.
 
    ‘F5’ looks again.  Go ⇒ Searches ⇒ Keep This Search... (or
 right-click the list) keeps it by name: it's down the side under
@@ -843,14 +849,14 @@ Node: Two panes15006
 Node: Windows and workspaces15579
 Node: Looking around17027
 Node: Searches18786
-Node: Archives20236
-Node: The Trash21074
-Node: Where files are open21549
-Node: Closing a project22020
-Node: Plans from agents22889
-Node: Keys and mouse25153
-Node: The command line27151
-Node: Writing commands31233
+Node: Archives20558
+Node: The Trash21396
+Node: Where files are open21871
+Node: Closing a project22342
+Node: Plans from agents23211
+Node: Keys and mouse25475
+Node: The command line27473
+Node: Writing commands31555
 
 End Tag Table
 

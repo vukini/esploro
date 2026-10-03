@@ -6,11 +6,6 @@ list (DESIGN.md says what was done).
 
 ## File-manager basics
 
-2. **Search inside files.** Search Below matches names, kinds, dates and
-   sizes, not what's in a file. A word like `has:invoice` would look
-   inside: ripgrep for text, pdftotext for PDFs (a cache of each PDF's
-   text, so a second search is quick). *Small to medium.*
-
 3. **Recent files.** A "Recent" place: what you opened lately, from
    Emacs's recentf and other programs' `~/.local/share/recently-used.xbel`,
    newest first, shown as a list like a search's. *Small.*

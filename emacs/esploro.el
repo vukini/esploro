@@ -2350,9 +2350,9 @@ so the view's history stays as it is."
 (defun esploro-search (words)
   "The files below this folder that WORDS describe.
 Words a name holds, *.pdf, kind:pdf (folder, image, video, audio, text,
-archive), newer:7 or older:30 (days), larger:10M, smaller:1k, -word
-for not."
-  (interactive (list (read-string "Look below here for (words, *.pdf, kind:pdf, newer:7, larger:10M): ")))
+archive), has:word (inside the file: text, and PDFs), newer:7 or older:30
+(days), larger:10M, smaller:1k, -word for not."
+  (interactive (list (read-string "Look below here for (words, *.pdf, kind:pdf, has:word, newer:7, larger:10M): ")))
   (esploro--in-view
    (let ((buffer (current-buffer)))
      (message "Esploro: looking...")

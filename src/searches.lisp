@@ -47,6 +47,8 @@
             ((equal key "older") (list :older-than (number-or-fail value)))
             ((equal key "larger") (list :larger-than (size-or-fail value)))
             ((equal key "smaller") (list :smaller-than (size-or-fail value)))
+            ((equal key "has")
+             (if (plusp (length value)) (list :has value) (error "~a: has:WORD, a word inside the files" word)))
             ((glob-p word) (list :glob word))
             (t (list :name word))))))
 
@@ -65,7 +67,10 @@ which must hold. Signals an error saying what's wrong."
                                 unless (string= word "") collect word
                                 while space do (setf start (1+ space)))))
                (if (rest words)
-                   (cons :and (mapcar #'parse-word words))
+                   ;; What's inside a file is asked last: the rest is quick.
+                   (let ((parsed (mapcar #'parse-word words)))
+                     (cons :and (append (remove :has parsed :key #'first)
+                                        (remove :has parsed :key #'first :test-not #'eq))))
                    (parse-word (first words))))))))
 
 (defun check-query (query)
@@ -75,7 +80,7 @@ which must hold. Signals an error saying what's wrong."
     (case (first query)
       ((:and :or) (mapc #'check-query (rest query)))
       (:not (unless (= (length query) 2) (bad)) (check-query (second query)))
-      ((:name :glob) (unless (and (= (length query) 2) (stringp (second query))) (bad)))
+      ((:name :glob :has) (unless (and (= (length query) 2) (stringp (second query)) (plusp (length (second query)))) (bad)))
       (:kind (unless (and (= (length query) 2) (keywordp (second query))) (bad)))
       ((:newer-than :older-than :larger-than :smaller-than)
        (unless (and (= (length query) 2) (realp (second query)) (>= (second query) 0)) (bad)))
@@ -100,6 +105,7 @@ s-expression."
                (:older-than (format nil "older:~d" (second q)))
                (:larger-than (format nil "larger:~a" (size-words (second q))))
                (:smaller-than (format nil "smaller:~a" (size-words (second q))))
+               (:has (format nil "has:~a" (second q)))
                (:not (let ((w (word (second q)))) (and w (concatenate 'string "-" w))))))
            (simple-p (w) (and w (not (find #\Space w)) (not (find #\( w)))))
     (let ((words (mapcar #'word (if (eq (first query) :and) (rest query) (list query)))))
@@ -118,9 +124,10 @@ s-expression."
         ((or (char= (char pattern p) #\?) (char-equal (char pattern p) (char name n)))
          (glob-match-p pattern name (1+ p) (1+ n)))))
 
-(defun query-match-p (query name kind stat now)
+(defun query-match-p (query name kind stat now &optional has)
   "Whether QUERY holds for the file NAME of KIND. STAT, called only when a
-time or a size is asked, gives the file's lstat."
+time or a size is asked, gives the file's lstat; HAS, only when what's
+inside is asked, whether the file holds a word."
   (labels ((m (q)
              (ecase (first q)
                (:and (every #'m (rest q)))
@@ -132,7 +139,8 @@ time or a size is asked, gives the file's lstat."
                (:newer-than (let ((st (funcall stat))) (and st (> (sb-posix:stat-mtime st) (- now (* 86400 (second q)))))))
                (:older-than (let ((st (funcall stat))) (and st (< (sb-posix:stat-mtime st) (- now (* 86400 (second q)))))))
                (:larger-than (let ((st (funcall stat))) (and st (not (eq kind :folder)) (> (sb-posix:stat-size st) (second q)))))
-               (:smaller-than (let ((st (funcall stat))) (and st (not (eq kind :folder)) (< (sb-posix:stat-size st) (second q))))))))
+               (:smaller-than (let ((st (funcall stat))) (and st (not (eq kind :folder)) (< (sb-posix:stat-size st) (second q)))))
+               (:has (and has (not (eq kind :folder)) (funcall has (second q)))))))
     (m query)))
 
 (defun unix-now () (- (get-universal-time) #.(encode-universal-time 0 0 0 1 1 1970 0)))
@@ -178,10 +186,76 @@ fd when it's there (quick, and keeps to .gitignore), else a walk."
                              (walk path))))))))
           (walk root)))))
 
+(defun query-has-words (query)
+  "The words QUERY looks for inside files."
+  (case (first query)
+    ((:and :or) (remove-duplicates (mapcan #'query-has-words (rest query)) :test #'string-equal))
+    (:not (query-has-words (second query)))
+    (:has (list (second query)))))
+
+(defun rg-files (word root)
+  "The files below ROOT holding WORD (any case), as ripgrep finds them (not
+hidden, not what .gitignore leaves out): a table of their paths."
+  (let ((table (make-hash-table :test 'equal))
+        (out (with-output-to-string (s)
+               (sb-ext:run-program "rg" (list "-l" "-0" "-i" "-F" "--max-filesize" "20M" "-e" word "--" root)
+                                   :search t :output s :error nil :input nil))))
+    (loop with start = 0
+          for end = (position (code-char 0) out :start start)
+          while end
+          do (setf (gethash (subseq out start end) table) t)
+             (setf start (1+ end)))
+    table))
+
+(defun pdf-text (path)
+  "PATH's text (a PDF), made with pdftotext once and kept; NIL when it can't be."
+  (let* ((stat (file-stat path))
+         (out (join-path (cache-folder) "text"
+                         (format nil "~(~{~2,'0x~}~).txt"
+                                 (coerce (sb-md5:md5sum-string
+                                          (format nil "~a ~d ~d" path (and stat (sb-posix:stat-size stat))
+                                                  (and stat (sb-posix:stat-mtime stat)))
+                                          :external-format :utf-8)
+                                         'list)))))
+    (unless (path-exists-p out)
+      (ensure-folder (path-parent out))
+      (tool-runs "pdftotext" "-q" "-enc" "UTF-8" path out))
+    (and (path-exists-p out)
+         (ignore-errors
+          (with-open-file (in (native out) :external-format '(:utf-8 :replacement #\?))
+            (let ((text (make-string (min (file-length in) 20000000))))
+              (subseq text 0 (read-sequence text in))))))))
+
+(defun text-file-has-p (path word)
+  "Whether PATH (text) holds WORD, any case, in its first 20 MB: without ripgrep."
+  (ignore-errors
+   (with-open-file (in (native path) :external-format '(:utf-8 :replacement #\?))
+     (let ((text (make-string (min (file-length in) 20000000))))
+       (search word (subseq text 0 (read-sequence text in)) :test #'char-equal)))))
+
+(defun has-test (query root)
+  "For QUERY's words inside files: a function of a path, giving a function of
+a word, or NIL when QUERY asks nothing inside."
+  (let ((words (query-has-words query)))
+    (when words
+      (let ((tables (and (program-p "rg")
+                         (mapcar (lambda (w) (cons w (rg-files w root))) words)))
+            (pdfs (make-hash-table :test 'equal)))
+        (lambda (path)
+          (lambda (word)
+            (case (type-kind (path-name path))
+              (:pdf (let ((text (or (gethash path pdfs)
+                                    (setf (gethash path pdfs) (or (and (program-p "pdftotext") (pdf-text path)) "")))))
+                      (and (search word text :test #'char-equal) t)))
+              (t (if tables
+                     (and (gethash path (cdr (assoc word tables :test #'string-equal))) t)
+                     (and (kind-is (type-kind (path-name path)) :text) (text-file-has-p path word) t))))))))))
+
 (defun run-query (query root &key (limit *search-limit*) (visit-limit *search-visit-limit*))
   "The paths below ROOT that QUERY matches, newest first, and whether there
 were more than were looked at or kept (T then)."
-  (let ((found '()) (count 0) (visited 0) (more nil) (now (unix-now)))
+  (let ((found '()) (count 0) (visited 0) (more nil) (now (unix-now))
+        (has (has-test query root)))
     (each-candidate
      root
      (lambda (path name folder-p)
@@ -191,7 +265,8 @@ were more than were looked at or kept (T then)."
              (incf visited)
              (when (query-match-p query name (if folder-p :folder (type-kind name))
                                   (lambda () (if (eq stat :unknown) (setf stat (file-stat path :follow nil)) stat))
-                                  now)
+                                  now
+                                  (and has (funcall has path)))
                (incf count)
                (push path found))
              nil))))

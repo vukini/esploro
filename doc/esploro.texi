@@ -476,12 +476,17 @@ archive.
 Changed in the last 7 days, or not for 30.
 @item @samp{larger:10M}, @samp{smaller:1k}
 By size (k, M, G).
+@item @samp{has:tender}
+A file holding ``tender'' inside it, in any case: text files (found by
+@command{ripgrep}, quick), and PDFs (their text taken out once with
+@command{pdftotext} and kept, so the first search of many PDFs takes a
+while and the next ones don't).
 @item @samp{-draft}
 Not: a word with @samp{-} in front.
 @end table
 
 So @samp{kind:pdf newer:30 -invoice} is the PDFs of the last month that
-aren't invoices.  Hidden files and folders aren't looked in, nor what
+aren't invoices, and @samp{kind:pdf has:LME} the PDFs that mention LME.  Hidden files and folders aren't looked in, nor what
 a project's @file{.gitignore} leaves out (when @command{fd} is
 installed), nor @file{node_modules}.  At most 1000 are shown.
 
