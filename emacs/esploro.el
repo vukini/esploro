@@ -1017,7 +1017,7 @@ show the pane's sort and history even when the places are selected."
   (esploro--in-view (dired-toggle-marks)))
 
 (defconst esploro--menu-bar
-  `((file "File"
+  `((esploro-file "File"
           ["New Window" esploro-new-window :keys "C-x 5 2"]
           ["New Folder..." esploro-new-folder :keys "+"]
           "---"
@@ -1029,7 +1029,7 @@ show the pane's sort and history even when the places are selected."
           ["Terminal Here" esploro-terminal-here]
           ["Close Project..." esploro-close-project]
           ["Close Esploro" esploro-close :keys "C-x C-c"])
-    (edit "Edit"
+    (esploro-edit "Edit"
           ["Undo" esploro-undo :keys "C-/"]
           ["Stop Copying" esploro-cancel :keys "C-c C-k" :visible esploro--running]
           ["Repeat Last Change" esploro-repeat :keys "z" :active (esploro--marked-or-point-p)]
@@ -1054,7 +1054,7 @@ show the pane's sort and history even when the places are selected."
           ["Select All" esploro-select-all]
           ["Select None" esploro-select-none]
           ["Invert Selection" esploro-invert-selection])
-    (view "View"
+    (esploro-view "View"
           ["Sort by Name" (esploro-sort 'name) :style radio :selected (eq (esploro--value 'esploro--sort) 'name)]
           ["Sort by Size" (esploro-sort 'size) :style radio :selected (eq (esploro--value 'esploro--sort) 'size)]
           ["Sort by Time" (esploro-sort 'time) :style radio :selected (eq (esploro--value 'esploro--sort) 'time)]
@@ -1073,7 +1073,7 @@ show the pane's sort and history even when the places are selected."
           ["Preview" esploro-preview-toggle :keys "F11" :style toggle :selected (esploro--preview-window)]
           ["Places" esploro-places-toggle :keys "F9" :style toggle
            :selected (get-buffer-window esploro-places-buffer-name)])
-    (go "Go"
+    (esploro-go "Go"
         ["Back" esploro-back :keys "M-<left>" :active (esploro--value 'esploro--back)]
         ["Forward" esploro-forward :keys "M-<right>" :active (esploro--value 'esploro--forward)]
         ["Up" esploro-up :keys "M-<up>"]
@@ -1084,7 +1084,7 @@ show the pane's sort and history even when the places are selected."
         ["The Trash" esploro-show-trash]
         ["Restore from the Trash" esploro-restore :active (esploro--in-trash-p)]
         ["Empty the Trash..." esploro-empty-trash])
-    (help-menu "Help"
+    (esploro-help "Help"
                ["Esploro Manual" esploro-manual :keys "?"]
                ["Keys and Mouse" esploro-manual-keys]
                "---"
@@ -1093,6 +1093,50 @@ show the pane's sort and history even when the places are selected."
 (defconst esploro--hidden-menus
   '(options buffer tools operate mark regexp immediate subdir)
   "Emacs's menus (Options, Buffers, Tools) and dired's, hidden in Esploro.")
+
+;; Esploro's menus have keys of their own (esploro-file, not file): Emacs
+;; merges the menus of one key from every keymap, so with Emacs's own
+;; `file' its File menu had Emacs's File items too.  In Esploro's buffers a
+;; keymap above all others (an emulation keymap) hides every menu that isn't
+;; Esploro's: Emacs's, dired's, and other packages' (a Virtual Envs, say),
+;; whatever they are, as they come.
+
+(defvar-local esploro--menus-only nil
+  "Non-nil in Esploro's buffers: only Esploro's menus in the menu bar.")
+
+(defvar esploro-menu-hider-map (make-sparse-keymap)
+  "Every menu-bar menu that isn't Esploro's, undefined: above all keymaps
+in Esploro's buffers.")
+
+(defvar esploro--menu-hider-alist `((esploro--menus-only . ,esploro-menu-hider-map)))
+(add-to-list 'emulation-mode-map-alists 'esploro--menu-hider-alist)
+
+(defun esploro--hide-other-menus ()
+  "Before the menu bar is drawn, in an Esploro buffer: any menu not
+Esploro's that has turned up since is hidden too."
+  (when esploro--menus-only
+    (dolist (map (current-active-maps))
+      (let ((bar (and (not (eq map esploro-menu-hider-map)) (lookup-key map [menu-bar]))))
+        (when (keymapp bar)
+          (map-keymap
+           (lambda (key _def)
+             (when (and (symbolp key)
+                        (not (eq key 'mouse-1))
+                        (not (string-prefix-p "esploro-" (symbol-name key)))
+                        ;; Not yet hidden (a number means no [menu-bar] at all yet).
+                        (not (eq (lookup-key esploro-menu-hider-map (vector 'menu-bar key)) 'undefined)))
+               (define-key esploro-menu-hider-map (vector 'menu-bar key) 'undefined)))
+           bar))))))
+
+(add-hook 'menu-bar-update-hook #'esploro--hide-other-menus)
+
+;; Loaded again (an update reloads it), the buffers already open get it too.
+(with-eval-after-load 'esploro
+  (dolist (buffer (buffer-list))
+    (with-current-buffer buffer
+      (when (or (bound-and-true-p esploro-mode)
+                (memq major-mode '(esploro-places-mode esploro-project-mode esploro-habits-mode esploro-review-mode)))
+        (setq esploro--menus-only t)))))
 
 (defun esploro--install-menu-bar (map)
   "Esploro's menus in MAP, in order, and Emacs's and dired's hidden."
@@ -1201,6 +1245,7 @@ through the core, journaled so they can be undone."
     (setq-local dired-mouse-drag-files t)
     (setq-local dnd-protocol-alist (cons '("^file:" . esploro--dnd-file) dnd-protocol-alist))
     (setq-local tool-bar-map esploro-tool-bar-map)
+    (setq-local esploro--menus-only t)
     (setq-local header-line-format '(:eval (esploro--header)))
     (add-hook 'post-command-hook #'esploro--note-window nil t)
     (add-hook 'post-command-hook #'esploro--preview-schedule nil t)
@@ -1253,6 +1298,7 @@ through the core, journaled so they can be undone."
 
 (define-derived-mode esploro-places-mode special-mode "Places"
   "Esploro's places: click one, or RET on it."
+  (setq-local esploro--menus-only t)
   (setq-local cursor-type nil)
   (setq-local tool-bar-map esploro-tool-bar-map)
   (setq-local mode-line-format nil))
@@ -2284,6 +2330,7 @@ for not."
 
 (define-derived-mode esploro-project-mode special-mode "Project"
   "What's open in a project, to save and close."
+  (setq-local esploro--menus-only t)
   (setq-local tool-bar-map esploro-tool-bar-map)
   (visual-line-mode 1))
 
@@ -2433,6 +2480,7 @@ working there; not Esploro's own views."
 
 (define-derived-mode esploro-habits-mode special-mode "Habits"
   "What you keep doing with files, to keep as a rule, a recipe, or a search."
+  (setq-local esploro--menus-only t)
   (setq-local tool-bar-map esploro-tool-bar-map)
   (visual-line-mode 1))
 
@@ -2558,6 +2606,7 @@ which the review offers to keep by name.")
 
 (define-derived-mode esploro-review-mode special-mode "Plan"
   "A plan proposed to you: Apply, Edit or Cancel."
+  (setq-local esploro--menus-only t)
   (setq-local tool-bar-map esploro-tool-bar-map)
   (setq-local revert-buffer-function (lambda (&rest _) (esploro--review-show (current-buffer))))
   (visual-line-mode 1))

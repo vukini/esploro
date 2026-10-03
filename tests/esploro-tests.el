@@ -116,7 +116,7 @@
 (ert-deftest esploro-menus-and-the-manual ()
   ;; A file manager's menus; Emacs's and dired's hidden on Esploro's frame.
   (dolist (map (list esploro-mode-map esploro-places-mode-map))
-    (dolist (key '(file edit view go help-menu))
+    (dolist (key '(esploro-file esploro-edit esploro-view esploro-go esploro-help))
       (should (keymapp (lookup-key map (vector 'menu-bar key)))))
     (dolist (key '(options buffer tools operate mark regexp immediate subdir))
       (should (eq (lookup-key map (vector 'menu-bar key)) 'undefined))))
@@ -815,5 +815,25 @@ without a frame."
        (esploro-grid-toggle)
        (should-not esploro-grid-mode)
        (should-not (seq-some (lambda (o) (overlay-get o 'esploro-grid)) (overlays-in (point-min) (point-max))))))))
+
+(defvar esploro-tests-other-mode nil "A stand-in for another package's minor mode.")
+
+(ert-deftest esploro-only-its-own-menus ()
+  ;; Another package's menu, and Emacs's own File: hidden in Esploro's
+  ;; buffers, as the menu bar is drawn; Esploro's stay.
+  (esploro-tests--world
+   (esploro-tests--file "m/a.txt")
+   (esploro-go (esploro-tests--path "m"))
+   (let ((other (make-sparse-keymap)))
+     (define-key other [menu-bar virtual-envs] (cons "Virtual Envs" (make-sparse-keymap "Virtual Envs")))
+     (let ((minor-mode-map-alist (cons (cons 'esploro-tests-other-mode other) minor-mode-map-alist))
+           (esploro-tests-other-mode t))
+       (with-current-buffer (esploro--view)
+         (should esploro--menus-only)
+         (run-hooks 'menu-bar-update-hook)
+         (dolist (key '(virtual-envs file edit help-menu options))
+           (should (eq (lookup-key esploro-menu-hider-map (vector 'menu-bar key)) 'undefined)))
+         (should-not (lookup-key esploro-menu-hider-map [menu-bar esploro-file]))
+         (should (keymapp (lookup-key esploro-mode-map [menu-bar esploro-file]))))))))
 
 ;;; esploro-tests.el ends here
