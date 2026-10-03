@@ -39,6 +39,10 @@ esploro search list|save NAME TEXT [FOLDER]|forget NAME|run [--lines] NAME
 esploro learn PROPOSED APPLIED   what you changed in an agent's plan, as rules in words
                             (kept in the state folder's corrections.lisp)
 esploro learn --add RULE    RULE into ~/.config/esploro/sorting.md, under its learnt rules
+esploro habits [--new]      what you keep doing (several plans moving like files into
+                            one folder), each with a rule, a recipe and a search for
+                            more like them; --new: only those not said before
+esploro habits --dismiss KEY   that one, never offered again
 esploro selection [--sexp]  the files selected in Esploro (or dired), the view used
                             last: one a line, for a shell or an agent
 esploro propose FILE [WHY]  a plan for you to review in Esploro (an agent's): checked
@@ -424,6 +428,21 @@ changes files, its steps go to Esploro for your review."
            0))
         (t (answer (list :error "esploro learn PROPOSED APPLIED | learn --add RULE")) 2)))
 
+(defun cli-habits (args)
+  "esploro habits [--new] | habits --dismiss KEY"
+  (cond ((equal (first args) "--dismiss")
+         (if (second args)
+             (progn (note-habit :dismissed (second args)) (answer (list :dismissed (second args))) 0)
+             (progn (answer (list :error "esploro habits --dismiss KEY")) 2)))
+        (t (let* ((new (equal (first args) "--new"))
+                  (told (habits-seen))
+                  (habits (if new
+                              (remove-if (lambda (h) (member (cons :told (habit-key h)) told :test #'equal)) (habits))
+                              (habits))))
+             (when new (dolist (h habits) (note-habit :told (habit-key h))))
+             (answer (mapcar #'habit-answer habits))
+             0))))
+
 (defun cli-dbus ()
   "Make the running Emacs answer org.freedesktop.FileManager1 (the browsers'
 \"Show in folder\"): what the session bus runs when it's first asked."
@@ -467,6 +486,7 @@ changes files, its steps go to Esploro for your review."
           ((equal command "search") (cli-search (rest args)))
           ((equal command "selection") (cli-selection (rest args)))
           ((equal command "learn") (cli-learn (rest args)))
+          ((equal command "habits") (cli-habits (rest args)))
           ((equal command "project") (cli-project (rest args)))
           ((equal command "focus")
            (let ((id (and (second args) (parse-integer (second args) :junk-allowed t))))

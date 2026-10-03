@@ -240,7 +240,33 @@ is there too.  They're kept in ‘~/.config/esploro/recipes.lisp’.
    A recipe is a plan like any other: checked whole, done in the
 background, undone with ‘C-/’.
 
-5.1 Rename by a pattern
+5.1 Habits noticed
+==================
+
+Esploro notices what you keep doing.  When three or more like
+files (pictures, PDFs, names sharing a word) have gone into one
+folder, by two or more of your plans or your corrections to an
+agent's, it says so once, at the bottom of the window: "Esploro
+noticed: You've moved 3 PDFs and e-books named "invoice" from
+~/Downloads into ~/Work/Invoices."
+
+   Edit ⇒ Habits Noticed... lists them, each with:
+
+Keep as Rule...
+     A sentence for your rules for where files go
+     (‘sorting.md’), which agents read: shown first, to say what
+     you mean.
+Keep as Recipe...
+     "Move into that folder", by name, under Edit ⇒ Recipes.
+Find More
+     A search for more like them where they came from, to select
+     and move the same way.
+Not This
+     Never offered again.
+
+   Nothing is done on its own.
+
+5.2 Rename by a pattern
 =======================
 
 Edit ⇒ Rename by Pattern... (also under Recipes) asks for the
@@ -258,7 +284,7 @@ is text to replace wherever a name holds it: a space to ‘_’.
 listed (the pattern picks its own); names that don't fit are
 left as they are.
 
-5.2 Sort into folders by kind
+5.3 Sort into folders by kind
 =============================
 
 Edit ⇒ Sort into Folders by Kind... sends pictures to Images,
@@ -270,7 +296,7 @@ folder.  Folders, files of no kind it names (a spreadsheet) and
 files already in their folder stay where they are.  A name
 already taken in a folder gets a free one ("notes 2.txt").
 
-5.3 Their plans wait for you
+5.4 Their plans wait for you
 ============================
 
 Both send each file its own way, so their plan isn't done at
@@ -640,6 +666,11 @@ File: esploro.info,  Node: The command line,  Next: Writing commands,  Prev: Key
 ‘esploro learn --add RULE’
      RULE into ‘~/.config/esploro/sorting.md’, under its learnt
      rules.
+‘esploro habits [--new]’
+     What you keep doing, each with a rule, a recipe and a
+     search; ‘--new’, only those not told of before.
+‘esploro habits --dismiss KEY’
+     That one, never offered again.
 ‘esploro selection [--sexp]’
      The files selected in Esploro, or dired, used last, one a
      line; ‘--sexp’ gives ‘(:selection FOLDER (FILE...))’.
@@ -706,19 +737,19 @@ Node: The window3854
 Node: Selecting and opening5726
 Node: Changing files6779
 Node: Recipes8286
-Node: Drag and drop11570
-Node: The preview12296
-Node: Two panes13410
-Node: Windows and workspaces13983
-Node: Looking around14846
-Node: Searches15714
-Node: The Trash17165
-Node: Where files are open17640
-Node: Closing a project18111
-Node: Plans from agents18980
-Node: Keys and mouse21244
-Node: The command line22992
-Node: Writing commands26356
+Node: Drag and drop12416
+Node: The preview13142
+Node: Two panes14256
+Node: Windows and workspaces14829
+Node: Looking around15692
+Node: Searches16560
+Node: The Trash18011
+Node: Where files are open18486
+Node: Closing a project18957
+Node: Plans from agents19826
+Node: Keys and mouse22090
+Node: The command line23838
+Node: Writing commands27418
 
 End Tag Table
 

@@ -230,6 +230,32 @@ there too.  They're kept in
 A recipe is a plan like any other: checked whole, done in the
 background, undone with @kbd{C-/}.
 
+@section Habits noticed
+
+Esploro notices what you keep doing.  When three or more like files
+(pictures, PDFs, names sharing a word) have gone into one folder, by
+two or more of your plans or your corrections to an agent's, it says
+so once, at the bottom of the window: ``Esploro noticed: You've moved
+3 PDFs and e-books named "invoice" from ~/Downloads into
+~/Work/Invoices.''
+
+Edit @result{} Habits Noticed@dots{} lists them, each with:
+
+@table @asis
+@item Keep as Rule@dots{}
+A sentence for your rules for where files go (@file{sorting.md}), which
+agents read: shown first, to say what you mean.
+@item Keep as Recipe@dots{}
+``Move into that folder'', by name, under Edit @result{} Recipes.
+@item Find More
+A search for more like them where they came from, to select and move
+the same way.
+@item Not This
+Never offered again.
+@end table
+
+Nothing is done on its own.
+
 @section Rename by a pattern
 
 Edit @result{} Rename by Pattern@dots{} (also under Recipes) asks for
@@ -590,6 +616,11 @@ as rules in words.
 @item esploro learn --add @var{rule}
 @var{rule} into @file{~/.config/esploro/sorting.md}, under its learnt
 rules.
+@item esploro habits [--new]
+What you keep doing, each with a rule, a recipe and a search;
+@option{--new}, only those not told of before.
+@item esploro habits --dismiss @var{key}
+That one, never offered again.
 @item esploro selection [--sexp]
 The files selected in Esploro, or dired, used last, one a line;
 @option{--sexp} gives @code{(:selection @var{folder} (@var{file}@dots{}))}.

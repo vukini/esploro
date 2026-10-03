@@ -647,4 +647,41 @@ without a frame."
      (should-not (file-exists-p (concat plan ".proposed")))
      (should (file-exists-p (esploro-tests--path ".local/state/esploro/corrections.lisp"))))))
 
+(defun esploro-tests--button (label)
+  "Where the button LABEL is, in this buffer."
+  (save-excursion
+    (goto-char (point-min))
+    (let (b)
+      (while (and (setq b (next-button (point))) (not (equal (button-label b) label)))
+        (goto-char (button-end b)))
+      (and b (button-start b)))))
+
+(ert-deftest esploro-habits-noticed ()
+  (skip-unless (file-executable-p (expand-file-name "../esploro" (file-name-directory (locate-library "esploro")))))
+  (esploro-tests--world
+   (let ((process-environment (cons (concat "XDG_CONFIG_HOME=" esploro-tests--top "config") process-environment))
+         (said nil))
+     (make-directory (esploro-tests--path "Pics/Trips") t)
+     (dolist (n '("trip-1.jpg" "trip-2.jpg" "trip 3.png"))
+       (esploro-tests--file (concat "in/" n)))
+     (esploro-go (esploro-tests--path "in"))
+     (cl-letf (((symbol-function 'run-at-time) (lambda (_ _ _f fmt &rest args) (setq said (apply #'format fmt args)))))
+       (esploro--apply (list (list :move (esploro-tests--path "in/trip-1.jpg") (esploro-tests--path "Pics/Trips/trip-1.jpg"))) "moved")
+       (should-not said)
+       (esploro--apply (list (list :move (esploro-tests--path "in/trip-2.jpg") (esploro-tests--path "Pics/Trips/trip-2.jpg"))
+                             (list :move (esploro-tests--path "in/trip 3.png") (esploro-tests--path "Pics/Trips/trip 3.png")))
+                       "moved"))
+     ;; Told once, after the move that made it a habit.
+     (should (string-match-p "noticed: You've moved 3 pictures named \"trip\"" said))
+     (save-window-excursion
+       (esploro-habits)
+       (with-current-buffer "*Esploro: habits*"
+         (should (string-match-p "Keep as Recipe" (buffer-string)))
+         (cl-letf (((symbol-function 'read-string) (lambda (_p initial) initial)))
+           (push-button (esploro-tests--button " Keep as Recipe... ")))
+         (should (assoc "Into Trips" (esploro--call (list "recipe" "list") nil nil t)))
+         (push-button (esploro-tests--button " Not This "))
+         (should (string-match-p "Nothing yet" (buffer-string)))
+         (kill-buffer))))))
+
 ;;; esploro-tests.el ends here

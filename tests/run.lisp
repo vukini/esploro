@@ -710,6 +710,40 @@
 (check "with no rules file, one is made"
        (search (format nil "## Learnt from my corrections~%~%- First.~%") (esploro::file-text (p ".config/esploro/sorting.md"))))
 
+;;; --- Habits: what you keep doing, offered back ----------------------------------------------
+
+(check "words worth noticing in a name"
+       (equal (sort (esploro::name-words "2025-03 Invoice_LME-v2.pdf") #'string<) '("invoice" "lme")))
+(esploro::ensure-folder (p "hab/Downloads"))
+(esploro::ensure-folder (p "hab/Work/Invoices"))
+(dolist (n '("invoice 1.pdf" "Invoice-2.pdf" "march invoice.pdf" "photo.png"))
+  (make-file (p "hab/Downloads" n)))
+(flet ((move (&rest names)
+         (run-cli (list "apply")
+                  (format nil "~{~a~%~}"
+                          (mapcar (lambda (n) (format nil "(:move ~s ~s)" (p "hab/Downloads" n) (p "hab/Work/Invoices" n)))
+                                  names)))))
+  (move "invoice 1.pdf")
+  (check "one plan is no habit" (null (cdr (run-cli (list "habits")))))
+  (move "Invoice-2.pdf" "march invoice.pdf"))
+(let ((habits (cdr (run-cli (list "habits")))))
+  (check "three like files, in two plans, into one folder: a habit" (= 1 (length habits)))
+  (check "said, as a rule, a recipe and a search"
+         (equal (rest (first habits))
+                (list (format nil "You've moved 3 PDFs and e-books named \"invoice\" from ~a into ~a."
+                              (esploro::short-path (p "hab/Downloads")) (esploro::short-path (p "hab/Work/Invoices")))
+                      (format nil "PDFs and e-books named \"invoice\" from ~a go in ~a."
+                              (esploro::short-path (p "hab/Downloads")) (esploro::short-path (p "hab/Work/Invoices")))
+                      (list :move-into (p "hab/Work/Invoices"))
+                      "invoice kind:pdf"
+                      (p "hab/Downloads"))))
+  (check "--new tells of it once" (and (= 1 (length (cdr (run-cli (list "habits" "--new")))))
+                                       (null (cdr (run-cli (list "habits" "--new"))))
+                                       (= 1 (length (cdr (run-cli (list "habits")))))))
+  (run-cli (list "habits" "--dismiss" (first (first habits))))
+  (check "waved away, it isn't offered again" (null (cdr (run-cli (list "habits"))))))
+(undo-last) (undo-last)
+
 ;;; --- The end -------------------------------------------------------------------------
 
 (sb-ext:run-program "chmod" (list "-R" "u+w" *top*) :search t)

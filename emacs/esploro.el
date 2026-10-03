@@ -155,7 +155,12 @@ WHAT says what it was, for the message after.  SYNC waits (tests)."
   (when steps
     (message "Esploro: %s..." what)
     (esploro--call (list "apply") (esploro--plan-text steps)
-                   (lambda (answer) (esploro--say answer what) (esploro--refresh))
+                   (lambda (answer)
+                     (esploro--say answer what)
+                     (esploro--refresh)
+                     (when (and (eq (car-safe answer) :done)
+                                (seq-some (lambda (s) (memq (car s) '(:move :copy))) steps))
+                       (esploro--habits-nudge)))
                    sync)))
 
 ;;; --- Showing a folder -------------------------------------------------------------
@@ -950,6 +955,7 @@ show the pane's sort and history even when the places are selected."
           ["Undo" esploro-undo :keys "C-/"]
           ["Repeat Last Change" esploro-repeat :keys "z" :active (esploro--marked-or-point-p)]
           ("Recipes" :filter esploro--recipes-menu)
+          ["Habits Noticed..." esploro-habits]
           "---"
           ["Copy" esploro-copy :keys "M-w" :active (esploro--marked-or-point-p)]
           ["Cut" esploro-cut :keys "C-w" :active (esploro--marked-or-point-p)]
@@ -1893,6 +1899,108 @@ working there; not Esploro's own views."
     (message "Esploro: closed %d%s" (- (length buffers) (length unsaved))
              (if unsaved (format "; %d not saved, still open" (length unsaved)) "")))
   (when (called-interactively-p 'any) (esploro-project-refresh)))
+
+;;; --- Habits: what you keep doing, offered back ---------------------------------------
+
+;; When several of your plans have moved like files into one folder, the
+;; core says what they have in common; Edit > Habits Noticed shows each,
+;; to keep as a rule for agents, as a recipe, or to find more like them.
+;; Nothing happens on its own; Not This waves one away for good.
+
+(defvar esploro-habits-nudge t
+  "Non-nil: after a move, say so when Esploro notices a new habit.")
+
+(defun esploro--habits-nudge ()
+  "Ask, in the background, whether there's a habit not told of yet; say it."
+  (when esploro-habits-nudge
+    (esploro--call (list "habits" "--new") nil
+                   (lambda (answer)
+                     (when (and (consp answer) (consp (car answer)))
+                       (run-at-time 1.5 nil #'message "Esploro noticed: %s  (Edit > Habits Noticed...)"
+                                    (nth 1 (car answer))))))))
+
+(defvar-keymap esploro-habits-mode-map
+  :doc "Habits Esploro noticed."
+  :parent special-mode-map
+  "g" #'esploro-habits-refresh
+  "TAB" #'forward-button
+  "<backtab>" #'backward-button)
+
+(esploro--install-menu-bar esploro-habits-mode-map)
+
+(define-derived-mode esploro-habits-mode special-mode "Habits"
+  "What you keep doing with files, to keep as a rule, a recipe, or a search."
+  (setq-local tool-bar-map esploro-tool-bar-map)
+  (visual-line-mode 1))
+
+(defun esploro-habits ()
+  "What you keep doing with files, noticed from your plans."
+  (interactive)
+  (let ((buffer (get-buffer-create "*Esploro: habits*")))
+    (with-current-buffer buffer
+      (esploro-habits-mode)
+      (esploro-habits-refresh))
+    (pop-to-buffer buffer)))
+
+(defun esploro--habits-button (label action help)
+  (insert-text-button label 'action (lambda (_) (funcall action)) 'follow-link t
+                      'face 'esploro-button 'help-echo help)
+  (insert "  "))
+
+(defun esploro-habits-refresh ()
+  "Look again at what you keep doing."
+  (interactive)
+  (let ((habits (esploro--call (list "habits") nil nil t))
+        (inhibit-read-only t))
+    (erase-buffer)
+    (insert (propertize "Habits noticed" 'face 'bold) "\n"
+            (propertize "Like files you keep moving into one folder.  Keep one as a rule for agents (your sorting.md), as a recipe (Edit > Recipes), or find more like it; Not This and it's never offered again." 'face 'shadow)
+            "\n\n")
+    (if (not (and (consp habits) (consp (car habits))))
+        (insert "Nothing yet: a habit is three or more like files, moved into one folder by two or more of your plans.\n")
+      (dolist (h habits)
+        (pcase-let ((`(,key ,said ,rule ,recipe ,words ,from) h))
+          (insert said "\n  ")
+          (esploro--habits-button " Keep as Rule... "
+                                  (lambda () (esploro--habit-rule rule))
+                                  "Add it to your rules for where files go, which agents read")
+          (esploro--habits-button " Keep as Recipe... "
+                                  (lambda () (esploro--habit-recipe recipe))
+                                  "Move what's selected there, from Edit > Recipes")
+          (when from
+            (esploro--habits-button " Find More "
+                                    (lambda () (esploro--habit-find words from))
+                                    (format "Search %s for %s" (abbreviate-file-name from) words)))
+          (esploro--habits-button " Not This "
+                                  (lambda () (esploro--call (list "habits" "--dismiss" key) nil nil t)
+                                    (esploro-habits-refresh))
+                                  "Never offer this one again")
+          (insert "\n\n"))))
+    (goto-char (point-min))))
+
+(defun esploro--habit-rule (rule)
+  (let ((text (string-trim (read-string "Rule for agents (make it say what you mean): " rule))))
+    (unless (string-empty-p text)
+      (pcase (esploro--call (list "learn" "--add" text) nil nil t)
+        (`(:added ,_) (message "Esploro: added to ~/.config/esploro/sorting.md"))
+        (answer (esploro--say answer "rule"))))))
+
+(defun esploro--habit-recipe (recipe)
+  (let ((name (read-string "Keep as the recipe: "
+                           (format "Into %s" (file-name-nondirectory (directory-file-name (cadr recipe)))))))
+    (unless (string-empty-p name)
+      (pcase (esploro--call (list "recipe" "add" name (prin1-to-string recipe)) nil nil t)
+        (`(:saved ,n ,description) (message "Esploro: \"%s\": %s, under Edit > Recipes" n description))
+        (answer (esploro--say answer "keep"))))))
+
+(defun esploro--habit-find (words from)
+  "A search of FROM for WORDS, in the Esploro window."
+  (let* ((frame (esploro--frame))
+         (buffer (if frame (window-buffer (esploro--main-window frame)) (esploro--view))))
+    (unless (esploro--view-p buffer) (user-error "No Esploro here (M-x esploro)"))
+    (when frame (select-frame-set-input-focus frame))
+    (esploro--call (list "query" words from) nil
+                   (lambda (answer) (esploro--search-show buffer answer)))))
 
 ;;; --- Plans to review: an agent's proposals ---------------------------------------------
 
