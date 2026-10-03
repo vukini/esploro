@@ -2,7 +2,7 @@
 
 ;; Loaded at Emacs's start (one line in your config), this makes Esploro
 ;; there before you first open it, without loading it: M-x esploro, and,
-;; with embark, X (Esploro's commands) and J (show it in Esploro) on any
+;; with embark, , (Esploro's commands) and J (show it in Esploro) on any
 ;; file name.  Esploro itself (esploro.el, beside this) loads on first use.
 ;;
 ;;   (load "~/.local/opt/esploro/emacs/esploro-loaddefs" t t)
@@ -19,7 +19,10 @@
 
 (with-eval-after-load 'embark
   (when (boundp 'embark-file-map)
-    (keymap-set embark-file-map "X" #'esploro-file-commands)
+    ;; Keys that mean nothing in dired or Esploro either: embark falls back
+    ;; on the buffer's own keys when its map has none, and dired's X runs
+    ;; the file as a shell command.
+    (keymap-set embark-file-map "," #'esploro-file-commands)
     (keymap-set embark-file-map "J" #'esploro-show-file)))
 
 (provide 'esploro-loaddefs)

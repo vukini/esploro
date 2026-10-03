@@ -1543,7 +1543,7 @@ that changes files, as a plan for your review."
 ;;; --- Commands in embark: on any file name in Emacs ----------------------------------
 
 ;; With embark (C-. on a file name: in a minibuffer, in dired, at point in
-;; a buffer), X offers Esploro's commands for the file, and J shows it in
+;; a buffer), , (comma) offers Esploro's commands for the file, and J shows it in
 ;; Esploro.  esploro-loaddefs.el sets this up before Esploro is loaded.
 
 ;;;###autoload
@@ -1576,7 +1576,9 @@ files, as a plan for your review)."
 
 (defun esploro--embark-setup ()
   (when (boundp 'embark-file-map)
-    (keymap-set embark-file-map "X" #'esploro-file-commands)
+    ;; Not X: where embark's map has no key, it falls back on the buffer's,
+    ;; and dired's X runs the file as a shell command.
+    (keymap-set embark-file-map "," #'esploro-file-commands)
     (keymap-set embark-file-map "J" #'esploro-show-file)))
 
 (with-eval-after-load 'embark (esploro--embark-setup))

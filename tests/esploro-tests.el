@@ -691,7 +691,7 @@ without a frame."
   (with-temp-buffer
     (insert-file-contents (expand-file-name "esploro-loaddefs.el" (file-name-directory (locate-library "esploro"))))
     (should (search-forward "esploro-file-commands" nil t))
-    (should (search-forward "embark-file-map \"X\"" nil t)))
+    (should (search-forward "embark-file-map \",\"" nil t)))
   (esploro-tests--world
    (let ((file (esploro-tests--file "e/notes.txt")))
      (cl-letf (((symbol-function 'completing-read)
