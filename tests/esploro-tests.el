@@ -718,4 +718,38 @@ without a frame."
       (should (string-match-p "stopped; 2 steps done stay" said))))
   (should (eq (keymap-lookup esploro-mode-map "C-c C-k") #'esploro-cancel)))
 
+(ert-deftest esploro-archives-like-folders ()
+  (skip-unless (file-executable-p (expand-file-name "../esploro" (file-name-directory (locate-library "esploro")))))
+  (skip-unless (and (executable-find "archivemount") (file-exists-p "/dev/fuse")))
+  (esploro-tests--world
+   (let ((process-environment (cons (concat "XDG_CACHE_HOME=" esploro-tests--top "cache") process-environment))
+         (esploro--archives '()))
+     (esploro-tests--file "z/in/notes.txt" "hello")
+     (let ((default-directory "/")) (call-process "tar" nil nil nil "czf" (esploro-tests--path "z/x.tgz") "-C" (esploro-tests--path "z") "in"))
+     (delete-directory (esploro-tests--path "z/in") t)
+     (esploro-go (esploro-tests--path "z"))
+     (unwind-protect
+         (with-current-buffer (esploro--view)
+           (esploro-open (esploro-tests--path "z/x.tgz"))
+           (let ((point (cdr (assoc (esploro-tests--path "z/x.tgz") esploro--archives))))
+             (should point)
+             (should (equal (esploro--dir) (file-name-as-directory point)))
+             (should (string-match-p "inside .*x.tgz (read-only)" (esploro--header)))
+             (esploro-go (expand-file-name "in" point))
+             (should (string-match-p "x.tgz (read-only): in" (esploro--header)))
+             ;; Copied out like from any folder.
+             (esploro--apply (list (list :copy (expand-file-name "in/notes.txt" point) (esploro-tests--path "z/notes.txt"))) "copied")
+             (should (file-exists-p (esploro-tests--path "z/notes.txt")))
+             ;; Up, up: beside the archive again, and it's closed.
+             (esploro-up) (esploro-up)
+             (should (equal (esploro--dir) (esploro-tests--path "z/")))
+             (should-not (file-directory-p point))
+             ;; Back goes in again.
+             (esploro-back)
+             (should (file-directory-p point))
+             (esploro-go (esploro-tests--path "z"))
+             (should-not (file-directory-p point))))
+       (dolist (a esploro--archives)
+         (let ((default-directory "/")) (call-process "fusermount" nil nil nil "-u" (cdr a))))))))
+
 ;;; esploro-tests.el ends here

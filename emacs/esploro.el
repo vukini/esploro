@@ -102,6 +102,9 @@ Its menu bar and tool bar are on even when they're off elsewhere."
 to it, (BYTES-DONE BYTES-ALL NAME), as the core copies.")
 
 (defvar esploro--running '() "The core's plans being applied now: processes.")
+(defvar esploro--archives '()
+  "Archives opened here, as (ARCHIVE . MOUNTPOINT); kept after closing, so
+Back into one opens it again.")
 
 (defun esploro--progress-filter (report)
   "A filter for the core's standard error: its (:progress ...) lines to REPORT."
@@ -287,8 +290,13 @@ FRAME (the selected one) used last; else its first; nil when it has none."
           (dired-initial-position dir))
       ;; Named after its folder, for the buffer list; unique, as panes may
       ;; show the same one.
-      (rename-buffer (format "Esploro: %s" (abbreviate-file-name (directory-file-name
-                                                                   (if (consp what) (car what) dir))))
+      (rename-buffer (format "Esploro: %s"
+                             (let* ((d (directory-file-name (if (consp what) (car what) dir)))
+                                    (archive (esploro--archive-for-path d)))
+                               (if archive
+                                   (let ((rel (file-relative-name d (cdr (assoc archive esploro--archives)))))
+                                     (concat (file-name-nondirectory archive) (if (equal rel ".") "" (concat "/" rel))))
+                                 (abbreviate-file-name d))))
                      t))
     (current-buffer)))
 
@@ -364,6 +372,10 @@ for Back; point on FILE when given."
          (buffer (cond ((esploro--view-p (current-buffer)) (current-buffer))
                        ((esploro--view-p (window-buffer)) (window-buffer))
                        (t (esploro--new-view)))))
+    ;; Back into an archive closed since: open it again.
+    (unless (file-directory-p dir)
+      (when-let* ((archive (esploro--archive-for-path dir)))
+        (esploro--archive-mount archive)))
     (unless (file-directory-p dir) (user-error "%s isn't a folder" dir))
     (with-current-buffer buffer
       (let ((here (and (derived-mode-p 'dired-mode) (expand-file-name default-directory))))
@@ -376,6 +388,7 @@ for Back; point on FILE when given."
     (esploro--note-window)
     (when (get-buffer esploro-places-buffer-name) (esploro-places-refresh))
     (when (esploro--preview-window) (esploro--preview-update))
+    (esploro--close-archives-left)
     dir))
 
 ;;; --- Moving around ------------------------------------------------------------------
@@ -408,9 +421,11 @@ for Back; point on FILE when given."
   "The folder above, with point on the one just left."
   (interactive)
   (let* ((here (directory-file-name (esploro--dir)))
-         (up (file-name-directory here)))
-    (if (equal (file-name-as-directory here) up) (message "Esploro: this is the top")
-      (esploro-go up here))))
+         (up (file-name-directory here))
+         (archive (car (rassoc here esploro--archives))))
+    (cond (archive (esploro-go (file-name-directory archive) archive))
+          ((equal (file-name-as-directory here) up) (message "Esploro: this is the top"))
+          (t (esploro-go up here)))))
 
 (defun esploro-home ()
   "Your home folder."
@@ -458,8 +473,11 @@ for Back; point on FILE when given."
 that window; text in Emacs; anything else in its usual program."
   (interactive)
   (let ((file (or file (esploro--file-at) (user-error "No file here"))))
-    (if (file-directory-p file)
-        (esploro-go file)
+    (cond
+     ((file-directory-p file) (esploro-go file))
+     ((and (esploro--archive-p file) (executable-find esploro-program))
+      (esploro-open-archive file))
+     (t
       (if (executable-find esploro-program)
           (esploro--call (list "open" file) nil
                          (lambda (answer)
@@ -467,7 +485,7 @@ that window; text in Emacs; anything else in its usual program."
                              (`(:emacs) (esploro--visit file))
                              (`(:window ,class) (message "Esploro: %s has it: went there" class))
                              (`(:error ,text) (message "Esploro: %s" text)))))
-        (call-process "xdg-open" nil 0 nil file)))))
+        (call-process "xdg-open" nil 0 nil file))))))
 
 (defun esploro-open-with (program)
   "Open the selection with PROGRAM, a command you type."
@@ -851,7 +869,8 @@ Emacs's own quit would end all of Emacs."
       (when (buffer-live-p preview) (setq views (cons preview views))))
     ;; Its views (and its preview) go with it, unless another frame shows one.
     (dolist (buffer views)
-      (unless (get-buffer-window buffer t) (kill-buffer buffer)))))
+      (unless (get-buffer-window buffer t) (kill-buffer buffer)))
+    (esploro--close-archives-left)))
 
 ;;; --- Two panes ---------------------------------------------------------------------------------
 
@@ -1156,7 +1175,8 @@ show the pane's sort and history even when the places are selected."
                   (pcase-let ((`(,words ,root ,name) esploro--search))
                     (format "%s%s below %s   F5 looks again" (if name (concat name ": ") "") words
                             (abbreviate-file-name root)))
-                (abbreviate-file-name (esploro--dir)))
+                (or (esploro--archive-heading (esploro--dir))
+                    (abbreviate-file-name (esploro--dir))))
           (format "   sorted by %s%s" esploro--sort (if esploro--reverse ", the other way" ""))
           (if esploro--hidden "   hidden shown" "")
           (if esploro--filter (format "   only \"%s\" (F5: all)" esploro--filter) "")
@@ -1594,6 +1614,79 @@ that changes files, as a plan for your review."
                        (`(:done ,_) (message "Esploro: %s, done" name) (esploro--refresh))
                        (`(:proposed ,n) (message "Esploro: %s proposes %d %s: review it" name n (if (= n 1) "step" "steps")))
                        (_ (esploro--say answer name)))))))
+
+;;; --- Archives, opened like folders (read-only) --------------------------------------
+
+;; Opening a zip, a tarball, a 7z or an ISO mounts it read-only (the core,
+;; with archivemount) and goes in: look, preview, open, copy out, drag out.
+;; Nothing can be changed inside (the core refuses: Extract Here for that).
+;; Up from its top goes back beside it; leaving it, no view showing it,
+;; closes it again.
+
+(defconst esploro--archive-types
+  "\\.\\(zip\\|jar\\|tar\\|tgz\\|tbz2?\\|txz\\|tzst\\|7z\\|rar\\|iso\\|cpio\\|deb\\|rpm\\|tar\\.\\(gz\\|bz2\\|xz\\|zst\\|lz4\\|lzma\\)\\)\\'"
+  "Names of the archives Esploro opens like folders.")
+
+(defun esploro--archive-p (file)
+  (let ((case-fold-search t)) (string-match-p esploro--archive-types file)))
+
+(defun esploro--archive-for-path (path)
+  "The archive whose mount point PATH is in (open now or not)."
+  (let ((path (directory-file-name (expand-file-name path))))
+    (car (seq-find (lambda (a) (or (equal path (cdr a)) (string-prefix-p (file-name-as-directory (cdr a)) path)))
+                   esploro--archives))))
+
+(defun esploro--archive-heading (dir)
+  "DIR's place in an archive, for the header: \"inside ~/x.zip (read-only): a/b\"."
+  (when-let* ((archive (esploro--archive-for-path dir)))
+    (let* ((point (cdr (assoc archive esploro--archives)))
+           (rel (file-relative-name (directory-file-name dir) point)))
+      (format "inside %s (read-only)%s" (abbreviate-file-name archive)
+              (if (equal rel ".") "" (concat ": " rel))))))
+
+(defun esploro--archive-mount (archive)
+  "Open ARCHIVE through the core, waiting: its mount point, or nil (said why)."
+  (pcase (esploro--call (list "archive" "open" archive) nil nil t)
+    (`(:archive ,point ,_)
+     (setf (alist-get archive esploro--archives nil nil #'equal) point)
+     point)
+    (answer (esploro--say answer "open the archive") nil)))
+
+(defun esploro-open-archive (archive)
+  "Go into ARCHIVE, opened read-only like a folder."
+  (interactive (list (or (esploro--file-at) (user-error "No file here"))))
+  (message "Esploro: opening %s..." (file-name-nondirectory archive))
+  (esploro--close-stale-archives)
+  (when-let* ((point (esploro--archive-mount (expand-file-name archive))))
+    (esploro-go point)
+    (message "Esploro: %s, read-only: copy files out, or Extract Here (Commands) to change them"
+             (file-name-nondirectory archive))))
+
+(defun esploro--close-stale-archives ()
+  "Close the archives an earlier Emacs left open (it ended with them open)."
+  (let ((open (esploro--call (list "archive" "list") nil nil t)))
+    (when (and (consp open) (consp (car open)))
+      (dolist (a open)
+        (unless (rassoc (cdr a) esploro--archives)
+          (esploro--call (list "archive" "close" (cdr a)) nil nil t))))))
+
+(defun esploro--close-all-archives ()
+  "Close every archive opened here: Emacs is ending."
+  (dolist (a esploro--archives)
+    (when (file-directory-p (cdr a))
+      (ignore-errors (esploro--call (list "archive" "close" (cdr a)) nil nil t)))))
+
+(add-hook 'kill-emacs-hook #'esploro--close-all-archives)
+
+(defun esploro--close-archives-left ()
+  "Close the archives no view shows any more (in the background)."
+  (let ((dirs (delq nil (mapcar (lambda (b) (with-current-buffer b (and (derived-mode-p 'dired-mode) (esploro--dir b))))
+                                (esploro--views)))))
+    (dolist (a esploro--archives)
+      (let ((point (file-name-as-directory (cdr a))))
+        (when (and (file-directory-p point)
+                   (not (seq-some (lambda (d) (string-prefix-p point (file-name-as-directory d))) dirs)))
+          (esploro--call (list "archive" "close" (cdr a))))))))
 
 ;;; --- Commands in embark: on any file name in Emacs ----------------------------------
 

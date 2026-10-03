@@ -164,6 +164,11 @@ STEP does in it."
              (setf (gethash b overlay) (list :real in-trash)))))
         nil))))
 
+(defvar *step-checks* '()
+  "More checks for each step, from other parts of the core (archives.lisp:
+nothing is written inside an archive opened read-only): functions of a step,
+answering a problem in words, or NIL.")
+
 (defun check-plan (steps &key (allowed *plan-operations*))
   "Everything wrong with the plan STEPS, as sentences (\"step 2: ...\");
 NIL when it can be applied."
@@ -173,6 +178,7 @@ NIL when it can be applied."
         (loop for step in steps
               for n from 1
               for problem = (or (step-shape-problem step allowed)
+                                (some (lambda (check) (funcall check step)) *step-checks*)
                                 (check-step step overlay))
               when problem collect (format nil "step ~d: ~a" n problem)))))
 

@@ -43,6 +43,9 @@ esploro habits [--new]      what you keep doing (several plans moving like files
                             one folder), each with a rule, a recipe and a search for
                             more like them; --new: only those not said before
 esploro habits --dismiss KEY   that one, never offered again
+esploro archive open PATH  PATH (a zip, a tarball, 7z, an ISO) opened read-only, like a
+                            folder (archivemount): where it is
+esploro archive close POINT | list   closing one; the ones open
 esploro selection [--sexp]  the files selected in Esploro (or dired), the view used
                             last: one a line, for a shell or an agent
 esploro propose FILE [WHY]  a plan for you to review in Esploro (an agent's): checked
@@ -450,6 +453,19 @@ changes files, its steps go to Esploro for your review."
              (answer (mapcar #'habit-answer habits))
              0))))
 
+(defun cli-archive (args)
+  "esploro archive open PATH | close MOUNTPOINT | list"
+  (let ((what (first args)) (path (and (second args) (absolute (second args)))))
+    (cond ((and (equal what "open") path)
+           (handler-case (progn (answer (list :archive (open-archive path) path)) 0)
+             (error (e) (answer (list :error (princ-to-string e))) 1)))
+          ((and (equal what "close") path)
+           (if (close-archive path)
+               (progn (answer (list :closed path)) 0)
+               (progn (answer (list :busy path)) 1)))
+          ((equal what "list") (answer (open-archives)) 0)
+          (t (answer (list :error "esploro archive open PATH | close MOUNTPOINT | list")) 2))))
+
 (defun cli-dbus ()
   "Make the running Emacs answer org.freedesktop.FileManager1 (the browsers'
 \"Show in folder\"): what the session bus runs when it's first asked."
@@ -494,6 +510,7 @@ changes files, its steps go to Esploro for your review."
           ((equal command "selection") (cli-selection (rest args)))
           ((equal command "learn") (cli-learn (rest args)))
           ((equal command "habits") (cli-habits (rest args)))
+          ((equal command "archive") (cli-archive (rest args)))
           ((equal command "project") (cli-project (rest args)))
           ((equal command "focus")
            (let ((id (and (second args) (parse-integer (second args) :junk-allowed t))))

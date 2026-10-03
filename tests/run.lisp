@@ -335,6 +335,10 @@
 
 ;;; --- The command: what the window reads --------------------------------------------
 
+(defun check-plan-of (text)
+  "What the core finds wrong with the plan TEXT: its problems, or NIL."
+  (esploro::check-plan (esploro::read-plan text)))
+
 (defun run-cli (args &optional (input ""))
   "ARGS through the command, INPUT on its standard input: (CODE . what it printed)."
   (let* ((code nil)
@@ -764,6 +768,34 @@
     (sb-posix:setenv "PATH" path 1)))
 (check "a copy's progress: the bytes in a folder, all of it"
        (= (esploro::tree-size (p "long")) (+ 9 (esploro::tree-size (p "long/bin")))))
+
+;;; --- Archives, opened read-only like folders ------------------------------------------------
+
+(when (and (esploro::archive-program) (probe-file "/dev/fuse"))
+  (esploro::ensure-folder (p "arc/in/sub"))
+  (make-file (p "arc/in/one.txt") "one")
+  (make-file (p "arc/in/sub/two.txt") "two")
+  (sb-ext:run-program "tar" (list "czf" (p "arc/x.tgz") "-C" (p "arc") "in") :search t)
+  (let* ((answer (run-cli (list "archive" "open" (p "arc/x.tgz"))))
+         (point (third answer)))
+    (unwind-protect
+         (progn
+           (check "an archive opens read-only, like a folder"
+                  (and (eq (second answer) :archive) (path-exists-p (esploro::join-path point "in" "sub" "two.txt"))))
+           (check "opened again, the same place" (equal (third (run-cli (list "archive" "open" (p "arc/x.tgz")))) point))
+           (check "nothing is written inside it"
+                  (search "open read-only" (first (check-plan-of (format nil "(:copy ~s ~s)" (p "arc/in/one.txt")
+                                                                         (esploro::join-path point "in" "new.txt"))))))
+           (check "nor taken out of it"
+                  (search "copy files out" (first (check-plan-of (format nil "(:trash ~s)" (esploro::join-path point "in" "one.txt"))))))
+           (check "but copied out, yes"
+                  (and (equal (run-cli (list "apply") (format nil "(:copy ~s ~s)" (esploro::join-path point "in" "one.txt") (p "arc/out.txt")))
+                              '(0 :done 1))
+                       (path-exists-p (p "arc/out.txt")))))
+      (check "and closed, its place goes"
+             (and (eq (second (run-cli (list "archive" "close" point))) :closed)
+                  (not (path-exists-p point))
+                  (null (esploro::open-archives)))))))
 
 ;;; --- The end -------------------------------------------------------------------------
 

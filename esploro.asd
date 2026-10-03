@@ -23,6 +23,7 @@
                (:file "searches")
                (:file "learn")
                (:file "habits")
+               (:file "archives")
                (:file "preview")))
 
 (defsystem "esploro"

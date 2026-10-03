@@ -43,6 +43,7 @@ anything happens, done in the background, and kept in a journal.
 * Windows and workspaces:: One Esploro per workspace, or more.
 * Looking around::         Sorting, hidden files, a filter, finding below.
 * Searches::               Folders that are questions, kept by name.
+* Archives::               A zip or a tarball, opened like a folder.
 * The Trash::              Looking in it, restoring, emptying.
 * Where files are open::   ``open in Emacs on 2'' beside a file.
 * Closing a project::      What's open in it, to save and close.
@@ -461,6 +462,24 @@ and always up to date.  They're kept in
 written as an s-expression:
 @code{(:and (:kind :pdf) (:or (:name "tax") (:name "receipt")))}.
 
+@node Archives
+@chapter Archives
+
+Open a zip, a tarball (@file{.tar.gz}, @file{.tgz}, @file{.tar.xz},
+@file{.tar.zst}@dots{}), a 7z, a rar or an ISO the way you open a
+folder, and you're inside it: the line at the top says ``inside
+~/Downloads/pack.zip (read-only)''.  Look around, preview, open files,
+copy them out or drag them to another program, as in any folder.
+
+Nothing can be changed inside: copying in, renaming, the Trash are
+refused, with what to do instead.  To change what's in it, Commands
+@result{} Extract Here, and work on the folder that makes.
+
+Up from its top goes back beside the archive.  Leaving it closes it;
+Back goes in again.  It's opened with @command{archivemount}, which
+Esploro's feature in Vikix installs; without it, Extract Here still
+works.
+
 @node The Trash
 @chapter The Trash
 
@@ -631,6 +650,11 @@ What you keep doing, each with a rule, a recipe and a search;
 @option{--new}, only those not told of before.
 @item esploro habits --dismiss @var{key}
 That one, never offered again.
+@item esploro archive open @var{path}
+@itemx esploro archive close @var{mountpoint}
+@itemx esploro archive list
+An archive opened read-only like a folder (@pxref{Archives}), closed,
+and the ones open.
 @item esploro selection [--sexp]
 The files selected in Esploro, or dired, used last, one a line;
 @option{--sexp} gives @code{(:selection @var{folder} (@var{file}@dots{}))}.

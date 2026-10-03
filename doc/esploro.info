@@ -38,6 +38,7 @@ and kept in a journal.
 * Windows and workspaces:: One Esploro per workspace, or more.
 * Looking around::         Sorting, hidden files, a filter, finding below.
 * Searches::               Folders that are questions, kept by name.
+* Archives::               A zip or a tarball, opened like a folder.
 * The Trash::              Looking in it, restoring, emptying.
 * Where files are open::   "open in Emacs on 2" beside a file.
 * Closing a project::      What's open in it, to save and close.
@@ -453,7 +454,7 @@ Going (‘M-Left’, ‘M-Right’, ‘M-Up’, ‘C-l’)
      completion.
 
 
-File: esploro.info,  Node: Searches,  Next: The Trash,  Prev: Looking around,  Up: Top
+File: esploro.info,  Node: Searches,  Next: Archives,  Prev: Looking around,  Up: Top
 
 11 Searches
 ***********
@@ -491,9 +492,31 @@ search can also be written as an s-expression: ‘(:and (:kind
 :pdf) (:or (:name "tax") (:name "receipt")))’.
 
 
-File: esploro.info,  Node: The Trash,  Next: Where files are open,  Prev: Searches,  Up: Top
+File: esploro.info,  Node: Archives,  Next: The Trash,  Prev: Searches,  Up: Top
 
-12 The Trash
+12 Archives
+***********
+
+Open a zip, a tarball (‘.tar.gz’, ‘.tgz’, ‘.tar.xz’,
+‘.tar.zst’...), a 7z, a rar or an ISO the way you open a folder,
+and you're inside it: the line at the top says "inside
+~/Downloads/pack.zip (read-only)".  Look around, preview, open
+files, copy them out or drag them to another program, as in any
+folder.
+
+   Nothing can be changed inside: copying in, renaming, the
+Trash are refused, with what to do instead.  To change what's in
+it, Commands ⇒ Extract Here, and work on the folder that makes.
+
+   Up from its top goes back beside the archive.  Leaving it
+closes it; Back goes in again.  It's opened with ‘archivemount’,
+which Esploro's feature in Vikix installs; without it, Extract
+Here still works.
+
+
+File: esploro.info,  Node: The Trash,  Next: Where files are open,  Prev: Archives,  Up: Top
+
+13 The Trash
 ************
 
 Esploro uses the Trash other programs use (the freedesktop one,
@@ -506,7 +529,7 @@ after asking: that one can't be undone.
 
 File: esploro.info,  Node: Where files are open,  Next: Closing a project,  Prev: The Trash,  Up: Top
 
-13 Where files are open
+14 Where files are open
 ***********************
 
 Beside a file that a window has open, Esploro says which: "open
@@ -518,7 +541,7 @@ such a file goes to its window instead of opening it again.
 
 File: esploro.info,  Node: Closing a project,  Next: Plans from agents,  Prev: Where files are open,  Up: Top
 
-14 Closing a project
+15 Closing a project
 ********************
 
 Done with a project for now?  File ⇒ Close Project..., in any
@@ -539,7 +562,7 @@ Other windows are for you to close.  ‘g’ looks again.
 
 File: esploro.info,  Node: Plans from agents,  Next: Keys and mouse,  Prev: Closing a project,  Up: Top
 
-15 Plans from agents
+16 Plans from agents
 ********************
 
 An agent (Claude Code, through Vikix's ‘vikix mcp’) never moves,
@@ -588,7 +611,7 @@ terminal.
 
 File: esploro.info,  Node: Keys and mouse,  Next: The command line,  Prev: Plans from agents,  Up: Top
 
-16 Keys and mouse
+17 Keys and mouse
 *****************
 
 Mouse
@@ -632,7 +655,7 @@ m, u, U                   mark, unmark, unmark all (dired's)
 
 File: esploro.info,  Node: The command line,  Next: Writing commands,  Prev: Keys and mouse,  Up: Top
 
-17 The command line
+18 The command line
 *******************
 
 ‘esploro [FOLDER]’
@@ -682,6 +705,11 @@ File: esploro.info,  Node: The command line,  Next: Writing commands,  Prev: Key
      search; ‘--new’, only those not told of before.
 ‘esploro habits --dismiss KEY’
      That one, never offered again.
+‘esploro archive open PATH’
+‘esploro archive close MOUNTPOINT’
+‘esploro archive list’
+     An archive opened read-only like a folder (*note
+     Archives::), closed, and the ones open.
 ‘esploro selection [--sexp]’
      The files selected in Esploro, or dired, used last, one a
      line; ‘--sexp’ gives ‘(:selection FOLDER (FILE...))’.
@@ -723,7 +751,7 @@ File: esploro.info,  Node: The command line,  Next: Writing commands,  Prev: Key
 
 File: esploro.info,  Node: Writing commands,  Prev: The command line,  Up: Top
 
-18 Writing commands
+19 Writing commands
 *******************
 
 Commands are on Esploro's menus (File ⇒ Commands, and the
@@ -756,24 +784,25 @@ the next step.
 
 Tag Table:
 Node: Top276
-Node: Opening Esploro2038
-Node: The window3854
-Node: Selecting and opening5726
-Node: Changing files6779
-Node: Recipes8798
-Node: Drag and drop12928
-Node: The preview13654
-Node: Two panes14768
-Node: Windows and workspaces15341
-Node: Looking around16204
-Node: Searches17072
-Node: The Trash18523
-Node: Where files are open18998
-Node: Closing a project19469
-Node: Plans from agents20338
-Node: Keys and mouse22602
-Node: The command line24393
-Node: Writing commands27973
+Node: Opening Esploro2107
+Node: The window3923
+Node: Selecting and opening5795
+Node: Changing files6848
+Node: Recipes8867
+Node: Drag and drop12997
+Node: The preview13723
+Node: Two panes14837
+Node: Windows and workspaces15410
+Node: Looking around16273
+Node: Searches17141
+Node: Archives18591
+Node: The Trash19429
+Node: Where files are open19904
+Node: Closing a project20375
+Node: Plans from agents21244
+Node: Keys and mouse23508
+Node: The command line25299
+Node: Writing commands29076
 
 End Tag Table
 
