@@ -1145,7 +1145,13 @@ Esploro's that has turned up since is hidden too."
     (with-current-buffer buffer
       (when (or (bound-and-true-p esploro-mode)
                 (memq major-mode '(esploro-places-mode esploro-project-mode esploro-habits-mode esploro-review-mode)))
-        (setq esploro--menus-only t)))))
+        (setq esploro--menus-only t))
+      ;; Views open from before: what's done after a folder is shown, as
+      ;; esploro-mode now sets it (new things, like git status, included).
+      (when (bound-and-true-p esploro-mode)
+        (dolist (f '(esploro--whole-row-drag esploro--annotate esploro--thumbnails-show
+                     esploro--grid-after-readin esploro--git-show))
+          (add-hook 'dired-after-readin-hook f nil t))))))
 
 (defun esploro--install-menu-bar (map)
   "Esploro's menus in MAP, in order, and Emacs's and dired's hidden."
