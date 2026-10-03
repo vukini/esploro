@@ -1540,6 +1540,47 @@ that changes files, as a plan for your review."
                        (`(:proposed ,n) (message "Esploro: %s proposes %d %s: review it" name n (if (= n 1) "step" "steps")))
                        (_ (esploro--say answer name)))))))
 
+;;; --- Commands in embark: on any file name in Emacs ----------------------------------
+
+;; With embark (C-. on a file name: in a minibuffer, in dired, at point in
+;; a buffer), X offers Esploro's commands for the file, and J shows it in
+;; Esploro.  esploro-loaddefs.el sets this up before Esploro is loaded.
+
+;;;###autoload
+(defun esploro-file-commands (file)
+  "Esploro's commands for FILE: pick one and it runs (one that changes
+files, as a plan for your review)."
+  (interactive (list (read-file-name "Esploro's commands for: " nil nil t)))
+  (let* ((file (directory-file-name (expand-file-name file)))
+         (answer (esploro--call (list "commands" file) nil nil t))
+         (commands (and (consp answer) (not (keywordp (car answer))) answer)))
+    (unless commands (user-error "Esploro has no commands for %s" (abbreviate-file-name file)))
+    (let* ((choices (mapcar (lambda (c) (cons (concat (nth 1 c) (if (nth 3 c) "..." "")) c)) commands))
+           (pick (completing-read (format "%s: " (file-name-nondirectory file))
+                                  (lambda (string pred action)
+                                    (if (eq action 'metadata)
+                                        `(metadata (annotation-function
+                                                    . ,(lambda (label) (let ((doc (nth 2 (cdr (assoc label choices)))))
+                                                                         (and doc (not (string-empty-p doc))
+                                                                              (concat "  " (propertize doc 'face 'completions-annotations)))))))
+                                      (complete-with-action action choices string pred)))
+                                  nil t)))
+      (esploro-run-command (car (cdr (assoc pick choices))) (list file)))))
+
+;;;###autoload
+(defun esploro-show-file (file)
+  "FILE in Esploro, selected in its folder."
+  (interactive (list (read-file-name "Show in Esploro: " nil nil t)))
+  (let ((file (directory-file-name (expand-file-name file))))
+    (esploro (file-name-directory file) nil file)))
+
+(defun esploro--embark-setup ()
+  (when (boundp 'embark-file-map)
+    (keymap-set embark-file-map "X" #'esploro-file-commands)
+    (keymap-set embark-file-map "J" #'esploro-show-file)))
+
+(with-eval-after-load 'embark (esploro--embark-setup))
+
 ;;; --- Recipes: a change done again --------------------------------------------------------
 
 ;; The last change (moved into a folder, copied into one, put in the Trash),

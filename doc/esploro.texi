@@ -662,6 +662,21 @@ The Trash.
 @node Writing commands
 @chapter Writing commands
 
+Commands are on Esploro's menus (File @result{} Commands, and the
+right-click menu), and anywhere in Emacs on a file name: with embark,
+@kbd{C-.} then @kbd{X} offers Esploro's commands for the file (in a
+minibuffer, dired, or at point), and @kbd{J} shows it in Esploro.
+@kbd{M-x esploro-file-commands} asks for a file.  For that before Esploro
+is first opened, your Emacs loads its little loader at the start:
+
+@lisp
+(load "~/.local/opt/esploro/emacs/esploro-loaddefs" t t)
+@end lisp
+
+On Vikix, @kbd{Super+Alt+x} offers them for the file behind any window,
+in rofi.
+
+
 The core defines commands once, for the kinds of file they're for:
 
 @lisp

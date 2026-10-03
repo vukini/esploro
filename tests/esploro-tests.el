@@ -684,4 +684,23 @@ without a frame."
          (should (string-match-p "Nothing yet" (buffer-string)))
          (kill-buffer))))))
 
+(ert-deftest esploro-commands-from-embark ()
+  (skip-unless (file-executable-p (expand-file-name "../esploro" (file-name-directory (locate-library "esploro")))))
+  (skip-unless (executable-find "zip"))
+  ;; The loader names the commands for embark before Esploro is loaded.
+  (with-temp-buffer
+    (insert-file-contents (expand-file-name "esploro-loaddefs.el" (file-name-directory (locate-library "esploro"))))
+    (should (search-forward "esploro-file-commands" nil t))
+    (should (search-forward "embark-file-map \"X\"" nil t)))
+  (esploro-tests--world
+   (let ((file (esploro-tests--file "e/notes.txt")))
+     (cl-letf (((symbol-function 'completing-read)
+                (lambda (_prompt table &rest _)
+                  (let ((labels (all-completions "" table)))
+                    (should (member "Copy path" labels))
+                    (should (member "Duplicate..." labels))  ; outside Esploro, everything
+                    "Compress"))))
+       (esploro-file-commands file))
+     (should (file-exists-p (esploro-tests--path "e/notes.txt.zip"))))))
+
 ;;; esploro-tests.el ends here

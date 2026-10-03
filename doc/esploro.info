@@ -715,7 +715,20 @@ File: esploro.info,  Node: Writing commands,  Prev: The command line,  Up: Top
 18 Writing commands
 *******************
 
-The core defines commands once, for the kinds of file they're
+Commands are on Esploro's menus (File ⇒ Commands, and the
+right-click menu), and anywhere in Emacs on a file name: with
+embark, ‘C-.’ then ‘X’ offers Esploro's commands for the file
+(in a minibuffer, dired, or at point), and ‘J’ shows it in
+Esploro.  ‘M-x esploro-file-commands’ asks for a file.  For that
+before Esploro is first opened, your Emacs loads its little
+loader at the start:
+
+     (load "~/.local/opt/esploro/emacs/esploro-loaddefs" t t)
+
+   On Vikix, ‘Super+Alt+x’ offers them for the file behind any
+window, in rofi.
+
+   The core defines commands once, for the kinds of file they're
 for:
 
      (esploro:define-file-command shrink ((path :image) :changes t)
