@@ -111,14 +111,14 @@ NIL: the one terminal-command finds.")
 
 (defun terminal-command ()
   "The terminal, found when it's wanted (a value read at build time would
-stay the builder's): *terminal*, ESPLORO_TERMINAL, Vikix's (StumpWM's
-*vikix-terminal*, what Super+Enter opens), TERMINAL, else alacritty."
+stay the builder's): *terminal*, ESPLORO_TERMINAL, TERMINAL, Vikix's
+(StumpWM's *vikix-terminal*, what Super+Enter opens), else alacritty."
   (flet ((given (value) (and (stringp value) (plusp (length (string-trim " " value))) value)))
     (or (given *terminal*)
         (given (sb-posix:getenv "ESPLORO_TERMINAL"))
+        (given (sb-posix:getenv "TERMINAL"))
         (given (handler-case (stumpwm-eval "(and (boundp '*vikix-terminal*) *vikix-terminal*)" :timeout 2)
                  (error () nil)))
-        (given (sb-posix:getenv "TERMINAL"))
         "alacritty")))
 
 (defun launch-terminal (folder &rest command)
