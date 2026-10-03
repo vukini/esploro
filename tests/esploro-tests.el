@@ -873,4 +873,37 @@ without a frame."
      (esploro-remove-bookmark)
      (should-not (esploro--bookmarked-p dir)))))
 
+(ert-deftest esploro-git-status ()
+  (skip-unless (executable-find "git"))
+  (esploro-tests--world
+   (let* ((repo (esploro-tests--path "repo"))
+          (default-directory "/")
+          (git (lambda (&rest args) (apply #'call-process "git" nil nil nil "-C" repo args))))
+     (esploro-tests--file "repo/kept.txt" "one")
+     (esploro-tests--file "repo/src/code.el" "one")
+     (funcall git "init" "-q" "-b" "main")
+     (funcall git "-c" "user.email=t@t" "-c" "user.name=t" "add" ".")
+     (funcall git "-c" "user.email=t@t" "-c" "user.name=t" "commit" "-qm" "first")
+     (esploro-tests--file "repo/kept.txt" "two")       ; modified
+     (esploro-tests--file "repo/fresh.md" "new")       ; new
+     (esploro-tests--file "repo/src/code.el" "two")    ; a change inside src
+     (esploro-go repo)
+     (with-current-buffer (esploro--view)
+       ;; git is asked in the background: wait for it.
+       (let ((n 0)) (while (and (null esploro--git) (< n 50)) (accept-process-output nil 0.1) (setq n (1+ n))))
+       (should esploro--git)
+       (should (string-match-p "git: main" (esploro--header)))
+       (let ((said (mapcar (lambda (o) (substring-no-properties (overlay-get o 'after-string)))
+                           (seq-filter (lambda (o) (overlay-get o 'esploro-git)) (overlays-in (point-min) (point-max))))))
+         (should (member "  modified" said))
+         (should (member "  new" said))
+         (should (member "  changes inside" said)))))))
+
+(ert-deftest esploro-git-parse ()
+  (should (equal (esploro--git-parse "## main...origin/main [ahead 2]\0 M a.txt\0?? b.md\0A  c.el\0R  new.txt\0old.txt\0UU d.org\0")
+                 '("main...origin/main [ahead 2]" ("d.org" . conflict) ("new.txt" . staged) ("c.el" . added)
+                   ("b.md" . new) ("a.txt" . modified))))
+  (should (equal (esploro--git-branch-words "main...origin/main [ahead 2, behind 1]") "main, 2 to push, 1 to pull"))
+  (should (equal (esploro--git-branch-words "No commits yet on main") "main")))
+
 ;;; esploro-tests.el ends here

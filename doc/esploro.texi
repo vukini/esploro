@@ -433,6 +433,15 @@ in the background (a big folder fills in as it goes) and kept, so
 they're there at once the next time.  Their size is
 @code{esploro-thumbnail-height} (48 pixels).
 
+@item Git
+In a folder inside a git repository, each file git has something to say
+about says it after its name: @emph{modified}, @emph{new} (git doesn't
+follow it yet), @emph{staged} or @emph{added} (for the next commit),
+@emph{conflict}; a folder with changes inside says so.  The line at the
+top has the branch, and what's waiting: ``git: main, 2 to push''.  Git
+is asked in the background each time the folder is shown;
+@code{esploro-git-status} set to @code{nil} turns it off.
+
 @item Grid (@kbd{G})
 The folder as tiles, side by side: a picture of each picture, PDF and
 video, a folder or a page (with its type) for the rest, the name under

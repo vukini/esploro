@@ -464,6 +464,16 @@ Thumbnails (‘T’)
      goes) and kept, so they're there at once the next time.
      Their size is ‘esploro-thumbnail-height’ (48 pixels).
 
+Git
+     In a folder inside a git repository, each file git has
+     something to say about says it after its name: _modified_,
+     _new_ (git doesn't follow it yet), _staged_ or _added_ (for
+     the next commit), _conflict_; a folder with changes inside
+     says so.  The line at the top has the branch, and what's
+     waiting: "git: main, 2 to push".  Git is asked in the
+     background each time the folder is shown;
+     ‘esploro-git-status’ set to ‘nil’ turns it off.
+
 Grid (‘G’)
      The folder as tiles, side by side: a picture of each
      picture, PDF and video, a folder or a page (with its type)
@@ -848,15 +858,15 @@ Node: The preview13892
 Node: Two panes15006
 Node: Windows and workspaces15579
 Node: Looking around17027
-Node: Searches18786
-Node: Archives20558
-Node: The Trash21396
-Node: Where files are open21871
-Node: Closing a project22342
-Node: Plans from agents23211
-Node: Keys and mouse25475
-Node: The command line27473
-Node: Writing commands31555
+Node: Searches19273
+Node: Archives21045
+Node: The Trash21883
+Node: Where files are open22358
+Node: Closing a project22829
+Node: Plans from agents23698
+Node: Keys and mouse25962
+Node: The command line27960
+Node: Writing commands32042
 
 End Tag Table
 

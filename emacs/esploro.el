@@ -81,6 +81,8 @@ Its menu bar and tool bar are on even when they're off elsewhere."
 (defvar-local esploro--filter nil "Only names holding this text are shown, until refreshed.")
 (defvar-local esploro--search nil "In a view of a search's files: (WORDS FOLDER NAME).")
 (defvar-local esploro--thumbnails nil "Non-nil: pictures, PDFs and videos show a thumbnail in the list.")
+(defvar-local esploro--git nil
+  "What git says of this folder's repository: (ROOT BRANCH-LINE . STATES), or nil.")
 (dolist (v '(esploro--view esploro--back esploro--forward esploro--sort esploro--reverse esploro--hidden
              esploro--search esploro--thumbnails))
   (put v 'permanent-local t))
@@ -1241,6 +1243,7 @@ Esploro's that has turned up since is hidden too."
           (format "   sorted by %s%s" esploro--sort (if esploro--reverse ", the other way" ""))
           (if esploro--hidden "   hidden shown" "")
           (if esploro--filter (format "   only \"%s\" (F5: all)" esploro--filter) "")
+          (if (cadr esploro--git) (format "   git: %s" (esploro--git-branch-words (cadr esploro--git))) "")
           (if (esploro--in-trash-p) "   the Trash: Restore and Empty on the menus" "")))
 
 (define-minor-mode esploro-mode
@@ -1262,7 +1265,8 @@ through the core, journaled so they can be undone."
     (add-hook 'dired-after-readin-hook #'esploro--whole-row-drag nil t)
     (add-hook 'dired-after-readin-hook #'esploro--annotate nil t)
     (add-hook 'dired-after-readin-hook #'esploro--thumbnails-show nil t)
-    (add-hook 'dired-after-readin-hook #'esploro--grid-after-readin nil t)))
+    (add-hook 'dired-after-readin-hook #'esploro--grid-after-readin nil t)
+    (add-hook 'dired-after-readin-hook #'esploro--git-show nil t)))
 
 ;;; --- Places, down the side --------------------------------------------------------------
 
@@ -1726,6 +1730,114 @@ that changes files, as a plan for your review."
                        (`(:done ,_) (message "Esploro: %s, done" name) (esploro--refresh))
                        (`(:proposed ,n) (message "Esploro: %s proposes %d %s: review it" name n (if (= n 1) "step" "steps")))
                        (_ (esploro--say answer name)))))))
+
+;;; --- Git: what's changed, in a repository -----------------------------------------------
+
+;; In a folder inside a git repository, each file git has something to say
+;; about says it after its name (modified, new, staged, conflict), a folder
+;; with changes inside says so, and the top line has the branch and what's
+;; waiting to be pushed or pulled.  git is asked in the background, after
+;; each showing of the folder.
+
+(defcustom esploro-git-status t
+  "Non-nil: in a git repository, what git says of each file, after its name."
+  :type 'boolean :group 'esploro)
+
+(defface esploro-git-modified '((t :inherit warning :weight normal))
+  "A file changed since the last commit.")
+(defface esploro-git-new '((t :inherit success :weight normal))
+  "A file git doesn't follow yet.")
+(defface esploro-git-staged '((t :inherit font-lock-keyword-face))
+  "A change staged for the next commit.")
+(defface esploro-git-conflict '((t :inherit error))
+  "A file a merge left in conflict.")
+
+(defun esploro--git-state (xy)
+  "Git's two letters (staged, then not) for a file, as Esploro says it."
+  (let ((x (aref xy 0)) (y (aref xy 1)))
+    (cond ((equal xy "??") 'new)
+          ((or (eq x ?U) (eq y ?U) (member xy '("AA" "DD"))) 'conflict)
+          ((memq y '(?M ?D ?T)) 'modified)
+          ((eq x ?A) 'added)
+          ((memq x '(?M ?R ?C ?D ?T)) 'staged))))
+
+(defun esploro--git-parse (text)
+  "git status --porcelain=v1 -b -z's TEXT: (BRANCH-LINE . ((PATH . STATE) ...))."
+  (let ((entries (split-string text "\0" t)) (branch nil) (states '()))
+    (while entries
+      (let ((e (pop entries)))
+        (cond ((string-prefix-p "## " e) (setq branch (substring e 3)))
+              ((> (length e) 3)
+               (let ((state (esploro--git-state (substring e 0 2))))
+                 (when state (push (cons (substring e 3) state) states))
+                 ;; A rename or copy: the old path follows; it's not a file here.
+                 (when (memq (aref e 0) '(?R ?C)) (pop entries)))))))
+    (cons branch states)))
+
+(defun esploro--git-branch-words (line)
+  "\"main...origin/main [ahead 2, behind 1]\" as \"main, 2 to push, 1 to pull\"."
+  (when line
+    (let* ((line (replace-regexp-in-string "\\`No commits yet on " "" line))
+           (name (car (split-string line "\\.\\.\\.\\| ")))
+           (ahead (and (string-match "ahead \\([0-9]+\\)" line) (match-string 1 line)))
+           (behind (and (string-match "behind \\([0-9]+\\)" line) (match-string 1 line))))
+      (concat name
+              (if ahead (format ", %s to push" ahead) "")
+              (if behind (format ", %s to pull" behind) "")))))
+
+(defun esploro--git-show ()
+  "Ask git, in the background, about this folder's repository, then mark the files."
+  (remove-overlays (point-min) (point-max) 'esploro-git t)
+  (setq esploro--git nil)
+  (let* ((dir (and esploro-git-status (not (consp dired-directory)) (executable-find "git")
+                   (expand-file-name default-directory)))
+         (root (and dir (not (esploro--archive-for-path dir)) (locate-dominating-file dir ".git"))))
+    (when root
+      (let ((buffer (current-buffer))
+            (out (generate-new-buffer " *esploro-git*"))
+            (default-directory root))
+        (make-process
+         :name "esploro-git" :buffer out :noquery t :connection-type 'pipe
+         :command (list "git" "-C" (expand-file-name root) "status" "--porcelain=v1" "-b" "-z" "--untracked-files=normal")
+         :stderr (make-pipe-process :name "esploro-git-err" :noquery t :filter #'ignore)
+         :sentinel (lambda (process _event)
+                     (unless (process-live-p process)
+                       (let ((text (with-current-buffer out (buffer-string))))
+                         (kill-buffer out)
+                         (when (and (buffer-live-p buffer) (zerop (process-exit-status process)))
+                           (with-current-buffer buffer
+                             (when (equal (expand-file-name default-directory) dir)
+                               (setq esploro--git (cons (expand-file-name root) (esploro--git-parse text)))
+                               (esploro--git-mark)
+                               (force-mode-line-update))))))))))))
+
+(defun esploro--git-mark ()
+  "Each file's state after its name; a folder with changes inside says so."
+  (remove-overlays (point-min) (point-max) 'esploro-git t)
+  (pcase-let ((`(,root ,_branch . ,states) esploro--git))
+    (when root
+      (save-excursion
+        (goto-char (point-min))
+        (while (not (eobp))
+          (let ((file (esploro--grid-file)))
+            (when (and file (dired-move-to-end-of-filename t))
+              (let* ((rel (file-relative-name file root))
+                     (dirp (file-directory-p file))
+                     (state (cdr (assoc (if dirp (file-name-as-directory rel) rel) states)))
+                     (inside (and dirp (not state)
+                                  (seq-some (lambda (s) (string-prefix-p (file-name-as-directory rel) (car s))) states))))
+                (when (or state inside)
+                  (let ((o (make-overlay (point) (point))))
+                    (overlay-put o 'esploro-git t)
+                    (overlay-put o 'after-string
+                                 (if inside
+                                     (propertize "  changes inside" 'face 'esploro-git-modified)
+                                   (propertize (format "  %s" state)
+                                               'face (pcase state
+                                                       ('new 'esploro-git-new) ('conflict 'esploro-git-conflict)
+                                                       ((or 'staged 'added) 'esploro-git-staged)
+                                                       (_ 'esploro-git-modified))))))))))
+          (forward-line 1))))))
 
 ;;; --- Thumbnails in the list ------------------------------------------------------------
 

@@ -21,10 +21,6 @@ list (DESIGN.md says what was done).
 
 ## Fitting how Vid works
 
-6. **Git status in ~/src.** In a repository, files marked as changed,
-   new or ignored in the list (and the grid), and the branch with
-   ahead/behind in the top line. *Medium.*
-
 7. **Dropbox status.** A synced, syncing or not-synced mark beside files
    in the Dropbox folders (`dropbox filestatus`), and which folders are
    kept on this machine (selective sync). *Small to medium.*
