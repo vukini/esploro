@@ -92,8 +92,10 @@ words to say, or NIL."
              (format nil "the server refused your key~@[ for ~a~]~:[~;: name the user, as user@~a~]"
                      user (not (find #\@ host)) host)))
           ((search "Could not resolve hostname" out) "there's no server of that name")
-          ((search "Connection refused" out)
-           "the server refuses connections (it may have blocked this address after failed tries: wait a while)")
+          ((or (search "Connection refused" out) (search "Connection reset" out) (search "Connection closed" out))
+           ;; A server that blocks an address after failed logins (fail2ban,
+           ;; sshguard) refuses it, or cuts it off before ssh can say anything.
+           "the server refuses connections from here (it may have blocked this address after failed tries: wait a while)")
           ((search "timed out" out) "the server doesn't answer")
           ((search "Host key verification failed" out) "its key isn't the one known for it (~/.ssh/known_hosts)"))))
 
