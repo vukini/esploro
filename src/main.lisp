@@ -46,6 +46,8 @@ esploro habits --dismiss KEY   that one, never offered again
 esploro archive open PATH  PATH (a zip, a tarball, 7z, an ISO) opened read-only, like a
                             folder (archivemount): where it is
 esploro archive close POINT | list   closing one; the ones open
+esploro recent [--lines]    the files opened lately, newest first: those opened through
+                            Esploro, and GTK programs' (recently-used.xbel)
 esploro workspaces          StumpWM's workspaces, each with the project its windows are about
 esploro open-on N PATH...   go to workspace N and open PATH there (a folder in Esploro,
                             text in an Emacs frame there, the rest in its program)
@@ -153,7 +155,7 @@ esploro --help")
 has, are Emacs's to show (:emacs): the window is in Emacs, and knows which
 of its frames to use."
   (let* ((path (absolute path))
-         (places (file-where path (scan-where)))
+         (places (progn (note-opened path) (file-where path (scan-where))))
          (elsewhere (find-if-not (lambda (p) (member (cdr p) '(:buffer :modified-buffer))) places)))
     (cond (elsewhere
            (focus-window (window-id (car elsewhere)))
@@ -499,6 +501,7 @@ its usual program."
            (let* ((windows (stumpwm-windows))
                   (frame (emacs-frame-on (princ-to-string n) windows)))
              (dolist (path paths)
+               (unless (directory-p path) (note-opened path))
                (cond ((directory-p path) (cli-show path))
                      ((kind-is (path-kind path) :text)
                       (if (and frame (emacs-ask (format nil "(let ((f (seq-find (lambda (f) (equal (frame-parameter f 'outer-window-id) ~s)) (frame-list))))
@@ -509,6 +512,14 @@ its usual program."
                      (t (open-default path)))))
            (answer (list :opened n (length paths)))
            0))))
+
+(defun cli-recent (args)
+  "esploro recent [--lines]: the files opened lately, newest first."
+  (let ((files (recent-files)))
+    (if (equal (first args) "--lines")
+        (handler-case (progn (format t "~{~a~%~}" files) (finish-output)) (stream-error () nil))
+        (answer (list :recent files)))
+    0))
 
 (defun cli-dbus ()
   "Make the running Emacs answer org.freedesktop.FileManager1 (the browsers'
@@ -556,6 +567,7 @@ its usual program."
           ((equal command "habits") (cli-habits (rest args)))
           ((equal command "archive") (cli-archive (rest args)))
           ((equal command "workspaces") (cli-workspaces))
+          ((equal command "recent") (cli-recent (rest args)))
           ((equal command "open-on") (cli-open-on (second args) (cddr args)))
           ((equal command "thumbnails") (cli-thumbnails (rest args)))
           ((equal command "project") (cli-project (rest args)))

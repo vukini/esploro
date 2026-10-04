@@ -81,6 +81,9 @@ Its menu bar and tool bar are on even when they're off elsewhere."
 (defvar-local esploro--filter nil "Only names holding this text are shown, until refreshed.")
 (defvar-local esploro--search nil "In a view of a search's files: (WORDS FOLDER NAME).")
 (defvar-local esploro--thumbnails nil "Non-nil: pictures, PDFs and videos show a thumbnail in the list.")
+(defvar esploro--unsorted nil "Non-nil while a list is shown in the order it's given (Recent).")
+(defvar-local esploro--recent nil "Non-nil in a view of the files opened lately.")
+(put 'esploro--recent 'permanent-local t)
 (defvar-local esploro--git nil
   "What git says of this folder's repository: (ROOT BRANCH-LINE . STATES), or nil.")
 (dolist (v '(esploro--view esploro--back esploro--forward esploro--sort esploro--reverse esploro--hidden
@@ -234,7 +237,8 @@ done stay (undo takes them back)."
 No owner or group (-g -G): size, time and name are what a file manager shows."
   (concat "-lhgG --group-directories-first --time-style=long-iso -"
           (if esploro--hidden "a" "")
-          (pcase esploro--sort ('size "S") ('time "t") ('kind "X") (_ "v"))
+          ;; Recent files: in the order given, the newest first.
+          (if esploro--unsorted "U" (pcase esploro--sort ('size "S") ('time "t") ('kind "X") (_ "v")))
           (if esploro--reverse "r" "")))
 
 (defun esploro--view-p (buffer)
@@ -285,7 +289,7 @@ FRAME (the selected one) used last; else its first; nil when it has none."
   (with-current-buffer (or buffer (esploro--view) (esploro--new-view))
     (let ((inhibit-read-only t)
           (dir (if (consp what) (car what) (file-name-as-directory (expand-file-name what)))))
-      (setq esploro--filter nil esploro--search nil)
+      (setq esploro--filter nil esploro--search nil esploro--recent nil)
       (erase-buffer)
       ;; As dired-internal-noselect does, in a buffer of Esploro's own, so a
       ;; dired of the same folder elsewhere is left alone.
@@ -980,6 +984,7 @@ a dropped name kept its newline, named no file, and the drop was lost."
   "G" #'esploro-grid-toggle
   "M-o" #'esploro-open-on-workspace
   "C-c b" #'esploro-bookmark-folder
+  "C-c r" #'esploro-recent
   "C-c C-k" #'esploro-cancel
   "<f6>" #'esploro-move-to-other-pane
   "C-c C-c" #'esploro-copy-to-other-pane
@@ -1093,6 +1098,7 @@ show the pane's sort and history even when the places are selected."
         ["Up" esploro-up :keys "M-<up>"]
         ["Home" esploro-home]
         ["Go to Folder..." esploro-go-to :keys "C-l"]
+        ["Recent Files" esploro-recent :keys "C-c r"]
         ("Searches" :filter esploro--searches-menu)
         "---"
         ["The Trash" esploro-show-trash]
@@ -1245,12 +1251,13 @@ Esploro's that has turned up since is hidden too."
   "Esploro's tool bar.")
 
 (defun esploro--header ()
-  (concat " " (if esploro--search
+  (concat " " (if esploro--recent "Recent: the files opened lately, newest first   F5 looks again"
+                (if esploro--search
                   (pcase-let ((`(,words ,root ,name) esploro--search))
                     (format "%s%s below %s   F5 looks again" (if name (concat name ": ") "") words
                             (abbreviate-file-name root)))
                 (or (esploro--archive-heading (esploro--dir))
-                    (abbreviate-file-name (esploro--dir))))
+                    (abbreviate-file-name (esploro--dir)))))
           (format "   sorted by %s%s" esploro--sort (if esploro--reverse ", the other way" ""))
           (if esploro--hidden "   hidden shown" "")
           (if esploro--filter (format "   only \"%s\" (F5: all)" esploro--filter) "")
@@ -1352,9 +1359,10 @@ PCManFM's and the file dialogs' (GTK's bookmarks, which they share)."
 (defun esploro--places ()
   "Everything down the side, in groups: ((GROUP (NAME . FOLDER)...)...)."
   (seq-filter #'cdr
-              (list (cons "Places" (seq-filter (lambda (p) (file-directory-p (cdr p)))
-                                               (mapcar (lambda (p) (cons (car p) (expand-file-name (cdr p))))
-                                                       esploro-places)))
+              (list (cons "Places" (cons (cons "Recent" 'recent)
+                                         (seq-filter (lambda (p) (file-directory-p (cdr p)))
+                                                     (mapcar (lambda (p) (cons (car p) (expand-file-name (cdr p))))
+                                                             esploro-places))))
                     (cons "Drives" (esploro--drives))
                     (cons "Bookmarks" (esploro--bookmarks))
                     (cons "Searches" (esploro--searches))
@@ -1382,7 +1390,9 @@ PCManFM's and the file dialogs' (GTK's bookmarks, which they share)."
     ;; (search . NAME).
     (let* ((view (when-let* ((frame (esploro--frame))) (esploro--view frame)))
            (search (and view (nth 2 (buffer-local-value 'esploro--search view))))
-           (here (if search (cons 'search search) (and view (esploro--dir view)))))
+           (here (cond ((and view (buffer-local-value 'esploro--recent view)) 'recent)
+                       (search (cons 'search search))
+                       (t (and view (esploro--dir view))))))
      (with-current-buffer buffer
       (let ((inhibit-read-only t))
         (erase-buffer)
@@ -1392,11 +1402,13 @@ PCManFM's and the file dialogs' (GTK's bookmarks, which they share)."
           (dolist (place (cdr group))
             (insert "  ")
             (insert-text-button (car place)
-                                'action (if (stringp (cdr place))
-                                            (lambda (_) (esploro--from-places (cdr place)))
-                                          (lambda (_) (esploro-run-search (cddr place))))
+                                'action (cond ((stringp (cdr place)) (lambda (_) (esploro--from-places (cdr place))))
+                                              ((eq (cdr place) 'recent) (lambda (_) (esploro--from-places-recent)))
+                                              (t (lambda (_) (esploro-run-search (cddr place)))))
                                 'follow-link t
-                                'help-echo (if (stringp (cdr place)) (abbreviate-file-name (cdr place)) "A search")
+                                'help-echo (cond ((stringp (cdr place)) (abbreviate-file-name (cdr place)))
+                                                 ((eq (cdr place) 'recent) "The files opened lately")
+                                                 (t "A search"))
                                 'face (if (equal (if (stringp (cdr place)) (file-name-as-directory (cdr place)) (cdr place))
                                                  here)
                                           'highlight 'default))
@@ -2421,6 +2433,60 @@ Your own kinds and folders are a recipe: see the manual."
   (interactive)
   (let ((files (or (esploro--in-view (esploro--recipe-files)) (user-error "No files here"))))
     (esploro--offer-plan (append (list "sort-by-kind" "--plan") files) "sort by kind")))
+
+;;; --- Recent: the files opened lately ------------------------------------------------------
+
+;; Esploro notes each file it opens; GTK's programs note theirs in
+;; recently-used.xbel; Emacs's recentf, when it's on, has its own.  Recent
+;; (at the top of the places, Go > Recent Files, C-c r) shows them all,
+;; newest first, as a list to open, copy or drag from like any folder.
+
+(defun esploro--recent-show (buffer files &optional again)
+  "Show FILES, newest first, in BUFFER (a view); AGAIN when it's F5."
+  (let* ((home (file-name-as-directory (expand-file-name "~")))
+         (seen (make-hash-table :test #'equal))
+         (files (seq-filter (lambda (f) (and (not (gethash f seen)) (puthash f t seen) (file-regular-p f)))
+                            (append files (and (bound-and-true-p recentf-mode) (bound-and-true-p recentf-list)
+                                               (seq-remove #'file-remote-p recentf-list))))))
+    (if (null files)
+        (message "Esploro: nothing opened lately yet (files you open from Esploro will show here)")
+      (with-current-buffer buffer
+        (unless again
+          (let ((here (and (derived-mode-p 'dired-mode) (expand-file-name default-directory))))
+            (when here (push here esploro--back) (setq esploro--forward '()))))
+        (let ((esploro--unsorted t))
+          (esploro--show (cons home (mapcar (lambda (f) (if (string-prefix-p home f) (file-relative-name f home) f)) files))
+                         nil buffer))
+        (setq esploro--recent t)
+        (setq-local revert-buffer-function #'esploro--recent-again)
+        (rename-buffer "Esploro: Recent" t)
+        (esploro-places-refresh)))))
+
+(defun esploro--recent-again (&rest _)
+  "Look again at what was opened lately."
+  (let ((buffer (current-buffer)))
+    (esploro--call (list "recent") nil
+                   (lambda (answer) (when (and (buffer-live-p buffer) (eq (car-safe answer) :recent))
+                                      (esploro--recent-show buffer (cadr answer) t))))))
+
+(defun esploro-recent ()
+  "The files opened lately, newest first."
+  (interactive)
+  (esploro--in-view
+   (let ((buffer (current-buffer)))
+     (esploro--call (list "recent") nil
+                    (lambda (answer)
+                      (if (eq (car-safe answer) :recent)
+                          (esploro--recent-show buffer (cadr answer))
+                        (esploro--say answer "recent")))))))
+
+(defun esploro--from-places-recent ()
+  "Recent, in the pane used last of the frame whose places were clicked."
+  (let ((frame (esploro--frame)))
+    (when frame
+      (with-selected-frame frame
+        (select-window (esploro--main-window frame))
+        (esploro-recent)))))
 
 ;;; --- Searches: folders that are questions ------------------------------------------
 

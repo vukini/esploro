@@ -25,7 +25,8 @@ test: esploro
 	  cmp -s $$d/esploro.info doc/esploro.info; r=$$?; rm -rf $$d; \
 	  [ $$r = 0 ] || { echo "FAIL: doc/esploro.info is older than its .texi: make info"; exit 1; }; \
 	  echo "the manual: built from its source, as committed"; fi
-	$(EMACS) --batch -Q -L emacs -l tests/esploro-tests.el -f ert-run-tests-batch-and-exit
+	@# No display: nothing a test does may reach the desktop's screen.
+	env -u DISPLAY -u WAYLAND_DISPLAY $(EMACS) --batch -Q -L emacs -l tests/esploro-tests.el -f ert-run-tests-batch-and-exit
 
 install: esploro
 	install -D -m 755 esploro $(PREFIX)/bin/esploro

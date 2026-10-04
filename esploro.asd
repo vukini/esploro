@@ -24,6 +24,7 @@
                (:file "learn")
                (:file "habits")
                (:file "archives")
+               (:file "recent")
                (:file "preview")))
 
 (defsystem "esploro"

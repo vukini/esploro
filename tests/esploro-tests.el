@@ -919,4 +919,26 @@ without a frame."
             ((symbol-function 'display-graphic-p) (lambda (&optional _) t)))
     (should-not (esploro--other-frame))))
 
+(ert-deftest esploro-recent-files ()
+  (esploro-tests--world
+   (let ((a (esploro-tests--file "r/zeta.txt")) (b (esploro-tests--file "r/alpha.txt")))
+     (esploro-go (esploro-tests--path "r"))
+     (cl-letf (((symbol-function 'esploro--call)
+                (lambda (_args &optional _input then _sync) (funcall then (list :recent (list a b))))))
+       (with-current-buffer (esploro--view)
+         (esploro-recent)
+         (should esploro--recent)
+         (should (string-match-p "Recent" (esploro--header)))
+         ;; Newest first, as given: not sorted by name.
+         (goto-char (point-min))
+         (let ((names '()))
+           (while (not (eobp)) (let ((f (esploro--grid-file))) (when f (push (file-name-nondirectory f) names))) (forward-line 1))
+           (should (equal (nreverse names) '("zeta.txt" "alpha.txt"))))
+         ;; F5 asks again; going to a folder leaves Recent.
+         (revert-buffer)
+         (should esploro--recent)
+         (esploro-go (esploro-tests--path "r"))
+         (should-not esploro--recent)))
+     (should (assoc "Recent" (cdr (assoc "Places" (esploro--places))))))))
+
 ;;; esploro-tests.el ends here

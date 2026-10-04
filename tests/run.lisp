@@ -16,6 +16,11 @@
 (defpackage #:esploro.tests (:use #:cl #:esploro))
 (in-package #:esploro.tests)
 
+;; Nothing a test does may reach the desktop's screen (a viewer opened on
+;; a file, a frame): no display at all.
+(sb-posix:unsetenv "DISPLAY")
+(sb-posix:unsetenv "WAYLAND_DISPLAY")
+
 (defvar *failures* 0)
 (defvar *checks* 0)
 
@@ -837,6 +842,29 @@
          (and (null (esploro::emacs-ask "t"))
               (< (- (get-internal-real-time) start) (/ internal-time-units-per-second 10)))))
 (sb-posix:unsetenv "ESPLORO_NO_EMACS")
+
+;;; --- Recent: the files opened lately ---------------------------------------------------------
+
+(esploro::ensure-folder (p "rec2"))
+(make-file (p "rec2/old.pdf")) (make-file (p "rec2/new.txt")) (make-file (p "rec2/r&d plan.md"))
+(esploro::ensure-folder (p ".local/share"))
+(with-open-file (out (p ".local/share/recently-used.xbel") :direction :output :if-exists :supersede)
+  (format out "<?xml version=\"1.0\"?>~%<xbel version=\"1.0\">~%")
+  (format out "<bookmark href=\"file://~a\" added=\"2026-01-01T10:00:00Z\" modified=\"2026-01-01T10:00:00Z\" visited=\"2026-01-02T10:00:00.5Z\">~%</bookmark>~%"
+          (p "rec2/old.pdf"))
+  (format out "<bookmark href=\"file://~a\" visited=\"2026-03-01T10:00:00Z\"></bookmark>~%"
+          (esploro::percent-encode (p "rec2/r&d plan.md")))
+  (format out "<bookmark href=\"file:///gone/away.txt\" visited=\"2026-05-01T10:00:00Z\"></bookmark>~%</xbel>~%"))
+(check "GTK's recent files, read" (= 3 (length (esploro::xbel-recent))))
+(check "a name with spaces and & comes back as it is"
+       (find (p "rec2/r&d plan.md") (esploro::xbel-recent) :key #'car :test #'string=))
+(esploro::note-opened (p "rec2/new.txt"))
+(check "newest first, Esploro's and GTK's together, gone files left out"
+       (equal (subseq (esploro::recent-files) 0 3) (list (p "rec2/new.txt") (p "rec2/r&d plan.md") (p "rec2/old.pdf"))))
+;; A text file: the core answers that Emacs shows it, and starts nothing.
+(check "opening through Esploro notes it"
+       (progn (run-cli (list "open" (p "rec2/r&d plan.md")))
+              (equal (first (esploro::recent-files)) (p "rec2/r&d plan.md"))))
 
 ;;; --- The end -------------------------------------------------------------------------
 

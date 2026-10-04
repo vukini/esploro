@@ -108,9 +108,12 @@ The list
      a filter is on.
 
 Places
-     Down the left side: your home, the usual folders
-     (Documents, Downloads, Pictures, Music, Videos, Projects,
-     Dropbox, when they exist), drives plugged in (in
+     Down the left side: Recent (the files you opened lately,
+     newest first: those you opened through Esploro, and what
+     GTK programs note in ‘~/.local/share/recently-used.xbel’;
+     also Go ⇒ Recent Files, or ‘C-c r’), your home, the usual
+     folders (Documents, Downloads, Pictures, Music, Videos,
+     Projects, Dropbox, when they exist), drives plugged in (in
      ‘/run/media’), the bookmarks GTK programs keep
      (‘~/.config/gtk-3.0/bookmarks’: File ⇒ Bookmark This
      Folder, or ‘C-c b’, adds the folder you're in, and Remove
@@ -691,6 +694,7 @@ C-/                       undo the last change
 C-c C-k                   stop a long copy
 M-o 1..9                  open the selection on that workspace
 C-c b                     bookmark this folder
+C-c r                     recent files
 z                         the last change again, on the selection
 s                         next sort
 .                         hidden files
@@ -766,6 +770,8 @@ File: esploro.info,  Node: The command line,  Next: Writing commands,  Prev: Key
 ‘esploro archive list’
      An archive opened read-only like a folder (*note
      Archives::), closed, and the ones open.
+‘esploro recent [--lines]’
+     The files opened lately, newest first.
 ‘esploro workspaces’
      StumpWM's workspaces, each with the project its windows are
      about.
@@ -850,23 +856,23 @@ Tag Table:
 Node: Top276
 Node: Opening Esploro2107
 Node: The window3923
-Node: Selecting and opening5964
-Node: Changing files7017
-Node: Recipes9036
-Node: Drag and drop13166
-Node: The preview13892
-Node: Two panes15006
-Node: Windows and workspaces15579
-Node: Looking around17027
-Node: Searches19273
-Node: Archives21045
-Node: The Trash21883
-Node: Where files are open22358
-Node: Closing a project22829
-Node: Plans from agents23698
-Node: Keys and mouse25962
-Node: The command line27960
-Node: Writing commands32042
+Node: Selecting and opening6178
+Node: Changing files7231
+Node: Recipes9250
+Node: Drag and drop13380
+Node: The preview14106
+Node: Two panes15220
+Node: Windows and workspaces15793
+Node: Looking around17241
+Node: Searches19487
+Node: Archives21259
+Node: The Trash22097
+Node: Where files are open22572
+Node: Closing a project23043
+Node: Plans from agents23912
+Node: Keys and mouse26176
+Node: The command line28213
+Node: Writing commands32370
 
 End Tag Table
 

@@ -6,10 +6,6 @@ list (DESIGN.md says what was done).
 
 ## File-manager basics
 
-3. **Recent files.** A "Recent" place: what you opened lately, from
-   Emacs's recentf and other programs' `~/.local/share/recently-used.xbel`,
-   newest first, shown as a list like a search's. *Small.*
-
 4. **What's taking space.** Folder sizes, biggest first (like ncdu), to
    clean up from: a view of a folder's subfolders and files by size, made
    in the background, going into one to see its own. *Medium.*
