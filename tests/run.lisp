@@ -1003,6 +1003,13 @@
               '("vid@example.org:/srv" 2222 "vid@example.org srv")))
 (signals error (esploro::parse-remote "-oProxyCommand=x"))
 
+(esploro::remember-server "root@157.245.100.74")
+(esploro::ensure-folder (p ".ssh"))
+(with-open-file (out (p ".ssh/known_hosts") :direction :output :if-exists :supersede)
+  (format out "157.245.100.74 ssh-ed25519 AAAA~%github.com ssh-ed25519 AAAA~%|1|hashed ssh-ed25519 AAAA~%"))
+(check "servers connected to come first, with their user; the bare host isn't offered again"
+       (equal (esploro::known-servers) '("root@157.245.100.74")))
+
 ;; A server of the test's own: sshd on a high port, this user, a throwaway
 ;; key, nothing outside the test's folder.
 (let ((sshd (find-if #'esploro::path-exists-p '("/usr/bin/sshd" "/usr/sbin/sshd")))

@@ -72,6 +72,45 @@ A yes/no question (a new server's key) is a question; the rest a password."
                                           :search t :output s :error nil :input nil :wait t))))
   (finish-output))
 
+(defun ssh-why (target port)
+  "Why ssh can't get into TARGET's host, asked without a prompt (BatchMode):
+words to say, or NIL."
+  (let* ((host (subseq target 0 (position #\: target)))
+         (out (with-output-to-string (s)
+                (sb-ext:run-program "timeout" (append (list "20" "ssh" "-v" "-o" "BatchMode=yes" "-o" "ConnectTimeout=10")
+                                                      (and port (list "-p" (princ-to-string port)))
+                                                      ;; As the connection had them (the tests' own server).
+                                                      (loop for o in (split-on #\, (or (sb-posix:getenv "ESPLORO_SSHFS_OPTIONS") ""))
+                                                            unless (string= o "") append (list "-o" o))
+                                                      (list host "true"))
+                                    :search t :output nil :error s :input nil :wait t))))
+    (cond ((search "Server accepts key" out) nil)  ; the key would do: the passphrase wasn't given
+          ((search "Permission denied" out)
+           (let ((user (let ((at (search "Authenticating to" out)))
+                         (and at (let* ((q (position #\' out :start at)) (q2 (and q (position #\' out :start (1+ q)))))
+                                   (and q q2 (subseq out (1+ q) q2)))))))
+             (format nil "the server refused your key~@[ for ~a~]~:[~;: name the user, as user@~a~]"
+                     user (not (find #\@ host)) host)))
+          ((search "Could not resolve hostname" out) "there's no server of that name")
+          ((search "Connection refused" out)
+           "the server refuses connections (it may have blocked this address after failed tries: wait a while)")
+          ((search "timed out" out) "the server doesn't answer")
+          ((search "Host key verification failed" out) "its key isn't the one known for it (~/.ssh/known_hosts)"))))
+
+(defun servers-file () (join-path (state-folder) "servers.lisp"))
+
+(defun remember-server (text)
+  "TEXT connected: offered first next time."
+  (let* ((file (servers-file))
+         (old (and (path-exists-p file) (ignore-errors (read-plan-file file))))
+         (old (remove-if-not #'stringp old)))
+    (write-forms file (cons text (remove text old :test #'string=))
+                 :comment ";; Servers Esploro connected to, newest first.")))
+
+(defun remembered-servers ()
+  (let ((file (servers-file)))
+    (and (path-exists-p file) (remove-if-not #'stringp (ignore-errors (read-plan-file file))))))
+
 (defun open-remote (text)
   "Connect to the server TEXT says (user@host:folder): its mount point, the
 one already there when it's connected. An error saying why when it can't."
@@ -96,9 +135,12 @@ one already there when it's connected. An error saying why when it can't."
                                                :environment (askpass-environment)))))
                 (unless (and (eql code 0) (mounted-p point))
                   (ignore-errors (sb-posix:rmdir point))
-                  (let ((why (string-trim '(#\Newline #\Space) (get-output-stream-string err))))
-                    (error "couldn't connect to ~a~@[ (~a)~]" (string-right-trim ":" target) (and (plusp (length why)) why)))))
+                  (let ((why (or (ssh-why target port)
+                                 (let ((said (string-trim '(#\Newline #\Space) (get-output-stream-string err))))
+                                   (and (plusp (length said)) said)))))
+                    (error "couldn't connect to ~a~@[: ~a~]" (string-right-trim ":" target) why))))
               (write-open-remotes (append open (list (cons target point))))
+              (remember-server (string-trim " " text))
               point))))))
 
 (defun close-remote (point)
@@ -115,9 +157,10 @@ of it open."
     t))
 
 (defun known-servers ()
-  "Servers you've used: ~/.ssh/config's Host names (not patterns) and
-known_hosts' (those not hashed), each once."
-  (let ((names '()))
+  "Servers you've used: those Esploro connected to (with their user), then
+~/.ssh/config's Host names (not patterns) and known_hosts' (those not
+hashed) that aren't among them, each once."
+  (let ((names (reverse (remembered-servers))))
     (let ((config (join-path (home-folder) ".ssh" "config")))
       (when (path-exists-p config)
         (dolist (line (split-on #\Newline (or (ignore-errors (file-text config)) "")))
@@ -134,4 +177,8 @@ known_hosts' (those not hashed), each once."
               (dolist (h (split-on #\, first))
                 (let ((h (string-trim "[]" (subseq h 0 (or (position #\] h) (length h))))))
                   (unless (string= h "") (pushnew h names :test #'string=)))))))))
-    (nreverse names)))
+    ;; A host already remembered with its user isn't offered again without.
+    (let ((all (nreverse names)))
+      (remove-if (lambda (h) (and (not (find #\@ h))
+                                  (some (lambda (r) (and (search (concatenate 'string "@" h) r) (string/= r h))) all)))
+                 all))))
