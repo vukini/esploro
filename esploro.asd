@@ -25,6 +25,7 @@
                (:file "habits")
                (:file "archives")
                (:file "recent")
+               (:file "duplicates")
                (:file "preview")))
 
 (defsystem "esploro"

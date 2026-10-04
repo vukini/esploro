@@ -6,11 +6,6 @@ list (DESIGN.md says what was done).
 
 ## File-manager basics
 
-5. **Duplicates.** Byte-identical copies under a folder (by size, then a
-   hash), shown in groups, and a plan proposed to trash the extras (the
-   oldest kept), for review like any plan. `sorting.md` already says exact
-   duplicates may go. *Medium.*
-
 ## Fitting how Vid works
 
 7. **Dropbox status.** A synced, syncing or not-synced mark beside files

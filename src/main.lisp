@@ -46,6 +46,9 @@ esploro habits --dismiss KEY   that one, never offered again
 esploro archive open PATH  PATH (a zip, a tarball, 7z, an ISO) opened read-only, like a
                             folder (archivemount): where it is
 esploro archive close POINT | list   closing one; the ones open
+esploro duplicates [--plan] FOLDER   the files below that are the same, byte for byte
+                            (1 KB or more, not another repository's); --plan: the
+                            copies to the Trash, the oldest kept, for your review
 esploro sizes FOLDER        its entries by the space they take (du), biggest first
 esploro recent [--lines]    the files opened lately, newest first: those opened through
                             Esploro, and GTK programs' (recently-used.xbel)
@@ -531,6 +534,28 @@ its usual program."
           (answer (if sizes (list* :sizes folder sizes) (list :error "du couldn't measure it")))
           (if sizes 0 1)))))
 
+(defun cli-duplicates (args)
+  "esploro duplicates [--plan] FOLDER: the files below FOLDER that are the
+same, byte for byte; with --plan, the copies to the Trash, as a plan to review."
+  (let* ((plan-only (equal (first args) "--plan"))
+         (folder (absolute (or (if plan-only (second args) (first args)) "."))))
+    (if (not (directory-p folder))
+        (progn (answer (list :error (format nil "~a isn't a folder" folder))) 1)
+        (let ((groups (find-duplicates folder)))
+          (cond ((not plan-only) (answer (list :duplicates folder groups)) 0)
+                ((null groups) (answer (list :none "no two files there are the same")) 1)
+                (t (let* ((steps (duplicates-plan groups))
+                          (wasted (reduce #'+ (mapcar (lambda (g) (* (first g) (length (cddr g)))) groups)))
+                          (why (format nil "~d ~:*~[copies~;copy~:;copies~] of ~d ~:*~[files~;file~:;files~], the same byte for byte, to the Trash (~a back); the oldest of each kept"
+                                       (length steps) (length groups) (size-words-short wasted))))
+                     (answer (list :plan (keep-proposed steps) why (length steps) :duplicates))
+                     0)))))))
+
+(defun size-words-short (bytes)
+  (loop for (unit . scale) in '(("GB" . 1073741824) ("MB" . 1048576) ("KB" . 1024))
+        when (>= bytes scale) do (return (format nil "~,1f ~a" (/ bytes scale) unit))
+        finally (return (format nil "~d bytes" bytes))))
+
 (defun cli-dbus ()
   "Make the running Emacs answer org.freedesktop.FileManager1 (the browsers'
 \"Show in folder\"): what the session bus runs when it's first asked."
@@ -579,6 +604,7 @@ its usual program."
           ((equal command "workspaces") (cli-workspaces))
           ((equal command "recent") (cli-recent (rest args)))
           ((equal command "sizes") (cli-sizes (second args)))
+          ((equal command "duplicates") (cli-duplicates (rest args)))
           ((equal command "open-on") (cli-open-on (second args) (cddr args)))
           ((equal command "thumbnails") (cli-thumbnails (rest args)))
           ((equal command "project") (cli-project (rest args)))

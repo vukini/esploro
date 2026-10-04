@@ -879,6 +879,26 @@
   (check "and the folder's total" (>= (first sizes) (reduce #'+ (mapcar #'cdr (second sizes))))))
 (check "esploro sizes says so" (eq :sizes (second (run-cli (list "sizes" (p "space"))))))
 
+;;; --- Duplicates: the same, byte for byte -----------------------------------------------------
+
+(esploro::ensure-folder (p "dup/a"))
+(esploro::ensure-folder (p "dup/b"))
+(esploro::ensure-folder (p "dup/proj/.git"))
+(let ((same (make-string 4000 :initial-element #\y)))
+  (make-file (p "dup/a/report.pdf") same)
+  (make-file (p "dup/b/report copy.pdf") same)
+  (make-file (p "dup/proj/LICENSE") same))           ; another repository's own
+(make-file (p "dup/b/other.pdf") (concatenate 'string (make-string 3999 :initial-element #\y) "z")) ; same size, not the same
+(make-file (p "dup/a/tiny") "x") (make-file (p "dup/b/tiny") "x")
+(sb-posix:utime (p "dup/a/report.pdf") 1000 1000)      ; the oldest: kept
+(let ((groups (esploro::find-duplicates (p "dup"))))
+  (check "copies found byte for byte; the oldest kept; small ones and another repository's left out"
+         (equal groups (list (list 4000 (p "dup/a/report.pdf") (p "dup/b/report copy.pdf"))))))
+(let ((answer (run-cli (list "duplicates" "--plan" (p "dup")))))
+  (check "the copies, as a plan to review" (and (eq (second answer) :plan) (= 1 (fifth answer))))
+  (check "whose steps put only the copy in the Trash"
+         (equal (esploro::read-plan-file (third answer)) (list (list :trash (p "dup/b/report copy.pdf"))))))
+
 ;;; --- The end -------------------------------------------------------------------------
 
 (sb-ext:run-program "chmod" (list "-R" "u+w" *top*) :search t)

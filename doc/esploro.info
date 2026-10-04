@@ -336,6 +336,22 @@ folder:
                                      (:pdf "/home/vid/Documents/Papers")))
      (:recipe "Holiday" (:rename-by "IMG_*.jpg" "Holiday #n.jpg"))
 
+5.5 Duplicates
+==============
+
+Edit ⇒ Find Duplicates looks below the folder you're in for
+files that are the same, byte for byte (a quick hash, a full
+one, then compared byte by byte, so nothing is called a copy
+that isn't).  They show in groups, the most space wasted first;
+in each, the oldest says "kept" and the others "copy".  Edit ⇒
+Trash the Copies... puts the copies in a plan for your review:
+edit it, apply it, or cancel; undo puts them back.
+
+   Left out: files under 1 KB (a small file twice is usually
+meant), and the files of a git repository other than the one
+you're looking in (the same LICENSE in two projects is each
+project's own).
+
 
 File: esploro.info,  Node: Drag and drop,  Next: The preview,  Prev: Recipes,  Up: Top
 
@@ -782,6 +798,10 @@ File: esploro.info,  Node: The command line,  Next: Writing commands,  Prev: Key
 ‘esploro archive list’
      An archive opened read-only like a folder (*note
      Archives::), closed, and the ones open.
+‘esploro duplicates [--plan] FOLDER’
+     The files below FOLDER that are the same, byte for byte, in
+     groups; ‘--plan’, the copies to the Trash as a plan to
+     review.
 ‘esploro sizes FOLDER’
      Its entries by the space they take, biggest first.
 ‘esploro recent [--lines]’
@@ -873,20 +893,20 @@ Node: The window3923
 Node: Selecting and opening6178
 Node: Changing files7231
 Node: Recipes9250
-Node: Drag and drop13380
-Node: The preview14106
-Node: Two panes15220
-Node: Windows and workspaces15793
-Node: Looking around17241
-Node: Searches20050
-Node: Archives21822
-Node: The Trash22660
-Node: Where files are open23135
-Node: Closing a project23606
-Node: Plans from agents24475
-Node: Keys and mouse26739
-Node: The command line28841
-Node: Writing commands33081
+Node: Drag and drop14038
+Node: The preview14764
+Node: Two panes15878
+Node: Windows and workspaces16451
+Node: Looking around17899
+Node: Searches20708
+Node: Archives22480
+Node: The Trash23318
+Node: Where files are open23793
+Node: Closing a project24264
+Node: Plans from agents25133
+Node: Keys and mouse27397
+Node: The command line29499
+Node: Writing commands33922
 
 End Tag Table
 

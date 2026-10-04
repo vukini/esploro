@@ -323,6 +323,20 @@ folder:
 (:recipe "Holiday" (:rename-by "IMG_*.jpg" "Holiday #n.jpg"))
 @end example
 
+@section Duplicates
+
+Edit @result{} Find Duplicates looks below the folder you're in for
+files that are the same, byte for byte (a quick hash, a full one, then
+compared byte by byte, so nothing is called a copy that isn't).  They
+show in groups, the most space wasted first; in each, the oldest says
+``kept'' and the others ``copy''.  Edit @result{} Trash the Copies@dots{}
+puts the copies in a plan for your review: edit it, apply it, or cancel;
+undo puts them back.
+
+Left out: files under 1 KB (a small file twice is usually meant), and
+the files of a git repository other than the one you're looking in (the
+same LICENSE in two projects is each project's own).
+
 @node Drag and drop
 @chapter Drag and drop
 
@@ -717,6 +731,9 @@ That one, never offered again.
 @itemx esploro archive list
 An archive opened read-only like a folder (@pxref{Archives}), closed,
 and the ones open.
+@item esploro duplicates [--plan] @var{folder}
+The files below @var{folder} that are the same, byte for byte, in
+groups; @option{--plan}, the copies to the Trash as a plan to review.
 @item esploro sizes @var{folder}
 Its entries by the space they take, biggest first.
 @item esploro recent [--lines]

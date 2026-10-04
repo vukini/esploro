@@ -970,4 +970,32 @@ without a frame."
        ;; The list again: folders first, by name.
        (should (equal (names) '("inner" "a.bin")))))))
 
+(ert-deftest esploro-duplicates ()
+  (skip-unless (file-executable-p (expand-file-name "../esploro" (file-name-directory (locate-library "esploro")))))
+  (esploro-tests--world
+   (let ((same (make-string 3000 ?q)))
+     (esploro-tests--file "d/one/photo.jpg" same)
+     (esploro-tests--file "d/two/photo (1).jpg" same)
+     (esploro-tests--file "d/two/else.jpg" (make-string 3000 ?r))
+     (set-file-times (esploro-tests--path "d/one/photo.jpg") (encode-time '(0 0 0 1 1 2020 nil nil t)))
+     (esploro-go (esploro-tests--path "d"))
+     (with-current-buffer (esploro--view)
+       (esploro-find-duplicates)
+       (should esploro--duplicates)
+       (should (string-match-p "Duplicates below" (esploro--header)))
+       (let ((said (mapcar (lambda (o) (substring-no-properties (overlay-get o 'after-string)))
+                           (seq-filter (lambda (o) (overlay-get o 'esploro-duplicate)) (overlays-in (point-min) (point-max))))))
+         (should (member "  1 · kept (the oldest)" said))
+         (should (seq-some (lambda (s) (string-prefix-p "  1 · copy" s)) said)))
+       (esploro-trash-duplicates)
+       (let ((review (seq-find (lambda (b) (eq (buffer-local-value 'major-mode b) 'esploro-review-mode)) (buffer-list))))
+         (should review)
+         (with-current-buffer review
+           (should (string-match-p "put .*photo (1).jpg in the Trash" (buffer-string)))
+           (should-not (string-match-p "An agent proposes" (buffer-string)))
+           (should-not (string-match-p "Keep as Recipe" (buffer-string))))
+         (esploro--review-done review t))
+       (should (file-exists-p (esploro-tests--path "d/one/photo.jpg")))
+       (should-not (file-exists-p (esploro-tests--path "d/two/photo (1).jpg")))))))
+
 ;;; esploro-tests.el ends here

@@ -83,6 +83,8 @@ Its menu bar and tool bar are on even when they're off elsewhere."
 (defvar-local esploro--thumbnails nil "Non-nil: pictures, PDFs and videos show a thumbnail in the list.")
 (defvar esploro--unsorted nil "Non-nil while a list is shown in the order it's given (Recent).")
 (defvar-local esploro--recent nil "Non-nil in a view of the files opened lately.")
+(defvar-local esploro--duplicates nil "In a view of duplicates: (FOLDER . GROUPS).")
+(put 'esploro--duplicates 'permanent-local t)
 (defvar-local esploro--space nil "Non-nil: this view shows what takes space, biggest first.")
 (defvar-local esploro--space-total nil "The folder's size as measured, or `measuring'.")
 (put 'esploro--space 'permanent-local t)
@@ -292,7 +294,7 @@ FRAME (the selected one) used last; else its first; nil when it has none."
   (with-current-buffer (or buffer (esploro--view) (esploro--new-view))
     (let ((inhibit-read-only t)
           (dir (if (consp what) (car what) (file-name-as-directory (expand-file-name what)))))
-      (setq esploro--filter nil esploro--search nil esploro--recent nil)
+      (setq esploro--filter nil esploro--search nil esploro--recent nil esploro--duplicates nil)
       (erase-buffer)
       ;; As dired-internal-noselect does, in a buffer of Esploro's own, so a
       ;; dired of the same folder elsewhere is left alone.
@@ -1058,6 +1060,8 @@ show the pane's sort and history even when the places are selected."
           ["Repeat Last Change" esploro-repeat :keys "z" :active (esploro--marked-or-point-p)]
           ("Recipes" :filter esploro--recipes-menu)
           ["Habits Noticed..." esploro-habits]
+          ["Find Duplicates" esploro-find-duplicates]
+          ["Trash the Copies..." esploro-trash-duplicates :visible (esploro--value 'esploro--duplicates)]
           "---"
           ["Copy" esploro-copy :keys "M-w" :active (esploro--marked-or-point-p)]
           ["Cut" esploro-cut :keys "C-w" :active (esploro--marked-or-point-p)]
@@ -1256,7 +1260,11 @@ Esploro's that has turned up since is hidden too."
   "Esploro's tool bar.")
 
 (defun esploro--header ()
-  (concat " " (if esploro--space
+  (concat " " (if esploro--duplicates
+                  (format "Duplicates below %s: %d %s, the same byte for byte   Edit > Trash the Copies..."
+                          (abbreviate-file-name (car esploro--duplicates)) (length (cdr esploro--duplicates))
+                          (if (= 1 (length (cdr esploro--duplicates))) "group" "groups"))
+                (if esploro--space
                   (format "Space: %s, %s   biggest first, F5 measures again"
                           (abbreviate-file-name (esploro--dir))
                           (cond ((eq esploro--space-total 'measuring) "measuring...")
@@ -1268,9 +1276,9 @@ Esploro's that has turned up since is hidden too."
                     (format "%s%s below %s   F5 looks again" (if name (concat name ": ") "") words
                             (abbreviate-file-name root)))
                 (or (esploro--archive-heading (esploro--dir))
-                    (abbreviate-file-name (esploro--dir))))))
+                    (abbreviate-file-name (esploro--dir)))))))
           ;; Space and Recent have an order of their own.
-          (if (or esploro--space esploro--recent) ""
+          (if (or esploro--space esploro--recent esploro--duplicates) ""
             (format "   sorted by %s%s" esploro--sort (if esploro--reverse ", the other way" "")))
           (if (and esploro--hidden (not esploro--space)) "   hidden shown" "")
           (if esploro--filter (format "   only \"%s\" (F5: all)" esploro--filter) "")
@@ -2543,6 +2551,85 @@ a bar; TOTAL in the top line."
         (forward-line 1))))
   (force-mode-line-update))
 
+;;; --- Duplicates: files that are the same --------------------------------------------------
+
+;; Edit > Find Duplicates: below this folder, the files that are the same,
+;; byte for byte (1 KB or more; another git repository's left out), in
+;; groups, the most space wasted first; each group's oldest is kept, the
+;; others are copies.  Trash the Copies... proposes them for the Trash, as a
+;; plan to review (and undo).
+
+(defun esploro-find-duplicates ()
+  "The files below this folder that are the same, byte for byte, in groups."
+  (interactive)
+  (esploro--in-view
+   (let ((buffer (current-buffer)) (dir (esploro--dir)))
+     (message "Esploro: looking for files that are the same below %s..." (abbreviate-file-name dir))
+     (esploro--call (list "duplicates" dir) nil
+                    (lambda (answer)
+                      (pcase answer
+                        (`(:duplicates ,folder ,groups)
+                         (if (null groups)
+                             (message "Esploro: no two files below %s are the same" (abbreviate-file-name folder))
+                           (esploro--duplicates-show buffer folder groups)))
+                        (_ (esploro--say answer "duplicates"))))))))
+
+(defun esploro--duplicates-show (buffer folder groups &optional again)
+  "GROUPS ((SIZE KEPT COPY ...) ...) below FOLDER, in BUFFER: each group
+together, its kept one first."
+  (with-current-buffer buffer
+    (unless again
+      (let ((here (and (derived-mode-p 'dired-mode) (expand-file-name default-directory))))
+        (when here (push here esploro--back) (setq esploro--forward '()))))
+    (let* ((root (file-name-as-directory folder))
+           (files (mapcan (lambda (g) (copy-sequence (cdr g))) groups)))
+      (let ((esploro--unsorted t))
+        (esploro--show (cons root (mapcar (lambda (f) (file-relative-name f root)) files)) nil buffer))
+      (setq esploro--duplicates (cons folder groups))
+      (setq-local revert-buffer-function
+                  (lambda (&rest _)
+                    (esploro--call (list "duplicates" folder) nil
+                                   (lambda (answer)
+                                     (when (and (buffer-live-p buffer) (eq (car-safe answer) :duplicates))
+                                       (if (nth 2 answer)
+                                           (esploro--duplicates-show buffer folder (nth 2 answer) t)
+                                         (message "Esploro: no copies left below %s" (abbreviate-file-name folder))))))))
+      (rename-buffer "Esploro: Duplicates" t)
+      ;; Each one says its group, and whether it's the one kept.
+      (let ((n 0) (said (make-hash-table :test #'equal)))
+        (dolist (g groups)
+          (setq n (1+ n))
+          (puthash (cadr g) (format "  %d · kept (the oldest)" n) said)
+          (dolist (c (cddr g)) (puthash c (format "  %d · copy, %s" n (file-size-human-readable (car g))) said)))
+        (save-excursion
+          (goto-char (point-min))
+          (while (not (eobp))
+            (let* ((file (esploro--grid-file)) (text (and file (gethash file said))))
+              (when (and text (dired-move-to-end-of-filename t))
+                (let ((o (make-overlay (point) (point))))
+                  (overlay-put o 'esploro-duplicate t)
+                  (overlay-put o 'after-string
+                               (propertize text 'face (if (string-match-p "kept" text) 'success 'warning))))))
+            (forward-line 1))))
+      (force-mode-line-update)
+      (let ((copies (apply #'+ (mapcar (lambda (g) (length (cddr g))) groups)))
+            (wasted (apply #'+ (mapcar (lambda (g) (* (car g) (length (cddr g)))) groups))))
+        (message "Esploro: %d %s of %d %s, %s: Edit > Trash the Copies... to review a plan"
+                 copies (if (= copies 1) "copy" "copies") (length groups) (if (= (length groups) 1) "file" "files")
+                 (file-size-human-readable wasted))))))
+
+(defun esploro-trash-duplicates ()
+  "Propose the copies found for the Trash, as a plan to review."
+  (interactive)
+  (esploro--in-view
+   (unless esploro--duplicates (user-error "Find Duplicates first (Edit menu)"))
+   (esploro--call (list "duplicates" "--plan" (car esploro--duplicates)) nil
+                  (lambda (answer)
+                    (pcase answer
+                      (`(:plan ,file ,why ,_n ,from) (esploro--review-open file why from (selected-frame)))
+                      (`(:none ,why) (message "Esploro: nothing to do. %s" why))
+                      (_ (esploro--say answer "duplicates")))))))
+
 ;;; --- Recent: the files opened lately ------------------------------------------------------
 
 ;; Esploro notes each file it opens; GTK's programs note theirs in
@@ -3032,7 +3119,7 @@ which the review offers to keep by name.")
       (insert "   ")
       (insert-text-button " Cancel " 'action (lambda (_) (esploro--review-done buffer nil))
                           'follow-link t 'face 'esploro-button 'help-echo "Drop the plan: nothing changes")
-      (when esploro--review-recipe
+      (when (consp esploro--review-recipe)
         (insert "   ")
         (insert-text-button " Keep as Recipe... " 'action (lambda (_) (with-current-buffer buffer (call-interactively #'esploro-review-keep-recipe)))
                             'follow-link t 'face 'esploro-button
