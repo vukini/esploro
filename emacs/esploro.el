@@ -2762,7 +2762,12 @@ biggest anywhere below it) or nil (the folder as it was)."
 
 (defun esploro--space-after-readin ()
   "A folder shown in a space view: measure it (a list made by the space view
-itself is already measured)."
+itself is already measured).  The sizes and bars of the list before go
+first, whatever is shown now: a listing read again leaves them without
+their lines, all at the top."
+  (save-restriction
+    (widen)
+    (remove-overlays (point-min) (point-max) 'esploro-space t))
   (when (and esploro--space (not (consp dired-directory)))
     (esploro--space-measure)))
 

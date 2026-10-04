@@ -959,14 +959,22 @@ without a frame."
        (should (equal (names) '("big" "mid.bin" "tiny.txt")))
        (should (seq-some (lambda (o) (and (overlay-get o 'esploro-space) (string-match-p "█" (overlay-get o 'after-string))))
                          (overlays-in (point-min) (point-max))))
-       ;; Into a folder: still a space view, measured there.
+       ;; Into a folder: still a space view, measured there, with its own
+       ;; two bars and none left over from the three before.
        (esploro-go (esploro-tests--path "s/big"))
        (should esploro--space)
        (should (equal (names) '("a.bin" "inner")))
+       (should (= 2 (length (seq-filter (lambda (o) (overlay-get o 'esploro-space)) (overlays-in (point-min) (point-max))))))
+       ;; While a folder is being measured, the list is plain: no bars yet.
+       (cl-letf (((symbol-function 'esploro--space-measure) #'ignore))
+         (esploro-go (esploro-tests--path "s"))
+         (should-not (seq-some (lambda (o) (overlay-get o 'esploro-space)) (overlays-in (point-min) (point-max)))))
+       (esploro-go (esploro-tests--path "s/big"))
        (should (string-match-p "Space: .*big" (esploro--header)))
-       ;; And back to the list.
+       ;; And back to the list, the bars gone.
        (esploro-space-toggle)
        (should-not esploro--space)
+       (should-not (seq-some (lambda (o) (overlay-get o 'esploro-space)) (overlays-in (point-min) (point-max))))
        ;; The list again: folders first, by name.
        (should (equal (names) '("inner" "a.bin")))))))
 
