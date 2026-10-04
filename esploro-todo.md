@@ -8,6 +8,30 @@ list (DESIGN.md says what was done).
 
 ## Fitting how Vid works
 
+## Next (2026-10-04)
+
+1. **Your phone in the side panel.** The iPhone mounted with ifuse (usbmuxd),
+   one click under Drives: "iPhone", its photos and files like a folder,
+   unmounted when it's unplugged or on Eject. *Small.*
+
+2. **Changes for agents.** A read-only `vikix mcp` tool giving the journal
+   in words (`esploro changes`), so an agent can answer "what did I move
+   yesterday?" without being able to change anything. *Small.*
+
+3. **Tags.** Tag files from the right-click menu ("tender", "to read"),
+   kept as extended attributes (user.xdg.tags, which other programs read),
+   so they go with the file; `tag:tender` in Search Below, and a tag's
+   files as a saved search. *Medium.*
+
+4. **Compare two folders.** Two folders selected (or the two panes): what's
+   only in one, what differs, what's the same; and a plan to bring one up
+   to date with the other, for review. Dropbox against a backup, a USB
+   drive against home. *Medium.*
+
+5. **Batch picture tools.** On a selection of pictures: resize, convert
+   (HEIC to JPG), strip location and camera data; each as a plan of new
+   files beside the old, for review. *Small to medium.*
+
 ## Parked
 
 - **Dropping files on a workspace's number in the bar.** Needs XDND (drag
