@@ -364,6 +364,24 @@ meant), and the files of a git repository other than the one
 you're looking in (the same LICENSE in two projects is each
 project's own).
 
+5.6 Comparing two folders
+=========================
+
+Edit ⇒ Compare Folders... (‘C-c =’) compares the two panes'
+folders, or two folders you've selected, or the folder you're in
+with one you name: a backup against the original, a USB drive
+against home.  It lists what's only in each (a whole folder is
+said once, with how many files it holds), what differs and which
+side is newer, and how many files are the same.  Files are the
+same when their size and time are; when only the times differ,
+they're compared byte for byte.
+
+   ‘Bring ... Up to Date’ makes a plan for your review: what's
+missing there is copied, what's older there is replaced (the old
+one goes to the Trash).  Nothing is deleted, and a file that's
+newer on that side is left alone.  Apply it, edit it, or cancel;
+undo takes it back.  ‘g’ compares again.
+
 
 File: esploro.info,  Node: Drag and drop,  Next: The preview,  Prev: Recipes,  Up: Top
 
@@ -822,6 +840,7 @@ C-c r                     recent files
 C-c u                     every change, to undo any one
 C-c k                     connect to a server
 C-c t, C-c T              tag the selection, take a tag off
+C-c =                     compare two folders
 C-c s                     what's taking space, or the list again
 C-c S                     the biggest things anywhere below, or the
                           folder's own
@@ -906,6 +925,12 @@ File: esploro.info,  Node: The command line,  Next: Writing commands,  Prev: Key
 ‘esploro remote known’
      A server connected like a folder (*note Servers::),
      disconnected; those connected; those you've used.
+‘esploro compare A B’
+     What's only in folder A, only in B, different, and the
+     same.
+‘esploro compare --plan [--mirror] FROM TO’
+     A plan, for review, that brings TO up to date with FROM;
+     ‘--mirror’ also puts what's only in TO in the Trash.
 ‘esploro tag add|remove NAME FILE...’
      A tag of yours on files, or off them (*note Tags::); a
      plan, journaled.
@@ -1024,22 +1049,22 @@ Node: The window4072
 Node: Selecting and opening6558
 Node: Changing files7611
 Node: Recipes9992
-Node: Drag and drop14780
-Node: The preview15506
-Node: Two panes16620
-Node: Windows and workspaces17193
-Node: Looking around18641
-Node: Searches23112
-Node: Tags24880
-Node: Archives26072
-Node: Servers26904
-Node: The Trash27918
-Node: Where files are open28500
-Node: Closing a project28971
-Node: Plans from agents29840
-Node: Keys and mouse32104
-Node: The command line34475
-Node: Writing commands40087
+Node: Drag and drop15619
+Node: The preview16345
+Node: Two panes17459
+Node: Windows and workspaces18032
+Node: Looking around19480
+Node: Searches23951
+Node: Tags25719
+Node: Archives26911
+Node: Servers27743
+Node: The Trash28757
+Node: Where files are open29339
+Node: Closing a project29810
+Node: Plans from agents30679
+Node: Keys and mouse32943
+Node: The command line35360
+Node: Writing commands41241
 
 End Tag Table
 

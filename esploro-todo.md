@@ -10,11 +10,6 @@ list (DESIGN.md says what was done).
 
 ## Next (2026-10-04)
 
-4. **Compare two folders.** Two folders selected (or the two panes): what's
-   only in one, what differs, what's the same; and a plan to bring one up
-   to date with the other, for review. Dropbox against a backup, a USB
-   drive against home. *Medium.*
-
 5. **Batch picture tools.** On a selection of pictures: resize, convert
    (HEIC to JPG), strip location and camera data; each as a plan of new
    files beside the old, for review. *Small to medium.*

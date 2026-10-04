@@ -349,6 +349,22 @@ Left out: files under 1 KB (a small file twice is usually meant), and
 the files of a git repository other than the one you're looking in (the
 same LICENSE in two projects is each project's own).
 
+@section Comparing two folders
+
+Edit @result{} Compare Folders@dots{} (@kbd{C-c =}) compares the two
+panes' folders, or two folders you've selected, or the folder you're in
+with one you name: a backup against the original, a USB drive against
+home.  It lists what's only in each (a whole folder is said once, with
+how many files it holds), what differs and which side is newer, and how
+many files are the same.  Files are the same when their size and time
+are; when only the times differ, they're compared byte for byte.
+
+@samp{Bring @dots{} Up to Date} makes a plan for your review: what's
+missing there is copied, what's older there is replaced (the old one
+goes to the Trash).  Nothing is deleted, and a file that's newer on that
+side is left alone.  Apply it, edit it, or cancel; undo takes it back.
+@kbd{g} compares again.
+
 @node Drag and drop
 @chapter Drag and drop
 
@@ -745,6 +761,7 @@ then ask an agent to ``sort the ones I've selected'', or run
 @item C-c u @tab every change, to undo any one
 @item C-c k @tab connect to a server
 @item C-c t, C-c T @tab tag the selection, take a tag off
+@item C-c = @tab compare two folders
 @item C-c s @tab what's taking space, or the list again
 @item C-c S @tab the biggest things anywhere below, or the folder's own
 @item z @tab the last change again, on the selection
@@ -826,6 +843,11 @@ and the ones open.
 @itemx esploro remote known
 A server connected like a folder (@pxref{Servers}), disconnected; those
 connected; those you've used.
+@item esploro compare @var{a} @var{b}
+What's only in folder @var{a}, only in @var{b}, different, and the same.
+@item esploro compare --plan [--mirror] @var{from} @var{to}
+A plan, for review, that brings @var{to} up to date with @var{from};
+@option{--mirror} also puts what's only in @var{to} in the Trash.
 @item esploro tag add|remove @var{name} @var{file}@dots{}
 A tag of yours on files, or off them (@pxref{Tags}); a plan, journaled.
 @item esploro tags

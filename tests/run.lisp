@@ -1144,6 +1144,44 @@
                     (and (equal (cdr (run-cli (list "tags"))) '("to read"))
                          (member "tender" (esploro::file-tags (p "tg/a.pdf")) :test #'string=))))))
 
+;;; --- Comparing two folders ----------------------------------------------------------------------
+
+(dolist (d '("cmp/a/photos" "cmp/a/docs" "cmp/b/docs" "cmp/b/old")) (esploro::ensure-folder (p d)))
+(make-file (p "cmp/a/photos/p1.jpg")) (make-file (p "cmp/a/photos/p2.jpg"))
+(make-file (p "cmp/a/docs/same.txt") "same") (make-file (p "cmp/b/docs/same.txt") "same")
+(make-file (p "cmp/a/docs/touched.txt") "equal") (make-file (p "cmp/b/docs/touched.txt") "equal")
+(sb-posix:utime (p "cmp/b/docs/touched.txt") 5000 5000)            ; another time, the same bytes
+(make-file (p "cmp/a/docs/report.md") "newer here") (make-file (p "cmp/b/docs/report.md") "older")
+(sb-posix:utime (p "cmp/b/docs/report.md") 1000 1000)
+(make-file (p "cmp/a/docs/notes.md") "mine, older") (make-file (p "cmp/b/docs/notes.md") "theirs")
+(sb-posix:utime (p "cmp/a/docs/notes.md") 1000 1000)
+(make-file (p "cmp/b/old/x.txt"))
+(sb-posix:utime (p "cmp/a/docs/same.txt") 2000 2000) (sb-posix:utime (p "cmp/b/docs/same.txt") 2000 2000)
+(multiple-value-bind (only-a only-b differ same) (esploro::compare-folders (p "cmp/a") (p "cmp/b"))
+  (check "only in one: a whole folder said once, with its files" (equal only-a '(("photos" 2))))
+  (check "only in the other" (equal only-b '(("old" 1))))
+  (check "different, and which is newer" (equal differ '(("docs/notes.md" :b) ("docs/report.md" :a))))
+  (check "the same: by size and time, or by their bytes when the times differ" (= same 2)))
+(let* ((answer (run-cli (list "compare" "--plan" (p "cmp/a") (p "cmp/b"))))
+       (steps (and (eq (second answer) :plan) (esploro::read-plan-file (third answer)))))
+  (check "the plan to bring one up to date: the missing copied, the older replaced, the newer there left"
+         (equal steps (list (list :copy (p "cmp/a/photos") (p "cmp/b/photos"))
+                            (list :trash (p "cmp/b/docs/report.md"))
+                            (list :copy (p "cmp/a/docs/report.md") (p "cmp/b/docs/report.md")))))
+  (check "said in words" (search "2 to copy, 1 of them over an older one (which goes to the Trash); 1 newer there left alone"
+                                 (fourth answer)))
+  (check "and it can be applied whole" (null (esploro::check-plan steps)))
+  (run-cli (list "apply" (third answer)))
+  (check "applied: the folder is there, the report is the newer one, their notes are theirs still"
+         (and (path-exists-p (p "cmp/b/photos/p2.jpg"))
+              (string= (file-text (p "cmp/b/docs/report.md")) "newer here")
+              (string= (file-text (p "cmp/b/docs/notes.md")) "theirs")))
+  (check "nothing more to bring" (eq :none (second (run-cli (list "compare" "--plan" (p "cmp/a") (p "cmp/b")))))))
+(let ((steps (esploro::update-plan (p "cmp/a") (p "cmp/b") :mirror t)))
+  (check "mirroring also puts what's only there in the Trash" (equal steps (list (list :trash (p "cmp/b/old"))))))
+(check "a folder isn't compared with itself, or with one inside it"
+       (eq :error (second (run-cli (list "compare" (p "cmp") (p "cmp/a"))))))
+
 ;;; --- The end -------------------------------------------------------------------------
 
 (sb-ext:run-program "chmod" (list "-R" "u+w" *top*) :search t)

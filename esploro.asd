@@ -28,6 +28,7 @@
                (:file "recent")
                (:file "duplicates")
                (:file "changes")
+               (:file "compare")
                (:file "remote")
                (:file "phone")
                (:file "preview")))

@@ -48,6 +48,11 @@ esploro archive open PATH  PATH (a zip, a tarball, 7z, an ISO) opened read-only,
 esploro archive close POINT | list   closing one; the ones open
 esploro remote open SERVER  connect to user@host:folder (sshfs): where it is, like a folder
 esploro remote close POINT | list | known   disconnect; those connected; those you've used
+esploro compare A B         what's only in folder A, only in B, different (and which is
+                            newer), and how many files are the same
+esploro compare --plan [--mirror] FROM TO   a plan, for review, that brings TO up to
+                            date with FROM: the missing copied, the older replaced
+                            (--mirror: what's only in TO to the Trash)
 esploro tag add|remove NAME FILE...   a tag of yours on files (kept on the file itself,
                             user.xdg.tags; a plan, so undo takes it back); find them
                             with tag:NAME in a query
@@ -680,6 +685,47 @@ same, byte for byte; with --plan, the copies to the Trash, as a plan to review."
                       (cli-apply "-"))))
             (error (e) (answer (list :error (princ-to-string e))) 1))))))
 
+(defun cli-compare (args)
+  "esploro compare A B | compare --plan [--mirror] FROM TO"
+  (let* ((plan (equal (first args) "--plan"))
+         (args (if plan (rest args) args))
+         (mirror (equal (first args) "--mirror"))
+         (args (if mirror (rest args) args))
+         (a (and (first args) (absolute (first args))))
+         (b (and (second args) (absolute (second args)))))
+    (cond ((not (and a b)) (answer (list :error "esploro compare A B | compare --plan [--mirror] FROM TO")) 2)
+          ((not (and (directory-p a) (directory-p b)))
+           (answer (list :error (format nil "~a isn't a folder" (short-path (if (directory-p a) b a))))) 1)
+          ((or (string= a b) (path-inside-p a b) (path-inside-p b a))
+           (answer (list :error "one folder is the other, or inside it: nothing to compare")) 1)
+          (plan
+           (multiple-value-bind (steps left) (update-plan a b :mirror mirror)
+             (let* ((copies (count :copy steps :key #'first))
+                    (trashed (count :trash steps :key #'first))
+                    ;; Every replaced file is a trash and a copy; the rest of the trashes are the mirror's.
+                    (only-there (if mirror (length (nth-value 1 (compare-folders a b))) 0))
+                    (replaced (- trashed only-there)))
+               (if (null steps)
+                   (progn (answer (list :none (format nil "~a has everything ~a has~@[; ~d there newer or of another kind, left alone~]"
+                                                      (short-path b) (short-path a) (and (plusp left) left))))
+                          1)
+                   (let ((why (format nil "Bring ~a up to date with ~a: ~d to copy~@[, ~d of them over an older one (which goes to the Trash)~]~@[, ~d only there to the Trash~]~@[; ~d newer there left alone~]"
+                                      (short-path b) (short-path a) copies
+                                      (and (plusp replaced) replaced) (and (plusp only-there) only-there)
+                                      (and (plusp left) left))))
+                     (answer (list :plan (keep-proposed steps) why (length steps) :compare))
+                     0)))))
+          (t (multiple-value-bind (only-a only-b differ same) (compare-folders a b)
+               (if (null same)
+                   (progn (answer (list :error "too much to compare (over 200000 names)")) 1)
+                   (flet ((cap (list) (subseq list 0 (min 300 (length list)))))
+                     (answer (list :compare a b
+                                   (list (length only-a) (cap only-a))
+                                   (list (length only-b) (cap only-b))
+                                   (list (length differ) (cap differ))
+                                   same))
+                     0)))))))
+
 (defun cli-dbus ()
   "Make the running Emacs answer org.freedesktop.FileManager1 (the browsers'
 \"Show in folder\"): what the session bus runs when it's first asked."
@@ -732,6 +778,7 @@ same, byte for byte; with --plan, the copies to the Trash, as a plan to review."
           ((equal command "changes") (cli-changes (rest args)))
           ((equal command "remote") (cli-remote (rest args)))
           ((equal command "phone") (cli-phone (rest args)))
+          ((equal command "compare") (cli-compare (rest args)))
           ((equal command "tags") (cli-tags (rest args)))
           ((equal command "tag") (cli-tag (rest args)))
           ((equal command "open-on") (cli-open-on (second args) (cddr args)))

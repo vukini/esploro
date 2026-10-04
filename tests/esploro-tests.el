@@ -1238,4 +1238,42 @@ without a frame."
          (esploro-undo)
          (should (= 2 (length (shown)))))))))
 
+(ert-deftest esploro-compare-two-folders ()
+  (skip-unless (file-executable-p (expand-file-name "../esploro" (file-name-directory (locate-library "esploro")))))
+  (esploro-tests--world
+   (let ((a (esploro-tests--path "c/laptop")) (b (esploro-tests--path "c/backup")))
+     (esploro-tests--file "c/laptop/photos/p1.jpg")
+     (esploro-tests--file "c/laptop/report.md" "newer")
+     (esploro-tests--file "c/backup/report.md" "old")
+     (esploro-tests--file "c/backup/extra.txt")
+     (set-file-times (expand-file-name "report.md" b) (encode-time '(0 0 0 1 1 2020 nil nil t)))
+     (esploro-go (esploro-tests--path "c"))
+     ;; Two folders selected are the two compared.
+     (with-current-buffer (esploro--view)
+       (dired-goto-file b) (dired-mark 1) (dired-goto-file a) (dired-mark 1)
+       (should (equal (esploro--compare-folders) (cons b a))))
+     (save-window-excursion
+       (esploro-compare a b)
+       (with-current-buffer "*Esploro: compare*"
+         (let ((text (buffer-string)))
+           ;; (This Emacs's own home isn't the test's, so the names are whole.)
+           (should (string-search (format "Only in %s (1)\n  photos" a) text))
+           (should (string-search (format "Only in %s (1)\n  extra.txt" b) text))
+           (should (string-search (format "Different (1)\n  report.md   newer in %s" a) text)))
+         ;; Bring the backup up to date: a plan to review, then applied.
+         (push-button (esploro-tests--button (format " Bring %s Up to Date... " b)))
+         (let ((review (seq-find (lambda (buf) (eq (buffer-local-value 'major-mode buf) 'esploro-review-mode)) (buffer-list))))
+           (should review)
+           (with-current-buffer review
+             (should (string-match-p "Bring ~/c/backup up to date with ~/c/laptop: 2 to copy" (buffer-string))))
+           (esploro--review-done review t))
+         (should (file-exists-p (expand-file-name "photos/p1.jpg" b)))
+         (should (equal (with-temp-buffer (insert-file-contents (expand-file-name "report.md" b)) (buffer-string)) "newer"))
+         (should (file-exists-p (expand-file-name "extra.txt" b)))      ; nothing deleted
+         ;; Compared again: only the backup's extra is left.
+         (esploro-compare-refresh)
+         (should-not (string-match-p "Different" (buffer-string)))
+         (should (string-search (format "Only in %s (1)" b) (buffer-string)))
+         (kill-buffer))))))
+
 ;;; esploro-tests.el ends here

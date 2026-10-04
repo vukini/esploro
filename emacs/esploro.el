@@ -1018,6 +1018,7 @@ a dropped name kept its newline, named no file, and the drop was lost."
   "C-c r" #'esploro-recent
   "C-c u" #'esploro-changes
   "C-c k" #'esploro-connect
+  "C-c =" #'esploro-compare
   "C-c t" #'esploro-tag
   "C-c T" #'esploro-untag
   "C-c s" #'esploro-space-toggle
@@ -1089,6 +1090,7 @@ show the pane's sort and history even when the places are selected."
     (esploro-edit "Edit"
           ["Undo" esploro-undo :keys "C-/"]
           ["Changes..." esploro-changes :keys "C-c u"]
+          ["Compare Folders..." esploro-compare :keys "C-c ="]
           ["Stop Copying" esploro-cancel :keys "C-c C-k" :visible esploro--running]
           ["Repeat Last Change" esploro-repeat :keys "z" :active (esploro--marked-or-point-p)]
           ("Recipes" :filter esploro--recipes-menu)
@@ -1204,7 +1206,7 @@ Esploro's that has turned up since is hidden too."
     (with-current-buffer buffer
       (when (or (bound-and-true-p esploro-mode)
                 (memq major-mode '(esploro-places-mode esploro-project-mode esploro-habits-mode esploro-review-mode
-                           esploro-changes-mode)))
+                           esploro-changes-mode esploro-compare-mode)))
         (setq esploro--menus-only t))
       ;; Views open from before: what's done after a folder is shown, as
       ;; esploro-mode now sets it (new things, like git status, included).
@@ -3722,6 +3724,113 @@ working there; not Esploro's own views."
        (message "Esploro: can't undo it, its files have moved on since (nothing changed): %s" (string-join problems "; ")))
       (answer (esploro--say answer "undo")))
     (when (derived-mode-p 'esploro-changes-mode) (esploro-changes-refresh))))
+
+;;; --- Comparing two folders ------------------------------------------------------------------
+
+;; Edit > Compare Folders... (C-c =): the two panes' folders (or two folders
+;; selected, or this one and one you name): what's only in each, what
+;; differs and which side is newer, how many files are the same.  Bring Up
+;; to Date makes a plan for your review: the missing copied, the older
+;; replaced (the old one to the Trash); nothing is deleted, and what's
+;; newer on the other side is left alone.
+
+(defvar-local esploro--compare nil "The two folders this panel compares: (A . B).")
+
+(defvar-keymap esploro-compare-mode-map
+  :doc "Two folders compared."
+  :parent special-mode-map
+  "g" #'esploro-compare-refresh
+  "TAB" #'forward-button
+  "<backtab>" #'backward-button)
+
+(esploro--install-menu-bar esploro-compare-mode-map)
+
+(define-derived-mode esploro-compare-mode special-mode "Compare"
+  "Two folders side by side: what's only in one, what differs."
+  (setq-local esploro--menus-only t)
+  (setq-local tool-bar-map esploro-tool-bar-map)
+  (setq-local truncate-lines t))
+
+(defun esploro--compare-folders ()
+  "The two folders to compare: the two panes', two folders selected, or
+this one and one asked for."
+  (let* ((view (or (esploro--view) (user-error "No Esploro here (M-x esploro)")))
+         (here (directory-file-name (esploro--dir view)))
+         (other (esploro--other-pane))
+         (marked (with-current-buffer view (seq-filter #'file-directory-p (esploro--selection)))))
+    (cond ((= (length marked) 2) (cons (car marked) (cadr marked)))
+          ((and other (esploro--view-p (window-buffer other)))
+           (cons here (directory-file-name (esploro--dir (window-buffer other)))))
+          ((= (length marked) 1)
+           (cons here (car marked)))
+          (t (cons here (directory-file-name
+                         (read-directory-name (format "Compare %s with: " (abbreviate-file-name here)) nil nil t)))))))
+
+(defun esploro-compare (a b)
+  "Compare folders A and B: what's only in each, what differs, what's the same."
+  (interactive (let ((pair (esploro--compare-folders))) (list (car pair) (cdr pair))))
+  (let ((buffer (get-buffer-create "*Esploro: compare*")))
+    (with-current-buffer buffer
+      (unless (derived-mode-p 'esploro-compare-mode) (esploro-compare-mode))
+      (setq esploro--compare (cons (expand-file-name a) (expand-file-name b)))
+      (esploro-compare-refresh))
+    (pop-to-buffer buffer)))
+
+(defun esploro--compare-plan (from to &optional mirror)
+  "A plan, for review, that brings folder TO up to date with FROM."
+  (esploro--call (append (list "compare" "--plan") (and mirror (list "--mirror")) (list from to)) nil
+                 (lambda (answer)
+                   (pcase answer
+                     (`(:plan ,file ,why ,_n ,from-what)
+                      (esploro--review-open file why from-what (or (esploro--frame) (selected-frame))))
+                     (`(:none ,why) (message "Esploro: nothing to do: %s" why))
+                     (_ (esploro--say answer "compare"))))))
+
+(defun esploro-compare-refresh ()
+  "Compare the two folders again."
+  (interactive)
+  (pcase-let* ((`(,a . ,b) esploro--compare)
+               (answer (esploro--call (list "compare" a b) nil nil t))
+               (inhibit-read-only t)
+               (name-a (abbreviate-file-name a)) (name-b (abbreviate-file-name b)))
+    (erase-buffer)
+    (insert (propertize (format "%s  and  %s" name-a name-b) 'face 'bold) "\n\n")
+    (pcase answer
+      (`(:compare ,_ ,_ (,na ,only-a) (,nb ,only-b) (,nd ,differ) ,same)
+       (cl-flet ((section (title n entries line)
+                   (when (> n 0)
+                     (insert (propertize (format "%s (%d)" title n) 'face 'bold) "\n")
+                     (dolist (e entries) (insert "  " (funcall line e) "\n"))
+                     (when (> n (length entries)) (insert (format "  ... and %d more\n" (- n (length entries)))))
+                     (insert "\n")))
+                 (files (e) (if (> (cadr e) 1) (format "%s/  (%d files)" (car e) (cadr e)) (car e))))
+         (if (= 0 na nb nd)
+             (insert (format "They hold the same: %d %s.\n" same (if (= same 1) "file" "files")))
+           (section (format "Only in %s" name-a) na only-a #'files)
+           (section (format "Only in %s" name-b) nb only-b #'files)
+           (section "Different" nd differ
+                    (lambda (e) (format "%s   %s" (car e)
+                                        (pcase (cadr e)
+                                          (:a (format "newer in %s" name-a))
+                                          (:b (format "newer in %s" name-b))
+                                          (_ "a file in one, a folder in the other")))))
+           (insert (format "The same: %d %s.\n\n" same (if (= same 1) "file" "files")))
+           (insert-text-button (format " Bring %s Up to Date... " name-b)
+                               'action (lambda (_) (esploro--compare-plan a b))
+                               'follow-link t 'face 'esploro-button
+                               'help-echo "A plan to review: the missing copied there, the older replaced")
+           (insert "  ")
+           (insert-text-button (format " Bring %s Up to Date... " name-a)
+                               'action (lambda (_) (esploro--compare-plan b a))
+                               'follow-link t 'face 'esploro-button
+                               'help-echo "A plan to review: the missing copied there, the older replaced")
+           (insert "\n\n"
+                   (propertize "Each makes a plan for your review: what's missing is copied, what's older is replaced (the old one goes to the Trash).  Nothing is deleted, and what's newer on the other side is left alone.  g compares again."
+                               'face 'shadow)
+                   "\n"))))
+      (`(:error ,text) (insert text "\n"))
+      (_ (insert (format "%S\n" answer))))
+    (goto-char (point-min))))
 
 ;;; --- Plans to review: an agent's proposals ---------------------------------------------
 
