@@ -120,6 +120,7 @@ nil; ONLINE-ONLY, at Dropbox's top, how many folders aren't on this machine.")
 to it, (BYTES-DONE BYTES-ALL NAME), as the core copies.")
 
 (defvar esploro--running '() "The core's plans being applied now: processes.")
+(defvar esploro--remotes '() "Servers connected here, as (TARGET . MOUNTPOINT).")
 (defvar esploro--archives '()
   "Archives opened here, as (ARCHIVE . MOUNTPOINT); kept after closing, so
 Back into one opens it again.")
@@ -1016,6 +1017,7 @@ a dropped name kept its newline, named no file, and the drop was lost."
   "C-c b" #'esploro-bookmark-folder
   "C-c r" #'esploro-recent
   "C-c u" #'esploro-changes
+  "C-c k" #'esploro-connect
   "C-c s" #'esploro-space-toggle
   "C-c S" #'esploro-space-below-toggle
   "C-c C-k" #'esploro-cancel
@@ -1138,6 +1140,9 @@ show the pane's sort and history even when the places are selected."
         ["Home" esploro-home]
         ["Go to Folder..." esploro-go-to :keys "C-l"]
         ["Recent Files" esploro-recent :keys "C-c r"]
+        "---"
+        ["Connect to Server..." esploro-connect :keys "C-c k"]
+        ["Disconnect..." esploro-disconnect :active esploro--remotes]
         ("Searches" :filter esploro--searches-menu)
         "---"
         ["The Trash" esploro-show-trash]
@@ -1304,6 +1309,7 @@ Esploro's that has turned up since is hidden too."
                     (format "%s%s below %s   F5 looks again" (if name (concat name ": ") "") words
                             (abbreviate-file-name root)))
                 (or (esploro--archive-heading (esploro--dir))
+                    (esploro--remote-heading (esploro--dir))
                     (abbreviate-file-name (esploro--dir)))))))
           ;; Space and Recent have an order of their own.
           (if (or esploro--space esploro--recent esploro--duplicates) ""
@@ -1420,6 +1426,7 @@ PCManFM's and the file dialogs' (GTK's bookmarks, which they share)."
                                                              esploro-places))))
                     (cons "Drives" (esploro--drives))
                     (cons "Bookmarks" (esploro--bookmarks))
+                    (cons "Servers" (esploro--servers))
                     (cons "Searches" (esploro--searches))
                     (cons "" (list (cons "Trash" (esploro--trash-dir)))))))
 
@@ -1458,11 +1465,13 @@ PCManFM's and the file dialogs' (GTK's bookmarks, which they share)."
             (insert "  ")
             (insert-text-button (car place)
                                 'action (cond ((stringp (cdr place)) (lambda (_) (esploro--from-places (cdr place))))
+                                              ((eq (car-safe (cdr place)) 'remote) (lambda (_) (esploro-connect (cddr place))))
                                               ((eq (cdr place) 'recent) (lambda (_) (esploro--from-places-recent)))
                                               (t (lambda (_) (esploro-run-search (cddr place)))))
                                 'follow-link t
                                 'help-echo (cond ((stringp (cdr place)) (abbreviate-file-name (cdr place)))
                                                  ((eq (cdr place) 'recent) "The files opened lately")
+                                                 ((eq (car-safe (cdr place)) 'remote) "Connect to it")
                                                  (t "A search"))
                                 'face (if (equal (if (stringp (cdr place)) (file-name-as-directory (cdr place)) (cdr place))
                                                  here)
@@ -2441,6 +2450,100 @@ tile again as its thumbnail comes, while BUFFER is still laid out as ROUND."
                      (pcase answer
                        (`(:opened ,n ,count) (message "Esploro: opened %d on workspace %d" count n))
                        (_ (esploro--say answer "open on a workspace")))))))
+
+;;; --- Servers: a server's folders over SSH ---------------------------------------------------
+
+;; Go > Connect to Server... (C-c k): user@host:folder, mounted by the core
+;; with sshfs and shown like any folder (everything works there: copying
+;; in and out, the Trash, undo).  A passphrase is asked with a dialog.
+;; Servers stay connected until Go > Disconnect, or until Emacs ends: going
+;; back would ask the passphrase again.  Down the side, under Servers, the
+;; connected ones and the ones you've used (~/.ssh/config, known_hosts).
+
+(defun esploro--remote-for-path (path)
+  "The server (TARGET . POINT) PATH is on, or nil."
+  (let ((path (directory-file-name (expand-file-name path))))
+    (seq-find (lambda (r) (or (equal path (cdr r)) (string-prefix-p (file-name-as-directory (cdr r)) path)))
+              esploro--remotes)))
+
+(defun esploro--remote-heading (dir)
+  "DIR's place on a server, for the header: \"on user@host:folder: docs\"."
+  (when-let* ((remote (esploro--remote-for-path dir)))
+    (let ((rel (file-relative-name (directory-file-name dir) (cdr remote))))
+      (format "on %s%s" (string-remove-suffix ":" (car remote)) (if (equal rel ".") "" (concat ": " rel))))))
+
+(defun esploro-connect (server)
+  "Connect to SERVER (user@host:folder, or host for your home there), and
+show it like a folder."
+  (interactive (list (completing-read "Connect to (user@host:folder): "
+                                      (let ((known (esploro--call (list "remote" "known") nil nil t)))
+                                        (and (listp known) (seq-filter #'stringp known))))))
+  (when (string-empty-p (string-trim server)) (user-error "Which server?"))
+  (message "Esploro: connecting to %s (a dialog asks your passphrase if it's needed)..." server)
+  (let ((frame (esploro--frame)))
+    (esploro--call (list "remote" "open" server) nil
+                   (lambda (answer)
+                     (pcase answer
+                       (`(:remote ,point ,_)
+                        (let ((target (car (seq-find (lambda (r) (equal (cdr r) point))
+                                                     (esploro--call (list "remote" "list") nil nil t)))))
+                          (setf (alist-get (or target server) esploro--remotes nil nil #'equal) point))
+                        (if frame (with-selected-frame frame (select-window (esploro--main-window frame)) (esploro-go point))
+                          (esploro-go point))
+                        (message "Esploro: connected to %s; Go > Disconnect when you're done" server))
+                       (_ (esploro--say answer "connect")))))))
+
+(defun esploro-disconnect (target)
+  "Disconnect the server TARGET; a view on it goes home."
+  (interactive (list (if (null esploro--remotes) (user-error "No server is connected")
+                       (completing-read "Disconnect: " (mapcar #'car esploro--remotes) nil t))))
+  (let ((point (cdr (assoc target esploro--remotes))))
+    (dolist (b (esploro--views))
+      (with-current-buffer b
+        (when (and (derived-mode-p 'dired-mode) (esploro--remote-for-path (esploro--dir b)))
+          (esploro-go "~"))))
+    (pcase (esploro--call (list "remote" "close" point) nil nil t)
+      (`(:closed ,_) (setq esploro--remotes (cl-remove target esploro--remotes :key #'car :test #'equal))
+       (esploro-places-refresh)
+       (message "Esploro: disconnected from %s" target))
+      (`(:busy ,_) (message "Esploro: a program still has a file of %s open; close it, then disconnect" target))
+      (answer (esploro--say answer "disconnect")))))
+
+(defun esploro--disconnect-all ()
+  "Disconnect every server: Emacs is ending."
+  (dolist (r esploro--remotes)
+    (ignore-errors (esploro--call (list "remote" "close" (cdr r)) nil nil t))))
+
+(add-hook 'kill-emacs-hook #'esploro--disconnect-all)
+
+(defvar esploro--known-servers nil "(TIME . SERVERS): asked of the core at TIME.")
+
+(defun esploro--known-servers ()
+  "The servers you've used, asked of the core at most once a minute (the
+places are drawn on each move)."
+  (unless (and esploro--known-servers (< (float-time (time-since (car esploro--known-servers))) 60))
+    (let ((k (and (executable-find esploro-program)
+                  (ignore-errors (esploro--call (list "remote" "known") nil nil t))))
+          (connected (and (executable-find esploro-program)
+                          (ignore-errors (esploro--call (list "remote" "list") nil nil t)))))
+      ;; Servers still connected from before (an Emacs that ended without
+      ;; disconnecting): known again here, to use or disconnect.
+      (dolist (c (and (listp connected) connected))
+        (when (and (consp c) (stringp (car c)) (stringp (cdr c)))
+          (unless (assoc (car c) esploro--remotes)
+            (push c esploro--remotes))))
+      (setq esploro--known-servers (cons (current-time) (and (listp k) (seq-filter #'stringp k))))))
+  (cdr esploro--known-servers))
+
+(defun esploro--servers ()
+  "Servers for the places: connected ones (NAME . FOLDER), then known ones
+(NAME . (remote . NAME)) to connect to."
+  (let* ((known (esploro--known-servers))   ; first: it learns of servers still connected
+         (connected (mapcar (lambda (r) (cons (string-remove-suffix ":" (car r)) (cdr r))) esploro--remotes)))
+    (append connected
+            (mapcar (lambda (h) (cons h (cons 'remote h)))
+                    (seq-remove (lambda (h) (seq-some (lambda (c) (string-match-p (regexp-quote h) (car c))) connected))
+                                known)))))
 
 ;;; --- Commands in embark: on any file name in Emacs ----------------------------------
 

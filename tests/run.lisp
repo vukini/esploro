@@ -991,6 +991,63 @@
          (and (eq :refused (second (run-cli (list "changes" "undo" (first newest)))))
               (path-exists-p (p "chg/out/renamed.txt")))))
 
+;;; --- Servers over SSH ------------------------------------------------------------------------
+
+(check "user@host:folder as sshfs takes it"
+       (equal (multiple-value-list (esploro::parse-remote "vid@example.org:/srv/files"))
+              '("vid@example.org:/srv/files" nil "vid@example.org files")))
+(check "a host alone is its home there"
+       (equal (multiple-value-list (esploro::parse-remote "example.org")) '("example.org:" nil "example.org")))
+(check "ssh://user@host:port/folder"
+       (equal (multiple-value-list (esploro::parse-remote "ssh://vid@example.org:2222/srv"))
+              '("vid@example.org:/srv" 2222 "vid@example.org srv")))
+(signals error (esploro::parse-remote "-oProxyCommand=x"))
+
+;; A server of the test's own: sshd on a high port, this user, a throwaway
+;; key, nothing outside the test's folder.
+(let ((sshd (find-if #'esploro::path-exists-p '("/usr/bin/sshd" "/usr/sbin/sshd")))
+      (sftp (find-if #'esploro::path-exists-p '("/usr/libexec/sftp-server" "/usr/lib/ssh/sftp-server" "/usr/libexec/openssh/sftp-server"))))
+  (when (and sshd sftp (esploro::path-exists-p "/usr/bin/sshfs") (probe-file "/dev/fuse"))
+    (let* ((d (p "sshd")) (port 22990))
+      (esploro::ensure-folder (p "sshd/home/docs"))
+      (make-file (p "sshd/home/docs/readme.txt") "from the server")
+      (dolist (k '("host_key" "client_key"))
+        (sb-ext:run-program "ssh-keygen" (list "-q" "-t" "ed25519" "-N" "" "-f" (esploro::join-path d k)) :search t))
+      (with-open-file (out (esploro::join-path d "authorized_keys") :direction :output)
+        (write-string (esploro::file-text (esploro::join-path d "client_key.pub")) out))
+      (with-open-file (out (esploro::join-path d "sshd_config") :direction :output)
+        (format out "Port ~d~%ListenAddress 127.0.0.1~%HostKey ~a~%AuthorizedKeysFile ~a~%PidFile ~a~%StrictModes no~%UsePAM no~%PasswordAuthentication no~%Subsystem sftp ~a~%"
+                port (esploro::join-path d "host_key") (esploro::join-path d "authorized_keys")
+                (esploro::join-path d "sshd.pid") sftp))
+      (sb-ext:run-program sshd (list "-f" (esploro::join-path d "sshd_config")) :search nil)
+      (sleep 1)
+      (sb-posix:setenv "ESPLORO_SSHFS_OPTIONS"
+                       (format nil "IdentityFile=~a,Port=~d,StrictHostKeyChecking=no,UserKnownHostsFile=~a,BatchMode=yes"
+                               (esploro::join-path d "client_key") port (esploro::join-path d "known_hosts")) 1)
+      (unwind-protect
+           (let* ((answer (run-cli (list "remote" "open" (format nil "~a@127.0.0.1:~a" (sb-posix:getenv "USER") (p "sshd/home")))))
+                  (point (third answer)))
+             (check "a server's folder, connected like a folder"
+                    (and (eq (second answer) :remote) (path-exists-p (esploro::join-path point "docs" "readme.txt"))))
+             (when (eq (second answer) :remote)
+               (check "copied from it"
+                      (equal (run-cli (list "apply") (format nil "(:copy ~s ~s)" (esploro::join-path point "docs" "readme.txt") (p "fetched.txt")))
+                             '(0 :done 1)))
+               (check "and to it"
+                      (and (equal (run-cli (list "apply") (format nil "(:copy ~s ~s)" (p "fetched.txt") (esploro::join-path point "docs" "back.txt")))
+                                  '(0 :done 1))
+                           (path-exists-p (p "sshd/home/docs/back.txt"))))
+               (check "its file to the Trash, and undone"
+                      (and (equal (run-cli (list "apply") (format nil "(:trash ~s)" (esploro::join-path point "docs" "back.txt"))) '(0 :done 1))
+                           (not (path-exists-p (p "sshd/home/docs/back.txt")))
+                           (progn (undo-last) (path-exists-p (p "sshd/home/docs/back.txt")))))
+               (check "listed while connected" (= 1 (length (cdr (run-cli (list "remote" "list"))))))
+               (check "and disconnected" (and (eq :closed (second (run-cli (list "remote" "close" point))))
+                                              (not (path-exists-p point))))))
+        (sb-posix:unsetenv "ESPLORO_SSHFS_OPTIONS")
+        (let ((pid (ignore-errors (parse-integer (esploro::file-text (esploro::join-path d "sshd.pid")) :junk-allowed t))))
+          (when pid (sb-posix:kill pid sb-posix:sigterm)))))))
+
 ;;; --- The end -------------------------------------------------------------------------
 
 (sb-ext:run-program "chmod" (list "-R" "u+w" *top*) :search t)

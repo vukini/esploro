@@ -44,6 +44,7 @@ anything happens, done in the background, and kept in a journal.
 * Looking around::         Sorting, hidden files, a filter, finding below.
 * Searches::               Folders that are questions, kept by name.
 * Archives::               A zip or a tarball, opened like a folder.
+* Servers::                A server's folders over SSH, like local ones.
 * The Trash::              Looking in it, restoring, emptying.
 * Where files are open::   ``open in Emacs on 2'' beside a file.
 * Closing a project::      What's open in it, to save and close.
@@ -585,6 +586,26 @@ Back goes in again.  It's opened with @command{archivemount}, which
 Esploro's feature in Vikix installs; without it, Extract Here still
 works.
 
+@node Servers
+@chapter Servers
+
+Go @result{} Connect to Server@dots{} (@kbd{C-c k}) asks for a server:
+@samp{you@@example.org:/srv/files}, @samp{example.org} for your home
+there, or @samp{ssh://you@@example.org:2222/srv}.  Servers you've used
+(in @file{~/.ssh/config} and @file{~/.ssh/known_hosts}) are offered, and
+are down the side under Servers, a click away.  When your key has a
+passphrase, or the server wants a password, a small dialog asks.  A new
+server's key is shown to you to accept first.
+
+Its folders are then like local ones: open, preview, copy in and out,
+drag, rename, the Trash (a file of the server's goes to your Trash here,
+copied across) and undo.  The line at the top says where you are:
+``on you@@example.org:/srv/files: reports''.
+
+A server stays connected until Go @result{} Disconnect@dots{}, or until
+Emacs ends: going back to it doesn't ask the passphrase again.  It's
+done with @command{sshfs}, which Esploro's feature in Vikix installs.
+
 @node The Trash
 @chapter The Trash
 
@@ -694,6 +715,7 @@ then ask an agent to ``sort the ones I've selected'', or run
 @item C-c b @tab bookmark this folder
 @item C-c r @tab recent files
 @item C-c u @tab every change, to undo any one
+@item C-c k @tab connect to a server
 @item C-c s @tab what's taking space, or the list again
 @item C-c S @tab the biggest things anywhere below, or the folder's own
 @item z @tab the last change again, on the selection
@@ -769,6 +791,12 @@ That one, never offered again.
 @itemx esploro archive list
 An archive opened read-only like a folder (@pxref{Archives}), closed,
 and the ones open.
+@item esploro remote open @var{server}
+@itemx esploro remote close @var{mountpoint}
+@itemx esploro remote list
+@itemx esploro remote known
+A server connected like a folder (@pxref{Servers}), disconnected; those
+connected; those you've used.
 @item esploro changes
 @itemx esploro changes undo @var{id}
 Every change, newest first, in words; undoing any one.

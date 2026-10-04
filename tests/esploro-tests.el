@@ -1130,4 +1130,34 @@ without a frame."
        (should (string-match-p "undone" (buffer-string)))
        (kill-buffer)))))
 
+(ert-deftest esploro-servers ()
+  (esploro-tests--world
+   (let ((esploro--remotes '()) (esploro--known-servers nil)
+         (point (esploro-tests--path "cache/esploro/remote/vid@box docs")))
+     (make-directory point t)
+     (esploro-tests--file "cache/esploro/remote/vid@box docs/a.txt")
+     (cl-letf (((symbol-function 'esploro--call)
+                (lambda (args &optional _input then _sync)
+                  (let ((answer (pcase args
+                                  ('("remote" "known") '("box" "example.org"))
+                                  ('("remote" "list") (list (cons "vid@box:docs" point)))
+                                  (`("remote" "close" ,_) (list :closed point))
+                                  (_ nil))))
+                    (if then (funcall then answer) answer)))))
+       ;; A server still connected from before is known again, and listed.
+       (let ((servers (esploro--servers)))
+         (should (equal (car servers) (cons "vid@box:docs" point)))
+         (should (assoc "example.org" servers))
+         (should-not (assoc "box" servers)))   ; connected already
+       (should (assoc "Servers" (esploro--places)))
+       ;; On it: the top line says where.
+       (esploro-go point)
+       (with-current-buffer (esploro--view)
+         (should (string-match-p "on vid@box:docs" (esploro--header))))
+       ;; Disconnecting takes the view home first.
+       (esploro-disconnect "vid@box:docs")
+       (should-not esploro--remotes)
+       (with-current-buffer (esploro--view)
+         (should (equal (esploro--dir) (file-name-as-directory (expand-file-name "~")))))))))
+
 ;;; esploro-tests.el ends here

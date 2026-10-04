@@ -39,6 +39,7 @@ and kept in a journal.
 * Looking around::         Sorting, hidden files, a filter, finding below.
 * Searches::               Folders that are questions, kept by name.
 * Archives::               A zip or a tarball, opened like a folder.
+* Servers::                A server's folders over SSH, like local ones.
 * The Trash::              Looking in it, restoring, emptying.
 * Where files are open::   "open in Emacs on 2" beside a file.
 * Closing a project::      What's open in it, to save and close.
@@ -613,7 +614,7 @@ search can also be written as an s-expression: ‘(:and (:kind
 :pdf) (:or (:name "tax") (:name "receipt")))’.
 
 
-File: esploro.info,  Node: Archives,  Next: The Trash,  Prev: Searches,  Up: Top
+File: esploro.info,  Node: Archives,  Next: Servers,  Prev: Searches,  Up: Top
 
 12 Archives
 ***********
@@ -635,9 +636,33 @@ which Esploro's feature in Vikix installs; without it, Extract
 Here still works.
 
 
-File: esploro.info,  Node: The Trash,  Next: Where files are open,  Prev: Archives,  Up: Top
+File: esploro.info,  Node: Servers,  Next: The Trash,  Prev: Archives,  Up: Top
 
-13 The Trash
+13 Servers
+**********
+
+Go ⇒ Connect to Server... (‘C-c k’) asks for a server:
+‘you@example.org:/srv/files’, ‘example.org’ for your home there,
+or ‘ssh://you@example.org:2222/srv’.  Servers you've used (in
+‘~/.ssh/config’ and ‘~/.ssh/known_hosts’) are offered, and are
+down the side under Servers, a click away.  When your key has a
+passphrase, or the server wants a password, a small dialog asks.
+A new server's key is shown to you to accept first.
+
+   Its folders are then like local ones: open, preview, copy in
+and out, drag, rename, the Trash (a file of the server's goes to
+your Trash here, copied across) and undo.  The line at the top
+says where you are: "on you@example.org:/srv/files: reports".
+
+   A server stays connected until Go ⇒ Disconnect..., or until
+Emacs ends: going back to it doesn't ask the passphrase again.
+It's done with ‘sshfs’, which Esploro's feature in Vikix
+installs.
+
+
+File: esploro.info,  Node: The Trash,  Next: Where files are open,  Prev: Servers,  Up: Top
+
+14 The Trash
 ************
 
 Esploro uses the Trash other programs use (the freedesktop one,
@@ -652,7 +677,7 @@ emptying it gives back.
 
 File: esploro.info,  Node: Where files are open,  Next: Closing a project,  Prev: The Trash,  Up: Top
 
-14 Where files are open
+15 Where files are open
 ***********************
 
 Beside a file that a window has open, Esploro says which: "open
@@ -664,7 +689,7 @@ such a file goes to its window instead of opening it again.
 
 File: esploro.info,  Node: Closing a project,  Next: Plans from agents,  Prev: Where files are open,  Up: Top
 
-15 Closing a project
+16 Closing a project
 ********************
 
 Done with a project for now?  File ⇒ Close Project..., in any
@@ -685,7 +710,7 @@ Other windows are for you to close.  ‘g’ looks again.
 
 File: esploro.info,  Node: Plans from agents,  Next: Keys and mouse,  Prev: Closing a project,  Up: Top
 
-16 Plans from agents
+17 Plans from agents
 ********************
 
 An agent (Claude Code, through Vikix's ‘vikix mcp’) never moves,
@@ -734,7 +759,7 @@ terminal.
 
 File: esploro.info,  Node: Keys and mouse,  Next: The command line,  Prev: Plans from agents,  Up: Top
 
-17 Keys and mouse
+18 Keys and mouse
 *****************
 
 Mouse
@@ -764,6 +789,7 @@ M-o 1..9                  open the selection on that workspace
 C-c b                     bookmark this folder
 C-c r                     recent files
 C-c u                     every change, to undo any one
+C-c k                     connect to a server
 C-c s                     what's taking space, or the list again
 C-c S                     the biggest things anywhere below, or the
                           folder's own
@@ -787,7 +813,7 @@ m, u, U                   mark, unmark, unmark all (dired's)
 
 File: esploro.info,  Node: The command line,  Next: Writing commands,  Prev: Keys and mouse,  Up: Top
 
-18 The command line
+19 The command line
 *******************
 
 ‘esploro [FOLDER]’
@@ -842,6 +868,12 @@ File: esploro.info,  Node: The command line,  Next: Writing commands,  Prev: Key
 ‘esploro archive list’
      An archive opened read-only like a folder (*note
      Archives::), closed, and the ones open.
+‘esploro remote open SERVER’
+‘esploro remote close MOUNTPOINT’
+‘esploro remote list’
+‘esploro remote known’
+     A server connected like a folder (*note Servers::),
+     disconnected; those connected; those you've used.
 ‘esploro changes’
 ‘esploro changes undo ID’
      Every change, newest first, in words; undoing any one.
@@ -909,7 +941,7 @@ File: esploro.info,  Node: The command line,  Next: Writing commands,  Prev: Key
 
 File: esploro.info,  Node: Writing commands,  Prev: The command line,  Up: Top
 
-19 Writing commands
+20 Writing commands
 *******************
 
 Commands are on Esploro's menus (File ⇒ Commands, and the
@@ -942,25 +974,26 @@ the next step.
 
 Tag Table:
 Node: Top276
-Node: Opening Esploro2107
-Node: The window3923
-Node: Selecting and opening6178
-Node: Changing files7231
-Node: Recipes9612
-Node: Drag and drop14400
-Node: The preview15126
-Node: Two panes16240
-Node: Windows and workspaces16813
-Node: Looking around18261
-Node: Searches22732
-Node: Archives24504
-Node: The Trash25342
-Node: Where files are open25925
-Node: Closing a project26396
-Node: Plans from agents27265
-Node: Keys and mouse29529
-Node: The command line31794
-Node: Writing commands36651
+Node: Opening Esploro2180
+Node: The window3996
+Node: Selecting and opening6251
+Node: Changing files7304
+Node: Recipes9685
+Node: Drag and drop14473
+Node: The preview15199
+Node: Two panes16313
+Node: Windows and workspaces16886
+Node: Looking around18334
+Node: Searches22805
+Node: Archives24577
+Node: Servers25413
+Node: The Trash26427
+Node: Where files are open27009
+Node: Closing a project27480
+Node: Plans from agents28349
+Node: Keys and mouse30613
+Node: The command line32924
+Node: Writing commands38017
 
 End Tag Table
 

@@ -46,6 +46,8 @@ esploro habits --dismiss KEY   that one, never offered again
 esploro archive open PATH  PATH (a zip, a tarball, 7z, an ISO) opened read-only, like a
                             folder (archivemount): where it is
 esploro archive close POINT | list   closing one; the ones open
+esploro remote open SERVER  connect to user@host:folder (sshfs): where it is, like a folder
+esploro remote close POINT | list | known   disconnect; those connected; those you've used
 esploro changes             every change Esploro made, newest first, in words
 esploro changes undo ID     undo that one (checked whole first), not only the last
 esploro duplicates [--plan] FOLDER   the files below that are the same, byte for byte
@@ -595,6 +597,20 @@ same, byte for byte; with --plan, the copies to the Trash, as a plan to review."
         (step-failed (e) (answer (list :failed (describe-step (step-failed-step e)) (step-failed-reason e))) 1))
       (progn (answer (changes)) 0)))
 
+(defun cli-remote (args)
+  "esploro remote open SERVER | close POINT | list | known"
+  (let ((what (first args)))
+    (cond ((and (equal what "open") (second args))
+           (handler-case (progn (answer (list :remote (open-remote (second args)) (second args))) 0)
+             (error (e) (answer (list :error (princ-to-string e))) 1)))
+          ((and (equal what "close") (second args))
+           (if (close-remote (absolute (second args)))
+               (progn (answer (list :closed (second args))) 0)
+               (progn (answer (list :busy (second args))) 1)))
+          ((equal what "list") (answer (open-remotes)) 0)
+          ((equal what "known") (answer (known-servers)) 0)
+          (t (answer (list :error "esploro remote open SERVER | close POINT | list | known")) 2))))
+
 (defun cli-dbus ()
   "Make the running Emacs answer org.freedesktop.FileManager1 (the browsers'
 \"Show in folder\"): what the session bus runs when it's first asked."
@@ -645,6 +661,7 @@ same, byte for byte; with --plan, the copies to the Trash, as a plan to review."
           ((equal command "sizes") (cli-sizes (rest args)))
           ((equal command "duplicates") (cli-duplicates (rest args)))
           ((equal command "changes") (cli-changes (rest args)))
+          ((equal command "remote") (cli-remote (rest args)))
           ((equal command "open-on") (cli-open-on (second args) (cddr args)))
           ((equal command "thumbnails") (cli-thumbnails (rest args)))
           ((equal command "project") (cli-project (rest args)))
@@ -680,6 +697,10 @@ same, byte for byte; with --plan, the copies to the Trash, as a plan to review."
 (defun main ()
   "The executable's start."
   (sb-ext:disable-debugger)
+  ;; Run by ssh as its SSH_ASKPASS: ask, answer, nothing else.
+  (when (equal (sb-posix:getenv "ESPLORO_ASKPASS") "1")
+    (askpass (or (second sb-ext:*posix-argv*) "Passphrase"))
+    (sb-ext:exit :code 0))
   (sb-ext:exit
    :code (handler-case (or (main-1 (rest sb-ext:*posix-argv*)) 0)
            (sb-sys:interactive-interrupt () 130)

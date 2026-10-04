@@ -8,10 +8,6 @@ list (DESIGN.md says what was done).
 
 ## Fitting how Vid works
 
-9. **Remote folders.** A server's folders over SSH like local ones
-   (TRAMP shows them; plans, the Trash and undo would need to work there
-   too). *Larger.*
-
 ## Parked
 
 - **Dropping files on a workspace's number in the bar.** Needs XDND (drag
