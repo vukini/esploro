@@ -48,6 +48,8 @@ esploro archive open PATH  PATH (a zip, a tarball, 7z, an ISO) opened read-only,
 esploro archive close POINT | list   closing one; the ones open
 esploro remote open SERVER  connect to user@host:folder (sshfs): where it is, like a folder
 esploro remote close POINT | list | known   disconnect; those connected; those you've used
+esploro phone [mount [ID] | unmount]   the iPhones plugged in, and which is mounted
+                            (at ~/iphone, with ifuse); mounting one, unmounting it
 esploro changes             every change Esploro made, newest first, in words
 esploro changes undo ID     undo that one (checked whole first), not only the last
 esploro duplicates [--plan] FOLDER   the files below that are the same, byte for byte
@@ -611,6 +613,17 @@ same, byte for byte; with --plan, the copies to the Trash, as a plan to review."
           ((equal what "known") (answer (known-servers)) 0)
           (t (answer (list :error "esploro remote open SERVER | close POINT | list | known")) 2))))
 
+(defun cli-phone (args)
+  "esploro phone | phone mount [ID] | phone unmount"
+  (cond ((equal (first args) "mount")
+         (handler-case (progn (answer (list :mounted (mount-phone (second args)))) 0)
+           (error (e) (answer (list :error (princ-to-string e))) 1)))
+        ((equal (first args) "unmount")
+         (if (unmount-phone)
+             (progn (answer (list :unmounted (phone-folder))) 0)
+             (progn (answer (list :busy (phone-folder))) 1)))
+        (t (answer (phone-status)) 0)))
+
 (defun cli-dbus ()
   "Make the running Emacs answer org.freedesktop.FileManager1 (the browsers'
 \"Show in folder\"): what the session bus runs when it's first asked."
@@ -662,6 +675,7 @@ same, byte for byte; with --plan, the copies to the Trash, as a plan to review."
           ((equal command "duplicates") (cli-duplicates (rest args)))
           ((equal command "changes") (cli-changes (rest args)))
           ((equal command "remote") (cli-remote (rest args)))
+          ((equal command "phone") (cli-phone (rest args)))
           ((equal command "open-on") (cli-open-on (second args) (cddr args)))
           ((equal command "thumbnails") (cli-thumbnails (rest args)))
           ((equal command "project") (cli-project (rest args)))

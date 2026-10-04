@@ -1055,6 +1055,44 @@
         (let ((pid (ignore-errors (parse-integer (esploro::file-text (esploro::join-path d "sshd.pid")) :junk-allowed t))))
           (when pid (sb-posix:kill pid sb-posix:sigterm)))))))
 
+;;; --- The phone: stand-ins for libimobiledevice, and a real FUSE mount -------------------------
+
+(when (and (esploro::archive-program) (probe-file "/dev/fuse"))
+  (esploro::ensure-folder (p "phone/bin"))
+  (esploro::ensure-folder (p "phone/roll/DCIM/100APPLE"))
+  (make-file (p "phone/roll/DCIM/100APPLE/IMG_0001.JPG") "jpeg")
+  (sb-ext:run-program "tar" (list "czf" (p "phone/roll.tgz") "-C" (p "phone/roll") ".") :search t)
+  (flet ((stand-in (name text)
+           (with-open-file (out (p "phone/bin" name) :direction :output :if-exists :supersede)
+             (format out "#!/bin/sh~%~a~%" text))
+           (sb-posix:chmod (p "phone/bin" name) #o755)))
+    (stand-in "idevice_id" (format nil "[ -e ~s ] && echo 00008110-ABC" (p "phone/plugged")))
+    (stand-in "ideviceinfo" "echo \"Vid's iPhone\"")
+    (stand-in "idevicepair" (format nil "[ -e ~s ]" (p "phone/trusted")))
+    ;; ifuse -u ID FOLDER: the camera roll, mounted for real (archivemount).
+    (stand-in "ifuse" (format nil "exec archivemount -o readonly ~s \"$3\"" (p "phone/roll.tgz"))))
+  (let ((path (sb-posix:getenv "PATH")))
+    (sb-posix:setenv "PATH" (format nil "~a:~a" (p "phone/bin") path) 1)
+    (sb-posix:setenv "ESPLORO_PHONE_FOLDER" (p "iphone") 1)
+    (unwind-protect
+         (progn
+           (check "no phone plugged in: none" (equal (cdr (run-cli (list "phone"))) '(:phones nil nil)))
+           (make-file (p "phone/plugged") "")
+           (check "a phone plugged in, by its name" (equal (cdr (run-cli (list "phone")))
+                                                            '(:phones (("00008110-ABC" "Vid's iPhone")) nil)))
+           (check "not trusted yet: says so"
+                  (search "tap Trust" (third (run-cli (list "phone" "mount")))))
+           (make-file (p "phone/trusted") "")
+           (check "trusted: mounted, its camera roll there"
+                  (and (eq :mounted (second (run-cli (list "phone" "mount"))))
+                       (path-exists-p (p "iphone/DCIM/100APPLE/IMG_0001.JPG"))))
+           (check "said to be mounted" (equal (fourth (run-cli (list "phone"))) (p "iphone")))
+           (check "and unmounted" (and (eq :unmounted (second (run-cli (list "phone" "unmount"))))
+                                       (not (esploro::mounted-p (p "iphone"))))))
+      (ignore-errors (sb-ext:run-program "fusermount" (list "-u" (p "iphone")) :search t))
+      (sb-posix:setenv "PATH" path 1)
+      (sb-posix:unsetenv "ESPLORO_PHONE_FOLDER"))))
+
 ;;; --- The end -------------------------------------------------------------------------
 
 (sb-ext:run-program "chmod" (list "-R" "u+w" *top*) :search t)

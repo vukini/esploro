@@ -1168,4 +1168,35 @@ without a frame."
        (with-current-buffer (esploro--view)
          (should (equal (esploro--dir) (file-name-as-directory (expand-file-name "~")))))))))
 
+(ert-deftest esploro-phone-under-drives ()
+  (esploro-tests--world
+   (let ((esploro--phone nil) (asked '())
+         (status '(:phones (("00008110-ABC" "Vid's iPhone")) nil)))
+     (cl-letf (((symbol-function 'esploro--call)
+                (lambda (args &optional _input then _sync)
+                  (push args asked)
+                  (let ((answer (pcase args
+                                  ('("phone") status)
+                                  ('("phone" "mount" "00008110-ABC")
+                                   (make-directory (esploro-tests--path "iphone/DCIM") t)
+                                   (setq status (list :phones '(("00008110-ABC" "Vid's iPhone")) (esploro-tests--path "iphone")))
+                                   (list :mounted (esploro-tests--path "iphone")))
+                                  ('("phone" "unmount") (list :unmounted (esploro-tests--path "iphone")))
+                                  (_ nil))))
+                    (if then (funcall then answer) answer)))))
+       ;; Plugged in: under Drives by its name, to open.
+       (should (equal (assoc "Vid's iPhone" (cdr (assoc "Drives" (esploro--places))))
+                      '("Vid's iPhone" phone . "00008110-ABC")))
+       (esploro-go esploro-tests--top)
+       (esploro-open-phone "00008110-ABC")
+       (with-current-buffer (esploro--view)
+         (should (equal (esploro--dir) (esploro-tests--path "iphone/DCIM/"))))
+       ;; Mounted: under Drives as its folder; ejecting goes home first.
+       (setq esploro--phone nil)
+       (should (equal (cdr (assoc "Vid's iPhone" (cdr (assoc "Drives" (esploro--places))))) (esploro-tests--path "iphone")))
+       (esploro-eject-phone)
+       (should (member '("phone" "unmount") asked))
+       (with-current-buffer (esploro--view)
+         (should-not (string-prefix-p (esploro-tests--path "iphone") (esploro--dir))))))))
+
 ;;; esploro-tests.el ends here

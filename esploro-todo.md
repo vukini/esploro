@@ -10,10 +10,6 @@ list (DESIGN.md says what was done).
 
 ## Next (2026-10-04)
 
-1. **Your phone in the side panel.** The iPhone mounted with ifuse (usbmuxd),
-   one click under Drives: "iPhone", its photos and files like a folder,
-   unmounted when it's unplugged or on Eject. *Small.*
-
 2. **Changes for agents.** A read-only `vikix mcp` tool giving the journal
    in words (`esploro changes`), so an agent can answer "what did I move
    yesterday?" without being able to change anything. *Small.*

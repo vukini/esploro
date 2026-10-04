@@ -1143,6 +1143,7 @@ show the pane's sort and history even when the places are selected."
         "---"
         ["Connect to Server..." esploro-connect :keys "C-c k"]
         ["Disconnect..." esploro-disconnect :active esploro--remotes]
+        ["Eject Phone" esploro-eject-phone :visible (nth 2 (cdr esploro--phone))]
         ("Searches" :filter esploro--searches-menu)
         "---"
         ["The Trash" esploro-show-trash]
@@ -1424,7 +1425,7 @@ PCManFM's and the file dialogs' (GTK's bookmarks, which they share)."
                                          (seq-filter (lambda (p) (file-directory-p (cdr p)))
                                                      (mapcar (lambda (p) (cons (car p) (expand-file-name (cdr p))))
                                                              esploro-places))))
-                    (cons "Drives" (esploro--drives))
+                    (cons "Drives" (append (esploro--drives) (esploro--phones)))
                     (cons "Bookmarks" (esploro--bookmarks))
                     (cons "Servers" (esploro--servers))
                     (cons "Searches" (esploro--searches))
@@ -1466,12 +1467,14 @@ PCManFM's and the file dialogs' (GTK's bookmarks, which they share)."
             (insert-text-button (car place)
                                 'action (cond ((stringp (cdr place)) (lambda (_) (esploro--from-places (cdr place))))
                                               ((eq (car-safe (cdr place)) 'remote) (lambda (_) (esploro-connect (cddr place))))
+                                              ((eq (car-safe (cdr place)) 'phone) (lambda (_) (esploro-open-phone (cddr place))))
                                               ((eq (cdr place) 'recent) (lambda (_) (esploro--from-places-recent)))
                                               (t (lambda (_) (esploro-run-search (cddr place)))))
                                 'follow-link t
                                 'help-echo (cond ((stringp (cdr place)) (abbreviate-file-name (cdr place)))
                                                  ((eq (cdr place) 'recent) "The files opened lately")
                                                  ((eq (car-safe (cdr place)) 'remote) "Connect to it")
+                                                 ((eq (car-safe (cdr place)) 'phone) "Open it")
                                                  (t "A search"))
                                 'face (if (equal (if (stringp (cdr place)) (file-name-as-directory (cdr place)) (cdr place))
                                                  here)
@@ -2450,6 +2453,65 @@ tile again as its thumbnail comes, while BUFFER is still laid out as ROUND."
                      (pcase answer
                        (`(:opened ,n ,count) (message "Esploro: opened %d on workspace %d" count n))
                        (_ (esploro--say answer "open on a workspace")))))))
+
+;;; --- The phone: an iPhone on the cable, under Drives --------------------------------------
+
+;; A phone plugged in shows under Drives by its name; a click mounts it (the
+;; core, with ifuse, at ~/iphone) and goes in; Go > Eject Phone unmounts it.
+;; Not paired yet: the message says to unlock it and tap Trust.
+
+(defvar esploro--phone nil "(TIME . STATUS): the phones, asked of the core at TIME.")
+
+(defun esploro--phone-status ()
+  "The core's (:phones ((ID NAME) ...) MOUNTED-FOLDER), asked at most every
+10 seconds (the places are drawn on each move)."
+  (unless (and esploro--phone (< (float-time (time-since (car esploro--phone))) 10))
+    (let ((s (and (executable-find esploro-program) (ignore-errors (esploro--call (list "phone") nil nil t)))))
+      (setq esploro--phone (cons (current-time) (and (eq (car-safe s) :phones) s)))))
+  (cdr esploro--phone))
+
+(defun esploro--phones ()
+  "Phones for the places: (NAME . FOLDER) when mounted, else (NAME . (phone . ID))."
+  (pcase (esploro--phone-status)
+    (`(:phones ,phones ,mounted)
+     (if mounted
+         (list (cons (or (cadr (car phones)) "iPhone") mounted))
+       (mapcar (lambda (p) (cons (cadr p) (cons 'phone (car p)))) phones)))))
+
+(defun esploro-open-phone (&optional id)
+  "Mount the iPhone (ID, or the one plugged in) and go into it."
+  (interactive)
+  (message "Esploro: opening the iPhone...")
+  (let ((frame (esploro--frame)))
+    (esploro--call (append (list "phone" "mount") (and id (list id))) nil
+                   (lambda (answer)
+                     (setq esploro--phone nil)
+                     (pcase answer
+                       (`(:mounted ,folder)
+                        ;; The camera roll, where there is one.
+                        (let* ((dcim (expand-file-name "DCIM" folder))
+                               (to (if (file-directory-p dcim) dcim folder)))
+                          (if frame (with-selected-frame frame (select-window (esploro--main-window frame))
+                                                         (esploro-go to))
+                            (esploro-go to)))
+                        (message "Esploro: the iPhone is open; Go > Eject Phone before unplugging it"))
+                       (_ (esploro--say answer "the iPhone")))))))
+
+(defun esploro-eject-phone ()
+  "Unmount the iPhone, so it can be unplugged; a view in it goes home first."
+  (interactive)
+  (let ((folder (pcase (esploro--phone-status) (`(:phones ,_ ,mounted) mounted))))
+    (when folder
+      (dolist (b (esploro--views))
+        (with-current-buffer b
+          (when (and (derived-mode-p 'dired-mode)
+                     (string-prefix-p (file-name-as-directory folder) (esploro--dir b)))
+            (esploro-go "~")))))
+    (pcase (esploro--call (list "phone" "unmount") nil nil t)
+      (`(:unmounted ,_) (setq esploro--phone nil) (esploro-places-refresh)
+       (message "Esploro: the iPhone can be unplugged"))
+      (`(:busy ,_) (message "Esploro: something still has a file of the iPhone open; close it, then eject again"))
+      (answer (esploro--say answer "eject")))))
 
 ;;; --- Servers: a server's folders over SSH ---------------------------------------------------
 

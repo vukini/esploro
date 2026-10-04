@@ -28,6 +28,7 @@
                (:file "duplicates")
                (:file "changes")
                (:file "remote")
+               (:file "phone")
                (:file "preview")))
 
 (defsystem "esploro"

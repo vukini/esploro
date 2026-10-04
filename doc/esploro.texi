@@ -113,7 +113,10 @@ those you opened through Esploro, and what GTK programs note in
 @file{~/.local/share/recently-used.xbel}; also Go @result{} Recent
 Files, or @kbd{C-c r}), your home, the usual folders (Documents, Downloads,
 Pictures, Music, Videos, Projects, Dropbox, when they exist), drives
-plugged in (in @file{/run/media}), the bookmarks GTK programs keep
+plugged in (in @file{/run/media}), an iPhone on the cable (by its
+name: a click opens it at its camera roll, mounted at @file{~/iphone}
+with @command{ifuse}; Go @result{} Eject Phone before unplugging it; not
+paired yet, it asks you to unlock it and tap Trust), the bookmarks GTK programs keep
 (@file{~/.config/gtk-3.0/bookmarks}: File @result{} Bookmark This Folder, or
 @kbd{C-c b}, adds the folder you're in, and Remove Bookmark takes it
 out; PCManFM and the file dialogs share the list), the searches you kept
@@ -797,6 +800,9 @@ and the ones open.
 @itemx esploro remote known
 A server connected like a folder (@pxref{Servers}), disconnected; those
 connected; those you've used.
+@item esploro phone [mount [@var{id}] | unmount]
+The iPhones plugged in and which is mounted; mounting one at
+@file{~/iphone}, unmounting it.
 @item esploro changes
 @itemx esploro changes undo @var{id}
 Every change, newest first, in words; undoing any one.

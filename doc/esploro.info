@@ -115,13 +115,16 @@ Places
      also Go ⇒ Recent Files, or ‘C-c r’), your home, the usual
      folders (Documents, Downloads, Pictures, Music, Videos,
      Projects, Dropbox, when they exist), drives plugged in (in
-     ‘/run/media’), the bookmarks GTK programs keep
-     (‘~/.config/gtk-3.0/bookmarks’: File ⇒ Bookmark This
-     Folder, or ‘C-c b’, adds the folder you're in, and Remove
-     Bookmark takes it out; PCManFM and the file dialogs share
-     the list), the searches you kept (*note Searches::), and
-     the Trash.  Click one to go there.  ‘F9’, or View, Places,
-     hides them or shows them again.
+     ‘/run/media’), an iPhone on the cable (by its name: a click
+     opens it at its camera roll, mounted at ‘~/iphone’ with
+     ‘ifuse’; Go ⇒ Eject Phone before unplugging it; not paired
+     yet, it asks you to unlock it and tap Trust), the bookmarks
+     GTK programs keep (‘~/.config/gtk-3.0/bookmarks’: File ⇒
+     Bookmark This Folder, or ‘C-c b’, adds the folder you're
+     in, and Remove Bookmark takes it out; PCManFM and the file
+     dialogs share the list), the searches you kept (*note
+     Searches::), and the Trash.  Click one to go there.  ‘F9’,
+     or View, Places, hides them or shows them again.
 
 The tool bar
      Back, Forward, Up, Home, Places, Two Panes, Preview, New
@@ -874,6 +877,9 @@ File: esploro.info,  Node: The command line,  Next: Writing commands,  Prev: Key
 ‘esploro remote known’
      A server connected like a folder (*note Servers::),
      disconnected; those connected; those you've used.
+‘esploro phone [mount [ID] | unmount]’
+     The iPhones plugged in and which is mounted; mounting one
+     at ‘~/iphone’, unmounting it.
 ‘esploro changes’
 ‘esploro changes undo ID’
      Every change, newest first, in words; undoing any one.
@@ -976,24 +982,24 @@ Tag Table:
 Node: Top276
 Node: Opening Esploro2180
 Node: The window3996
-Node: Selecting and opening6251
-Node: Changing files7304
-Node: Recipes9685
-Node: Drag and drop14473
-Node: The preview15199
-Node: Two panes16313
-Node: Windows and workspaces16886
-Node: Looking around18334
-Node: Searches22805
-Node: Archives24577
-Node: Servers25413
-Node: The Trash26427
-Node: Where files are open27009
-Node: Closing a project27480
-Node: Plans from agents28349
-Node: Keys and mouse30613
-Node: The command line32924
-Node: Writing commands38017
+Node: Selecting and opening6482
+Node: Changing files7535
+Node: Recipes9916
+Node: Drag and drop14704
+Node: The preview15430
+Node: Two panes16544
+Node: Windows and workspaces17117
+Node: Looking around18565
+Node: Searches23036
+Node: Archives24808
+Node: Servers25644
+Node: The Trash26658
+Node: Where files are open27240
+Node: Closing a project27711
+Node: Plans from agents28580
+Node: Keys and mouse30844
+Node: The command line33155
+Node: Writing commands38393
 
 End Tag Table
 
