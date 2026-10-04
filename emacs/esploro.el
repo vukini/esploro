@@ -83,6 +83,9 @@ Its menu bar and tool bar are on even when they're off elsewhere."
 (defvar-local esploro--thumbnails nil "Non-nil: pictures, PDFs and videos show a thumbnail in the list.")
 (defvar esploro--unsorted nil "Non-nil while a list is shown in the order it's given (Recent).")
 (defvar-local esploro--recent nil "Non-nil in a view of the files opened lately.")
+(defvar-local esploro--space nil "Non-nil: this view shows what takes space, biggest first.")
+(defvar-local esploro--space-total nil "The folder's size as measured, or `measuring'.")
+(put 'esploro--space 'permanent-local t)
 (put 'esploro--recent 'permanent-local t)
 (defvar-local esploro--git nil
   "What git says of this folder's repository: (ROOT BRANCH-LINE . STATES), or nil.")
@@ -985,6 +988,7 @@ a dropped name kept its newline, named no file, and the drop was lost."
   "M-o" #'esploro-open-on-workspace
   "C-c b" #'esploro-bookmark-folder
   "C-c r" #'esploro-recent
+  "C-c s" #'esploro-space-toggle
   "C-c C-k" #'esploro-cancel
   "<f6>" #'esploro-move-to-other-pane
   "C-c C-c" #'esploro-copy-to-other-pane
@@ -1084,6 +1088,7 @@ show the pane's sort and history even when the places are selected."
           ["Hidden Files" esploro-toggle-hidden :style toggle :selected (esploro--value 'esploro--hidden)]
           ["Thumbnails" esploro-thumbnails-toggle :keys "T" :style toggle :selected (esploro--value 'esploro--thumbnails)]
           ["Grid" esploro-grid-toggle :keys "G" :style toggle :selected (esploro--value 'esploro--grid)]
+          ["What's Taking Space" esploro-space-toggle :keys "C-c s" :style toggle :selected (esploro--value 'esploro--space)]
           ["Filter..." esploro-filter :keys "/"]
           ["Search Below..." esploro-search :keys "M-s s"]
           ["Refresh" esploro--refresh :keys "F5"]
@@ -1161,7 +1166,7 @@ Esploro's that has turned up since is hidden too."
       ;; esploro-mode now sets it (new things, like git status, included).
       (when (bound-and-true-p esploro-mode)
         (dolist (f '(esploro--whole-row-drag esploro--annotate esploro--thumbnails-show
-                     esploro--grid-after-readin esploro--git-show))
+                     esploro--grid-after-readin esploro--git-show esploro--space-after-readin))
           (add-hook 'dired-after-readin-hook f nil t))))))
 
 (defun esploro--install-menu-bar (map)
@@ -1251,15 +1256,23 @@ Esploro's that has turned up since is hidden too."
   "Esploro's tool bar.")
 
 (defun esploro--header ()
-  (concat " " (if esploro--recent "Recent: the files opened lately, newest first   F5 looks again"
+  (concat " " (if esploro--space
+                  (format "Space: %s, %s   biggest first, F5 measures again"
+                          (abbreviate-file-name (esploro--dir))
+                          (cond ((eq esploro--space-total 'measuring) "measuring...")
+                                (esploro--space-total (concat (file-size-human-readable esploro--space-total) " in all"))
+                                (t "")))
+                (if esploro--recent "Recent: the files opened lately, newest first   F5 looks again"
                 (if esploro--search
                   (pcase-let ((`(,words ,root ,name) esploro--search))
                     (format "%s%s below %s   F5 looks again" (if name (concat name ": ") "") words
                             (abbreviate-file-name root)))
                 (or (esploro--archive-heading (esploro--dir))
-                    (abbreviate-file-name (esploro--dir)))))
-          (format "   sorted by %s%s" esploro--sort (if esploro--reverse ", the other way" ""))
-          (if esploro--hidden "   hidden shown" "")
+                    (abbreviate-file-name (esploro--dir))))))
+          ;; Space and Recent have an order of their own.
+          (if (or esploro--space esploro--recent) ""
+            (format "   sorted by %s%s" esploro--sort (if esploro--reverse ", the other way" "")))
+          (if (and esploro--hidden (not esploro--space)) "   hidden shown" "")
           (if esploro--filter (format "   only \"%s\" (F5: all)" esploro--filter) "")
           (if (cadr esploro--git) (format "   git: %s" (esploro--git-branch-words (cadr esploro--git))) "")
           (if (esploro--in-trash-p) "   the Trash: Restore and Empty on the menus" "")))
@@ -1284,7 +1297,8 @@ through the core, journaled so they can be undone."
     (add-hook 'dired-after-readin-hook #'esploro--annotate nil t)
     (add-hook 'dired-after-readin-hook #'esploro--thumbnails-show nil t)
     (add-hook 'dired-after-readin-hook #'esploro--grid-after-readin nil t)
-    (add-hook 'dired-after-readin-hook #'esploro--git-show nil t)))
+    (add-hook 'dired-after-readin-hook #'esploro--git-show nil t)
+    (add-hook 'dired-after-readin-hook #'esploro--space-after-readin nil t)))
 
 ;;; --- Places, down the side --------------------------------------------------------------
 
@@ -2433,6 +2447,101 @@ Your own kinds and folders are a recipe: see the manual."
   (interactive)
   (let ((files (or (esploro--in-view (esploro--recipe-files)) (user-error "No files here"))))
     (esploro--offer-plan (append (list "sort-by-kind" "--plan") files) "sort by kind")))
+
+;;; --- Space: what's taking it ------------------------------------------------------------
+
+;; View > What's Taking Space (C-c s): the folder's entries, hidden ones too,
+;; by the space they take (du, on this drive), biggest first, each with its
+;; size and a bar.  Going into a folder keeps it; the Trash, copying and
+;; undo work as anywhere; F5 measures again.  A big folder is measured in
+;; the background ("measuring..."), and leaving it stops the measuring.
+
+(defface esploro-space-bar '((t :inherit font-lock-constant-face))
+  "The bar beside a size, in What's Taking Space.")
+
+(defvar-local esploro--space-process nil "The core measuring this view now.")
+
+(defun esploro-space-toggle ()
+  "What's taking space in this folder, biggest first; or the folder as it was."
+  (interactive)
+  (esploro--in-view
+   (setq esploro--space (not esploro--space))
+   (if esploro--space
+       (esploro--space-measure)
+     (esploro--space-stop)
+     (esploro--show (esploro--dir) nil (current-buffer))
+     (dired-hide-details-mode -1))))
+
+(defun esploro--space-stop ()
+  (when (and (processp esploro--space-process) (process-live-p esploro--space-process))
+    (delete-process esploro--space-process))
+  (setq esploro--space-process nil))
+
+(defun esploro--space-after-readin ()
+  "A folder shown in a space view: measure it (a list made by the space view
+itself is already measured)."
+  (when (and esploro--space (not (consp dired-directory)))
+    (esploro--space-measure)))
+
+(defun esploro--space-measure ()
+  "Ask the core what this folder's entries take, in the background."
+  (esploro--space-stop)
+  (let ((buffer (current-buffer)) (dir (esploro--dir)))
+    (setq esploro--space-total 'measuring)
+    (force-mode-line-update)
+    (let ((call
+          (esploro--call (list "sizes" dir) nil
+                         (lambda (answer)
+                           (when (buffer-live-p buffer)
+                             (with-current-buffer buffer
+                               (setq esploro--space-process nil)
+                               (when esploro--space
+                                 (pcase answer
+                                   (`(:sizes ,folder ,total ,entries)
+                                    (when (equal (file-name-as-directory folder) (file-name-as-directory dir))
+                                      (esploro--space-show folder total entries)))
+                                   (_ (setq esploro--space-total nil) (esploro--say answer "measure"))))))))))
+      ;; In the background, the process (to stop on leaving); waited for, its answer.
+      (when (processp call) (setq esploro--space-process call)))))
+
+(defun esploro--space-show (folder total entries)
+  "FOLDER's ENTRIES ((NAME . BYTES) ...), biggest first, each with its size and
+a bar; TOTAL in the top line."
+  (let ((esploro--unsorted t))
+    (esploro--show (cons (file-name-as-directory folder) (mapcar #'car entries)) nil (current-buffer)))
+  (setq esploro--space-total total)
+  (setq-local revert-buffer-function (lambda (&rest _) (esploro--space-measure)))
+  ;; Name, size, bar: the listing's own columns (permissions, date) hidden.
+  (dired-hide-details-mode 1)
+  (let ((biggest (max 1 (or (cdar entries) 1)))
+        (column 0)
+        (bar-room 24))
+    (save-excursion
+      (goto-char (point-min))
+      (while (not (eobp))
+        (when (and (esploro--grid-file) (dired-move-to-end-of-filename t))
+          (setq column (max column (current-column))))
+        (forward-line 1))
+      ;; The bars fit what's left of the window after the names and sizes,
+      ;; so a narrow window (the preview open) doesn't wrap the lines.
+      (let ((window (get-buffer-window (current-buffer))))
+        (when window
+          (setq bar-room (max 4 (min 24 (- (window-body-width window) column 2 9 6))))))
+      (goto-char (point-min))
+      (while (not (eobp))
+        (let ((file (esploro--grid-file)))
+          (when (and file (dired-move-to-end-of-filename t))
+            (let* ((bytes (or (cdr (assoc (file-name-nondirectory (directory-file-name file)) entries)) 0))
+                   (bar (max (if (> bytes 0) 1 0) (round (* bar-room bytes) biggest)))
+                   (o (make-overlay (point) (point))))
+              (overlay-put o 'esploro-space t)
+              (overlay-put o 'after-string
+                           (concat (propertize " " 'display `(space :align-to ,(+ column 2)))
+                                   (format "%7s  " (file-size-human-readable bytes))
+                                   (propertize (make-string bar ?█) 'face 'esploro-space-bar)
+                                   (propertize (format " %d%%" (round (* 100 bytes) (max 1 total))) 'face 'shadow))))))
+        (forward-line 1))))
+  (force-mode-line-update))
 
 ;;; --- Recent: the files opened lately ------------------------------------------------------
 

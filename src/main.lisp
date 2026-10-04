@@ -46,6 +46,7 @@ esploro habits --dismiss KEY   that one, never offered again
 esploro archive open PATH  PATH (a zip, a tarball, 7z, an ISO) opened read-only, like a
                             folder (archivemount): where it is
 esploro archive close POINT | list   closing one; the ones open
+esploro sizes FOLDER        its entries by the space they take (du), biggest first
 esploro recent [--lines]    the files opened lately, newest first: those opened through
                             Esploro, and GTK programs' (recently-used.xbel)
 esploro workspaces          StumpWM's workspaces, each with the project its windows are about
@@ -521,6 +522,15 @@ its usual program."
         (answer (list :recent files)))
     0))
 
+(defun cli-sizes (folder)
+  "esploro sizes FOLDER: its entries by the space they take, biggest first."
+  (let ((folder (absolute (or folder "."))))
+    (if (not (directory-p folder))
+        (progn (answer (list :error (format nil "~a isn't a folder" folder))) 1)
+        (let ((sizes (folder-sizes folder)))
+          (answer (if sizes (list* :sizes folder sizes) (list :error "du couldn't measure it")))
+          (if sizes 0 1)))))
+
 (defun cli-dbus ()
   "Make the running Emacs answer org.freedesktop.FileManager1 (the browsers'
 \"Show in folder\"): what the session bus runs when it's first asked."
@@ -568,6 +578,7 @@ its usual program."
           ((equal command "archive") (cli-archive (rest args)))
           ((equal command "workspaces") (cli-workspaces))
           ((equal command "recent") (cli-recent (rest args)))
+          ((equal command "sizes") (cli-sizes (second args)))
           ((equal command "open-on") (cli-open-on (second args) (cddr args)))
           ((equal command "thumbnails") (cli-thumbnails (rest args)))
           ((equal command "project") (cli-project (rest args)))

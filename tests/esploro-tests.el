@@ -941,4 +941,33 @@ without a frame."
          (should-not esploro--recent)))
      (should (assoc "Recent" (cdr (assoc "Places" (esploro--places))))))))
 
+(ert-deftest esploro-whats-taking-space ()
+  (skip-unless (file-executable-p (expand-file-name "../esploro" (file-name-directory (locate-library "esploro")))))
+  (esploro-tests--world
+   (esploro-tests--file "s/big/a.bin" (make-string 300000 ?x))
+   (esploro-tests--file "s/big/inner/c.bin" (make-string 100000 ?x))
+   (esploro-tests--file "s/mid.bin" (make-string 100000 ?x))
+   (esploro-tests--file "s/tiny.txt" "x")
+   (esploro-go (esploro-tests--path "s"))
+   (with-current-buffer (esploro--view)
+     (esploro-space-toggle)
+     (should esploro--space)
+     (should (numberp esploro--space-total))
+     (cl-flet ((names () (save-excursion (goto-char (point-min))
+                                         (let (ns) (while (not (eobp)) (let ((f (esploro--grid-file))) (when f (push (file-name-nondirectory (directory-file-name f)) ns))) (forward-line 1)) (nreverse ns)))))
+       ;; Biggest first, whatever the name.
+       (should (equal (names) '("big" "mid.bin" "tiny.txt")))
+       (should (seq-some (lambda (o) (and (overlay-get o 'esploro-space) (string-match-p "█" (overlay-get o 'after-string))))
+                         (overlays-in (point-min) (point-max))))
+       ;; Into a folder: still a space view, measured there.
+       (esploro-go (esploro-tests--path "s/big"))
+       (should esploro--space)
+       (should (equal (names) '("a.bin" "inner")))
+       (should (string-match-p "Space: .*big" (esploro--header)))
+       ;; And back to the list.
+       (esploro-space-toggle)
+       (should-not esploro--space)
+       ;; The list again: folders first, by name.
+       (should (equal (names) '("inner" "a.bin")))))))
+
 ;;; esploro-tests.el ends here

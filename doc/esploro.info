@@ -477,6 +477,17 @@ Git
      background each time the folder is shown;
      ‘esploro-git-status’ set to ‘nil’ turns it off.
 
+What's Taking Space (‘C-c s’)
+     The folder's files and folders, hidden ones too, by the
+     space they take on the disk (each folder with all that's in
+     it), biggest first: each with its size, a bar, and its
+     share.  Go into a folder to see what's taking its space;
+     Back and Up come out, still measuring.  The Trash, copying
+     and undo work as anywhere, and F5 measures again.  A big
+     folder (all of home) takes a while: the top line says
+     "measuring...", and leaving it stops.  ‘C-c s’ again shows
+     the folder as it was.
+
 Grid (‘G’)
      The folder as tiles, side by side: a picture of each
      picture, PDF and video, a folder or a page (with its type)
@@ -695,6 +706,7 @@ C-c C-k                   stop a long copy
 M-o 1..9                  open the selection on that workspace
 C-c b                     bookmark this folder
 C-c r                     recent files
+C-c s                     what's taking space, or the list again
 z                         the last change again, on the selection
 s                         next sort
 .                         hidden files
@@ -770,6 +782,8 @@ File: esploro.info,  Node: The command line,  Next: Writing commands,  Prev: Key
 ‘esploro archive list’
      An archive opened read-only like a folder (*note
      Archives::), closed, and the ones open.
+‘esploro sizes FOLDER’
+     Its entries by the space they take, biggest first.
 ‘esploro recent [--lines]’
      The files opened lately, newest first.
 ‘esploro workspaces’
@@ -864,15 +878,15 @@ Node: The preview14106
 Node: Two panes15220
 Node: Windows and workspaces15793
 Node: Looking around17241
-Node: Searches19487
-Node: Archives21259
-Node: The Trash22097
-Node: Where files are open22572
-Node: Closing a project23043
-Node: Plans from agents23912
-Node: Keys and mouse26176
-Node: The command line28213
-Node: Writing commands32370
+Node: Searches20050
+Node: Archives21822
+Node: The Trash22660
+Node: Where files are open23135
+Node: Closing a project23606
+Node: Plans from agents24475
+Node: Keys and mouse26739
+Node: The command line28841
+Node: Writing commands33081
 
 End Tag Table
 

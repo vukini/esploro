@@ -152,3 +152,28 @@ front) only when HIDDEN."
                       (if (eq fa fb)
                           (string-lessp (entry-name a) (entry-name b))
                           fa))))))
+
+;;; --- Space: what's taking it ---------------------------------------------------------------
+
+(defun folder-sizes (folder)
+  "What FOLDER's entries take on disk, each with all that's in it (du, staying
+on this drive; hidden ones too): (TOTAL ((NAME . BYTES) ...)), biggest first;
+NIL when du can't say."
+  (let* ((out (with-output-to-string (s)
+                (sb-ext:run-program "du" (list "-a" "-x" "-B1" "-d1" "--" folder)
+                                    :search t :output s :error nil :input nil)))
+         (entries '()) (total nil))
+    (loop with start = 0
+          for end = (position #\Newline out :start start)
+          while end
+          do (let* ((line (subseq out start end))
+                    (tab (position #\Tab line)))
+               (when tab
+                 (let ((bytes (parse-integer line :end tab :junk-allowed t))
+                       (path (subseq line (1+ tab))))
+                   (when bytes
+                     (if (string= (string-right-trim "/" path) (string-right-trim "/" folder))
+                         (setf total bytes)
+                         (push (cons (path-name path) bytes) entries))))))
+             (setf start (1+ end)))
+    (and total (list total (sort entries #'> :key #'cdr)))))

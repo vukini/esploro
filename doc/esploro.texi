@@ -445,6 +445,15 @@ top has the branch, and what's waiting: ``git: main, 2 to push''.  Git
 is asked in the background each time the folder is shown;
 @code{esploro-git-status} set to @code{nil} turns it off.
 
+@item What's Taking Space (@kbd{C-c s})
+The folder's files and folders, hidden ones too, by the space they take
+on the disk (each folder with all that's in it), biggest first: each
+with its size, a bar, and its share.  Go into a folder to see what's
+taking its space; Back and Up come out, still measuring.  The Trash,
+copying and undo work as anywhere, and F5 measures again.  A big folder
+(all of home) takes a while: the top line says ``measuring...'', and
+leaving it stops.  @kbd{C-c s} again shows the folder as it was.
+
 @item Grid (@kbd{G})
 The folder as tiles, side by side: a picture of each picture, PDF and
 video, a folder or a page (with its type) for the rest, the name under
@@ -634,6 +643,7 @@ then ask an agent to ``sort the ones I've selected'', or run
 @item M-o 1..9 @tab open the selection on that workspace
 @item C-c b @tab bookmark this folder
 @item C-c r @tab recent files
+@item C-c s @tab what's taking space, or the list again
 @item z @tab the last change again, on the selection
 @item s @tab next sort
 @item . @tab hidden files
@@ -707,6 +717,8 @@ That one, never offered again.
 @itemx esploro archive list
 An archive opened read-only like a folder (@pxref{Archives}), closed,
 and the ones open.
+@item esploro sizes @var{folder}
+Its entries by the space they take, biggest first.
 @item esploro recent [--lines]
 The files opened lately, newest first.
 @item esploro workspaces

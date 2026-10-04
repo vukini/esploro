@@ -866,6 +866,19 @@
        (progn (run-cli (list "open" (p "rec2/r&d plan.md")))
               (equal (first (esploro::recent-files)) (p "rec2/r&d plan.md"))))
 
+;;; --- Space: what's taking it -----------------------------------------------------------------
+
+(esploro::ensure-folder (p "space/big"))
+(esploro::ensure-folder (p "space/.hidden"))
+(make-file (p "space/big/a.bin") (make-string 200000 :initial-element #\x))
+(make-file (p "space/.hidden/b.bin") (make-string 50000 :initial-element #\x))
+(make-file (p "space/small.txt") "x")
+(let ((sizes (esploro::folder-sizes (p "space"))))
+  (check "a folder's entries by the space they take, biggest first, hidden ones too"
+         (equal (mapcar #'car (second sizes)) '("big" ".hidden" "small.txt")))
+  (check "and the folder's total" (>= (first sizes) (reduce #'+ (mapcar #'cdr (second sizes))))))
+(check "esploro sizes says so" (eq :sizes (second (run-cli (list "sizes" (p "space"))))))
+
 ;;; --- The end -------------------------------------------------------------------------
 
 (sb-ext:run-program "chmod" (list "-R" "u+w" *top*) :search t)

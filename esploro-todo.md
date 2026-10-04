@@ -6,10 +6,6 @@ list (DESIGN.md says what was done).
 
 ## File-manager basics
 
-4. **What's taking space.** Folder sizes, biggest first (like ncdu), to
-   clean up from: a view of a folder's subfolders and files by size, made
-   in the background, going into one to see its own. *Medium.*
-
 5. **Duplicates.** Byte-identical copies under a folder (by size, then a
    hash), shown in groups, and a plan proposed to trash the extras (the
    oldest kept), for review like any plan. `sorting.md` already says exact
