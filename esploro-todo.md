@@ -8,10 +8,6 @@ list (DESIGN.md says what was done).
 
 ## Fitting how Vid works
 
-7. **Dropbox status.** A synced, syncing or not-synced mark beside files
-   in the Dropbox folders (`dropbox filestatus`), and which folders are
-   kept on this machine (selective sync). *Small to medium.*
-
 8. **The journal as a panel.** Every applied plan, newest first, in words
    ("moved 3 files into ~/Work"), with undo for any one of them when the
    files allow, not only the last. *Medium.*

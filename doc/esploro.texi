@@ -450,6 +450,15 @@ in the background (a big folder fills in as it goes) and kept, so
 they're there at once the next time.  Their size is
 @code{esploro-thumbnail-height} (48 pixels).
 
+@item Dropbox
+In a folder inside your Dropbox, each file and folder says what Dropbox
+has done with it: @emph{synced} (dimmed), @emph{syncing}, or @emph{can't
+sync}.  The line at the top says how Dropbox is (``Dropbox: up to
+date'', ``syncing 12 files'', ``isn't running''), and at Dropbox's top,
+how many folders are kept online only (not on this machine: selective
+sync).  Dropbox's own @command{dropbox} command is asked in the
+background; @code{esploro-dropbox-status} set to @code{nil} turns it off.
+
 @item Git
 In a folder inside a git repository, each file git has something to say
 about says it after its name: @emph{modified}, @emph{new} (git doesn't

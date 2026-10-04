@@ -1070,4 +1070,38 @@ without a frame."
    (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) (error "asked about an empty Trash"))))
      (esploro-empty-trash))))
 
+(ert-deftest esploro-dropbox-status ()
+  ;; A stand-in dropbox command, and Dropbox's info.json saying where it is.
+  (esploro-tests--world
+   (let* ((bin (esploro-tests--path "bin"))
+          (box (esploro-tests--path "Dropbox"))
+          (exec-path (cons bin exec-path))
+          (process-environment (cons (concat "PATH=" bin ":" (getenv "PATH")) process-environment)))
+     (esploro-tests--file "Dropbox/Admin/a.pdf")
+     (esploro-tests--file "Dropbox/notes.org")
+     (esploro-tests--file "Dropbox/big.iso")
+     (esploro-tests--file ".dropbox/info.json" (format "{\"personal\": {\"path\": \"%s\"}}" box))
+     (esploro-tests--file "bin/dropbox"
+                          (concat "#!/bin/sh\n"
+                                  "case \"$1\" in\n"
+                                  "  status) echo 'Syncing 2 files' ;;\n"
+                                  "  exclude) echo 'Excluded: '; echo 'Old'; echo 'Photos' ;;\n"
+                                  "  filestatus) shift; for f; do case \"$f\" in big.iso) echo \"$f: syncing\";; notes.org) echo \"$f: unsyncable\";; *) echo \"$f: up to date\";; esac; done ;;\n"
+                                  "esac\n"))
+     (set-file-modes (esploro-tests--path "bin/dropbox") #o755)
+     (esploro-go box)
+     (with-current-buffer (esploro--view)
+       (let ((n 0)) (while (and (null (nth 1 esploro--dropbox)) (< n 50)) (accept-process-output nil 0.1) (setq n (1+ n))))
+       (should (string-match-p "Dropbox: syncing 2 files, 2 folders online only" (esploro--header)))
+       (let ((said (mapcar (lambda (o) (substring-no-properties (overlay-get o 'after-string)))
+                           (seq-filter (lambda (o) (overlay-get o 'esploro-dropbox)) (overlays-in (point-min) (point-max))))))
+         (should (member "  synced" said))
+         (should (member "  syncing" said))
+         (should (member "  can't sync" said))))
+     ;; Outside Dropbox: nothing said.
+     (esploro-go (esploro-tests--path "bin"))
+     (with-current-buffer (esploro--view)
+       (accept-process-output nil 0.3)
+       (should-not esploro--dropbox)))))
+
 ;;; esploro-tests.el ends here

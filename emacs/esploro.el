@@ -91,6 +91,9 @@ folder's entries; `below', the biggest things anywhere below it.")
 (defvar-local esploro--space-total nil "The folder's size as measured, or `measuring'.")
 (put 'esploro--space 'permanent-local t)
 (put 'esploro--recent 'permanent-local t)
+(defvar-local esploro--dropbox nil
+  "What Dropbox says of this folder: (STATUS ENTRY-STATES ONLINE-ONLY), or
+nil; ONLINE-ONLY, at Dropbox's top, how many folders aren't on this machine.")
 (defvar-local esploro--git nil
   "What git says of this folder's repository: (ROOT BRANCH-LINE . STATES), or nil.")
 (dolist (v '(esploro--view esploro--back esploro--forward esploro--sort esploro--reverse esploro--hidden
@@ -1195,7 +1198,8 @@ Esploro's that has turned up since is hidden too."
       ;; esploro-mode now sets it (new things, like git status, included).
       (when (bound-and-true-p esploro-mode)
         (dolist (f '(esploro--whole-row-drag esploro--annotate esploro--thumbnails-show
-                     esploro--grid-after-readin esploro--git-show esploro--space-after-readin))
+                     esploro--grid-after-readin esploro--git-show esploro--space-after-readin
+                     esploro--dropbox-show))
           (add-hook 'dired-after-readin-hook f nil t))))))
 
 (defun esploro--install-menu-bar (map)
@@ -1304,6 +1308,10 @@ Esploro's that has turned up since is hidden too."
           (if (and esploro--hidden (not esploro--space)) "   hidden shown" "")
           (if esploro--filter (format "   only \"%s\" (F5: all)" esploro--filter) "")
           (if (cadr esploro--git) (format "   git: %s" (esploro--git-branch-words (cadr esploro--git))) "")
+          (if (car esploro--dropbox)
+              (format "   Dropbox: %s%s" (downcase (car esploro--dropbox))
+                      (if (nth 2 esploro--dropbox) (format ", %d folders online only" (nth 2 esploro--dropbox)) ""))
+            "")
           (if (esploro--in-trash-p) "   the Trash: Restore and Empty on the menus" "")))
 
 (define-minor-mode esploro-mode
@@ -1327,7 +1335,8 @@ through the core, journaled so they can be undone."
     (add-hook 'dired-after-readin-hook #'esploro--thumbnails-show nil t)
     (add-hook 'dired-after-readin-hook #'esploro--grid-after-readin nil t)
     (add-hook 'dired-after-readin-hook #'esploro--git-show nil t)
-    (add-hook 'dired-after-readin-hook #'esploro--space-after-readin nil t)))
+    (add-hook 'dired-after-readin-hook #'esploro--space-after-readin nil t)
+    (add-hook 'dired-after-readin-hook #'esploro--dropbox-show nil t)))
 
 ;;; --- Places, down the side --------------------------------------------------------------
 
@@ -1904,6 +1913,119 @@ that changes files, as a plan for your review."
                                                        ((or 'staged 'added) 'esploro-git-staged)
                                                        (_ 'esploro-git-modified))))))))))
           (forward-line 1))))))
+
+;;; --- Dropbox: what's synced ---------------------------------------------------------------
+
+;; In a folder inside Dropbox, each entry says what Dropbox has done with it
+;; (synced, syncing, can't sync), and the top line says how Dropbox is
+;; (up to date, syncing, not running); at Dropbox's top, how many folders are
+;; kept online only (selective sync).  Dropbox's own command is asked in the
+;; background, after each showing of the folder.
+
+(defcustom esploro-dropbox-status t
+  "Non-nil: in Dropbox's folder, what Dropbox has done with each file."
+  :type 'boolean :group 'esploro)
+
+(defface esploro-dropbox-synced '((t :inherit shadow))
+  "A file Dropbox has up to date.")
+(defface esploro-dropbox-syncing '((t :inherit warning :weight normal))
+  "A file Dropbox is syncing now.")
+(defface esploro-dropbox-unsyncable '((t :inherit error))
+  "A file Dropbox can't sync.")
+
+(defun esploro--dropbox-folder ()
+  "Where Dropbox keeps its files on this machine (its info.json says), or nil."
+  (let ((info (expand-file-name "~/.dropbox/info.json")))
+    (when (and (executable-find "dropbox") (file-readable-p info))
+      (ignore-errors
+        (let* ((json (with-temp-buffer (insert-file-contents info) (json-parse-buffer :object-type 'alist)))
+               (path (alist-get 'path (alist-get 'personal json))))
+          (and (stringp path) (file-directory-p path) (file-name-as-directory path)))))))
+
+(defun esploro--dropbox-parse (text)
+  "dropbox filestatus's TEXT: ((NAME . STATE) ...), STATE a symbol."
+  (delq nil (mapcar (lambda (line)
+                      (when (string-match "\\`\\(.*?\\):[ \t]+\\([^:]+\\)\\'" line)
+                        (cons (match-string 1 line)
+                              (pcase (match-string 2 line)
+                                ("up to date" 'synced) ("syncing" 'syncing)
+                                ("unsyncable" 'unsyncable) (_ nil)))))
+                    (split-string text "\n" t))))
+
+(defun esploro--dropbox-run (args then)
+  "Dropbox's command with ARGS, in the background; THEN gets its output."
+  (let ((out (generate-new-buffer " *esploro-dropbox*")))
+    (make-process :name "esploro-dropbox" :buffer out :noquery t :connection-type 'pipe
+                  :command (cons "dropbox" args)
+                  :stderr (make-pipe-process :name "esploro-dropbox-err" :noquery t :filter #'ignore)
+                  :sentinel (lambda (process _event)
+                              (unless (process-live-p process)
+                                (let ((text (with-current-buffer out (buffer-string))))
+                                  (kill-buffer out)
+                                  (funcall then text)))))))
+
+(defun esploro--dropbox-show ()
+  "In Dropbox's folder: ask Dropbox, in the background, then mark the entries."
+  (remove-overlays (point-min) (point-max) 'esploro-dropbox t)
+  (setq esploro--dropbox nil)
+  (let* ((top (and esploro-dropbox-status (not (consp dired-directory)) (esploro--dropbox-folder)))
+         (dir (expand-file-name default-directory)))
+    (when (and top (string-prefix-p top dir))
+      (let ((buffer (current-buffer))
+            (names (save-excursion
+                     (goto-char (point-min))
+                     (let (ns) (while (not (eobp))
+                                 (let ((f (esploro--grid-file))) (when f (push (file-name-nondirectory (directory-file-name f)) ns)))
+                                 (forward-line 1))
+                          (nreverse ns))))
+            (default-directory dir))
+        (esploro--dropbox-run
+         '("status")
+         (lambda (status)
+           (let ((status (car (split-string status "\n" t))))
+             (cl-flet ((finish (excluded)
+                         (when (buffer-live-p buffer)
+                           (with-current-buffer buffer
+                             (when (equal (expand-file-name default-directory) dir)
+                               (setq esploro--dropbox (list status nil excluded))
+                               (force-mode-line-update)
+                               (when (and names (not (string-match-p "isn't running" (or status ""))))
+                                 (let ((default-directory dir))
+                                   (esploro--dropbox-run
+                                    (cons "filestatus" names)
+                                    (lambda (text)
+                                      (when (buffer-live-p buffer)
+                                        (with-current-buffer buffer
+                                          (when (equal (expand-file-name default-directory) dir)
+                                            (setf (nth 1 esploro--dropbox) (esploro--dropbox-parse text))
+                                            (esploro--dropbox-mark)))))))))))))
+               ;; At Dropbox's top: the folders kept online only.
+               (if (and (equal dir top) status (not (string-match-p "isn't running" status)))
+                   (let ((default-directory dir))
+                     (esploro--dropbox-run '("exclude" "list")
+                                           (lambda (text)
+                                             (finish (length (cdr (seq-remove (lambda (l) (string-match-p "\\`stty" l))
+                                                                              (split-string text "\n" t))))))))
+                 (finish nil))))))))))
+
+(defun esploro--dropbox-mark ()
+  "Each entry's Dropbox state after its name."
+  (remove-overlays (point-min) (point-max) 'esploro-dropbox t)
+  (let ((states (nth 1 esploro--dropbox)))
+    (save-excursion
+      (goto-char (point-min))
+      (while (not (eobp))
+        (let* ((file (esploro--grid-file))
+               (state (and file (cdr (assoc (file-name-nondirectory (directory-file-name file)) states)))))
+          (when (and state (dired-move-to-end-of-filename t))
+            (let ((o (make-overlay (point) (point))))
+              (overlay-put o 'esploro-dropbox t)
+              (overlay-put o 'after-string
+                           (pcase state
+                             ('synced (propertize "  synced" 'face 'esploro-dropbox-synced))
+                             ('syncing (propertize "  syncing" 'face 'esploro-dropbox-syncing))
+                             ('unsyncable (propertize "  can't sync" 'face 'esploro-dropbox-unsyncable)))))))
+        (forward-line 1)))))
 
 ;;; --- Thumbnails in the list ------------------------------------------------------------
 

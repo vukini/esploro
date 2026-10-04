@@ -483,6 +483,16 @@ Thumbnails (‘T’)
      goes) and kept, so they're there at once the next time.
      Their size is ‘esploro-thumbnail-height’ (48 pixels).
 
+Dropbox
+     In a folder inside your Dropbox, each file and folder says
+     what Dropbox has done with it: _synced_ (dimmed),
+     _syncing_, or _can't sync_.  The line at the top says how
+     Dropbox is ("Dropbox: up to date", "syncing 12 files",
+     "isn't running"), and at Dropbox's top, how many folders
+     are kept online only (not on this machine: selective sync).
+     Dropbox's own ‘dropbox’ command is asked in the background;
+     ‘esploro-dropbox-status’ set to ‘nil’ turns it off.
+
 Git
      In a folder inside a git repository, each file git has
      something to say about says it after its name: _modified_,
@@ -931,15 +941,15 @@ Node: The preview14764
 Node: Two panes15878
 Node: Windows and workspaces16451
 Node: Looking around17899
-Node: Searches21858
-Node: Archives23630
-Node: The Trash24468
-Node: Where files are open25051
-Node: Closing a project25522
-Node: Plans from agents26391
-Node: Keys and mouse28655
-Node: The command line30864
-Node: Writing commands35609
+Node: Searches22370
+Node: Archives24142
+Node: The Trash24980
+Node: Where files are open25563
+Node: Closing a project26034
+Node: Plans from agents26903
+Node: Keys and mouse29167
+Node: The command line31376
+Node: Writing commands36121
 
 End Tag Table
 
