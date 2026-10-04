@@ -247,3 +247,62 @@ count a byte twice. When things that big are less than half of FOLDER
               (when (or (enough-p found) (= smallest 1))
                 (let ((sorted (sort found #'> :key #'second)))
                   (return (list total (subseq sorted 0 (min top (length sorted))))))))))))))
+
+;;; --- Tags: words of your own on a file ---------------------------------------------------
+;;;
+;;; Kept on the file itself, in the extended attribute other programs use
+;;; (user.xdg.tags, comma-separated: Dolphin, Nautilus' extensions), so
+;;; they go where the file goes: a move, a copy (cp -a), a backup.
+
+(defparameter *tags-attribute* "user.xdg.tags")
+
+(sb-alien:define-alien-routine ("getxattr" %getxattr) sb-alien:long
+  (path (sb-alien:c-string :external-format :utf-8)) (name sb-alien:c-string)
+  (value (* sb-alien:unsigned-char)) (size sb-alien:unsigned-long))
+(sb-alien:define-alien-routine ("setxattr" %setxattr) sb-alien:int
+  (path (sb-alien:c-string :external-format :utf-8)) (name sb-alien:c-string)
+  (value (* sb-alien:unsigned-char)) (size sb-alien:unsigned-long) (flags sb-alien:int))
+(sb-alien:define-alien-routine ("removexattr" %removexattr) sb-alien:int
+  (path (sb-alien:c-string :external-format :utf-8)) (name sb-alien:c-string))
+
+(defun parse-tags (text)
+  "The tags in TEXT (\"tender, To read,tender\"): trimmed, none twice
+(whatever the case), none empty, without control characters."
+  (let ((tags '()))
+    (dolist (part (loop with start = 0
+                        for comma = (position #\, text :start start)
+                        collect (subseq text start comma)
+                        while comma do (setf start (1+ comma))))
+      (let ((tag (string-trim " " (remove-if (lambda (c) (< (char-code c) 32)) part))))
+        (when (and (plusp (length tag)) (<= (length tag) 60))
+          (pushnew tag tags :test #'string-equal))))
+    (nreverse tags)))
+
+(defun tags-text (tags)
+  (format nil "~{~a~^,~}" tags))
+
+(defun file-tags (path)
+  "PATH's tags, as it keeps them; NIL when it has none (or can't have any)."
+  (let* ((size 4096)
+         (buffer (sb-alien:make-alien sb-alien:unsigned-char size)))
+    (unwind-protect
+         (let ((n (%getxattr path *tags-attribute* buffer size)))
+           (when (plusp n)
+             (let ((octets (make-array n :element-type '(unsigned-byte 8))))
+               (dotimes (i n) (setf (aref octets i) (sb-alien:deref buffer i)))
+               (parse-tags (sb-ext:octets-to-string octets :external-format '(:utf-8 :replacement #\?))))))
+      (sb-alien:free-alien buffer))))
+
+(defun set-file-tags (path tags)
+  "Make TAGS (a list) PATH's tags; none takes the attribute away. True when
+it was done: a place that can't keep them (a server, some drives) says no."
+  (if (null tags)
+      (or (zerop (%removexattr path *tags-attribute*))
+          (null (file-tags path)))
+      (let* ((octets (sb-ext:string-to-octets (tags-text tags) :external-format :utf-8))
+             (n (length octets))
+             (buffer (sb-alien:make-alien sb-alien:unsigned-char (max n 1))))
+        (unwind-protect
+             (progn (dotimes (i n) (setf (sb-alien:deref buffer i) (aref octets i)))
+                    (zerop (%setxattr path *tags-attribute* buffer n 0)))
+          (sb-alien:free-alien buffer)))))

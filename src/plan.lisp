@@ -16,9 +16,10 @@
 
 (in-package #:esploro)
 
-(defparameter *plan-operations* '(:move :copy :rename :mkdir :trash)
-  "What a plan may do. The journal's inverses also use :rmdir and :restore,
-which only undo applies.")
+(defparameter *plan-operations* '(:move :copy :rename :mkdir :trash :tag)
+  "What a plan may do. (:tag PATH \"a,b\") makes those PATH's tags (\"\"
+takes them off). The journal's inverses also use :rmdir and :restore, which
+only undo applies.")
 
 (defparameter *undo-operations* (append *plan-operations* '(:rmdir :restore)))
 
@@ -63,6 +64,7 @@ which only undo applies.")
                    ((:move :copy) (args-are #'valid-path-p #'valid-path-p))
                    (:rename (args-are #'valid-path-p #'valid-name-p))
                    ((:mkdir :trash :rmdir) (args-are #'valid-path-p))
+                   (:tag (args-are #'valid-path-p #'stringp))
                    (:restore (args-are #'valid-name-p #'valid-path-p)))
                  nil)
                 (t (format nil "~(~s~) wasn't given the right things: ~s (paths are absolute, without . or ..)"
@@ -90,6 +92,9 @@ which only undo applies.")
         (:rename (format nil "rename ~a to ~a" (s a) b))
         (:mkdir (format nil "make the folder ~a" (s a)))
         (:trash (format nil "put ~a in the Trash" (s a)))
+        (:tag (if (parse-tags b)
+                  (format nil "tag ~a: ~{~a~^, ~}" (s a) (parse-tags b))
+                  (format nil "take the tags off ~a" (s a))))
         (:rmdir (format nil "remove the empty folder ~a" (s a)))
         (:restore (format nil "bring ~a back from the Trash" (s b)))
         (t (format nil "~s" step))))))
@@ -153,6 +158,8 @@ STEP does in it."
            (need (not (or (string= a (trash-folder)) (path-inside-p a (trash-folder))))
                  "~a is already in the Trash" a)
            (setf (gethash a overlay) :gone))
+          (:tag
+           (need (exists a) "~a isn't there" a))
           (:rmdir
            (need (folder a) "~a isn't a folder" a)
            (setf (gethash a overlay) :gone))
@@ -348,6 +355,10 @@ the name it has there."
            (copy-tree-step step a b)
            (list :trash b))
           (:mkdir (sb-posix:mkdir a #o777) (list :rmdir a))
+          (:tag (let ((before (tags-text (file-tags a))))
+                  (unless (set-file-tags a (parse-tags b))
+                    (error 'step-failed :step step :reason "tags can't be kept there (a server, or a drive without them)"))
+                  (list :tag a before)))
           (:trash (list :restore (trash-path step a) a))
           (:rmdir (sb-posix:rmdir a) (list :mkdir a))
           (:restore (restore-path step a b) (list :trash b)))

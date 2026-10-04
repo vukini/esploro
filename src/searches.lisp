@@ -47,6 +47,9 @@
             ((equal key "older") (list :older-than (number-or-fail value)))
             ((equal key "larger") (list :larger-than (size-or-fail value)))
             ((equal key "smaller") (list :smaller-than (size-or-fail value)))
+            ((equal key "tag")
+             (if (parse-tags value) (list :tag (first (parse-tags value)))
+                 (error "~a: tag:NAME, a tag of yours" word)))
             ((equal key "has")
              (if (plusp (length value)) (list :has value) (error "~a: has:WORD, a word inside the files" word)))
             ((glob-p word) (list :glob word))
@@ -80,7 +83,7 @@ which must hold. Signals an error saying what's wrong."
     (case (first query)
       ((:and :or) (mapc #'check-query (rest query)))
       (:not (unless (= (length query) 2) (bad)) (check-query (second query)))
-      ((:name :glob :has) (unless (and (= (length query) 2) (stringp (second query)) (plusp (length (second query)))) (bad)))
+      ((:name :glob :has :tag) (unless (and (= (length query) 2) (stringp (second query)) (plusp (length (second query)))) (bad)))
       (:kind (unless (and (= (length query) 2) (keywordp (second query))) (bad)))
       ((:newer-than :older-than :larger-than :smaller-than)
        (unless (and (= (length query) 2) (realp (second query)) (>= (second query) 0)) (bad)))
@@ -106,6 +109,7 @@ s-expression."
                (:larger-than (format nil "larger:~a" (size-words (second q))))
                (:smaller-than (format nil "smaller:~a" (size-words (second q))))
                (:has (format nil "has:~a" (second q)))
+               (:tag (format nil "tag:~a" (second q)))
                (:not (let ((w (word (second q)))) (and w (concatenate 'string "-" w))))))
            (simple-p (w) (and w (not (find #\Space w)) (not (find #\( w)))))
     (let ((words (mapcar #'word (if (eq (first query) :and) (rest query) (list query)))))
@@ -124,10 +128,11 @@ s-expression."
         ((or (char= (char pattern p) #\?) (char-equal (char pattern p) (char name n)))
          (glob-match-p pattern name (1+ p) (1+ n)))))
 
-(defun query-match-p (query name kind stat now &optional has)
+(defun query-match-p (query name kind stat now &optional has tags)
   "Whether QUERY holds for the file NAME of KIND. STAT, called only when a
 time or a size is asked, gives the file's lstat; HAS, only when what's
-inside is asked, whether the file holds a word."
+inside is asked, whether the file holds a word; TAGS, only when a tag is
+asked, the file's tags."
   (labels ((m (q)
              (ecase (first q)
                (:and (every #'m (rest q)))
@@ -140,7 +145,8 @@ inside is asked, whether the file holds a word."
                (:older-than (let ((st (funcall stat))) (and st (< (sb-posix:stat-mtime st) (- now (* 86400 (second q)))))))
                (:larger-than (let ((st (funcall stat))) (and st (not (eq kind :folder)) (> (sb-posix:stat-size st) (second q)))))
                (:smaller-than (let ((st (funcall stat))) (and st (not (eq kind :folder)) (< (sb-posix:stat-size st) (second q)))))
-               (:has (and has (not (eq kind :folder)) (funcall has (second q)))))))
+               (:has (and has (not (eq kind :folder)) (funcall has (second q))))
+               (:tag (and tags (member (second q) (funcall tags) :test #'string-equal) t)))))
     (m query)))
 
 (defun unix-now () (- (get-universal-time) #.(encode-universal-time 0 0 0 1 1 1970 0)))
@@ -266,7 +272,8 @@ were more than were looked at or kept (T then)."
              (when (query-match-p query name (if folder-p :folder (type-kind name))
                                   (lambda () (if (eq stat :unknown) (setf stat (file-stat path :follow nil)) stat))
                                   now
-                                  (and has (funcall has path)))
+                                  (and has (funcall has path))
+                                  (lambda () (file-tags path)))
                (incf count)
                (push path found))
              nil))))

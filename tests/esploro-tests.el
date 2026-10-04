@@ -1199,4 +1199,43 @@ without a frame."
        (with-current-buffer (esploro--view)
          (should-not (string-prefix-p (esploro-tests--path "iphone") (esploro--dir))))))))
 
+(ert-deftest esploro-tags ()
+  (skip-unless (file-executable-p (expand-file-name "../esploro" (file-name-directory (locate-library "esploro")))))
+  (esploro-tests--world
+   (let ((process-environment (cons (concat "XDG_CONFIG_HOME=" esploro-tests--top "config") process-environment))
+         (esploro--known-tags nil)
+         (a (esploro-tests--file "tg/a.pdf")) (b (esploro-tests--file "tg/b.txt")))
+     ;; A drive that keeps no extended attributes can't keep tags.
+     (skip-unless (equal (esploro--call (list "tag" "add" "probe" a) nil nil t) '(:done 1)))
+     (esploro--call (list "tag" "remove" "probe" a) nil nil t)
+     (esploro--call (list "tags" "forget" "probe") nil nil t)
+     (esploro-go (esploro-tests--path "tg"))
+     (cl-flet ((shown () (mapcar (lambda (o) (substring-no-properties (overlay-get o 'after-string)))
+                                 (seq-filter (lambda (o) (overlay-get o 'esploro-tags)) (overlays-in (point-min) (point-max)))))
+               (menu () (mapcar (lambda (v) (cons (aref v 0) (plist-get (nthcdr 2 (append v nil)) :selected)))
+                                (seq-filter #'vectorp (esploro--tags-menu nil)))))
+       (with-current-buffer (esploro--view)
+         (esploro-tag "tender" (list a b))
+         (esploro-tag "to read" (list a))
+         ;; After their names, and ticked on the menu when every selected file has it.
+         (should (equal (sort (shown) #'string<) '("  #tender" "  #tender #to read")))
+         (dired-goto-file a)
+         (should (equal (assoc "tender" (menu)) '("tender" . t)))
+         (should (equal (assoc "to read" (menu)) '("to read" . t)))
+         (dired-goto-file b)
+         (should (equal (assoc "to read" (menu)) '("to read"))))
+       ;; Down the side, and a click finds its files.
+       (should (assoc "#tender" (cdr (assoc "Tags" (esploro--places)))))
+       (esploro-show-tag "to read")
+       (with-current-buffer (esploro--view)
+         (should (equal (car esploro--search) "(:tag \"to read\")"))
+         (should (save-excursion (goto-char (point-min)) (search-forward "a.pdf" nil t)))
+         (should-not (save-excursion (goto-char (point-min)) (search-forward "b.txt" nil t)))
+         ;; Taken off; undo puts it back.
+         (esploro-go (esploro-tests--path "tg"))
+         (esploro-untag "tender" (list b))
+         (should (equal (shown) '("  #tender #to read")))
+         (esploro-undo)
+         (should (= 2 (length (shown)))))))))
+
 ;;; esploro-tests.el ends here

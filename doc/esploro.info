@@ -38,6 +38,7 @@ and kept in a journal.
 * Windows and workspaces:: One Esploro per workspace, or more.
 * Looking around::         Sorting, hidden files, a filter, finding below.
 * Searches::               Folders that are questions, kept by name.
+* Tags::                   Words of your own on files, and finding by them.
 * Archives::               A zip or a tarball, opened like a folder.
 * Servers::                A server's folders over SSH, like local ones.
 * The Trash::              Looking in it, restoring, emptying.
@@ -573,7 +574,7 @@ Going (‘M-Left’, ‘M-Right’, ‘M-Up’, ‘C-l’)
      completion.
 
 
-File: esploro.info,  Node: Searches,  Next: Archives,  Prev: Looking around,  Up: Top
+File: esploro.info,  Node: Searches,  Next: Tags,  Prev: Looking around,  Up: Top
 
 11 Searches
 ***********
@@ -617,9 +618,36 @@ search can also be written as an s-expression: ‘(:and (:kind
 :pdf) (:or (:name "tax") (:name "receipt")))’.
 
 
-File: esploro.info,  Node: Archives,  Next: Servers,  Prev: Searches,  Up: Top
+File: esploro.info,  Node: Tags,  Next: Archives,  Prev: Searches,  Up: Top
 
-12 Archives
+12 Tags
+*******
+
+A tag is a word of your own on a file, or a few: "tender", "to
+read".  Right-click a file (or several selected) ⇒ Tags lists
+the tags you've used, ticked when every selected file has it:
+click one to add it, or to take it off.  New Tag... (‘C-c t’)
+asks for another; ‘C-c T’ takes one off.
+
+   Each file's tags show after its name ("#tender #to read"),
+and the tags you've used are down the side under Tags: click one
+for every file below your home that has it.  In Search Below,
+‘tag:tender’ finds them under the folder you're in, with the
+rest of a search (‘tag:tender kind:pdf newer:30’); a tag of two
+words is asked as ‘(:tag "to read")’.
+
+   A tag is kept on the file itself (the extended attribute
+‘user.xdg.tags’, which Dolphin and others read too), so it goes
+where the file goes: moved, renamed, copied, backed up.  Tagging
+is a change like any other: undo takes it back, and Changes
+lists it.  A place that keeps no such attributes (a server, some
+USB drives) can't keep tags, and says so.  Forget a Tag... stops
+offering one; the files that have it keep it.
+
+
+File: esploro.info,  Node: Archives,  Next: Servers,  Prev: Tags,  Up: Top
+
+13 Archives
 ***********
 
 Open a zip, a tarball (‘.tar.gz’, ‘.tgz’, ‘.tar.xz’,
@@ -641,7 +669,7 @@ Here still works.
 
 File: esploro.info,  Node: Servers,  Next: The Trash,  Prev: Archives,  Up: Top
 
-13 Servers
+14 Servers
 **********
 
 Go ⇒ Connect to Server... (‘C-c k’) asks for a server:
@@ -665,7 +693,7 @@ installs.
 
 File: esploro.info,  Node: The Trash,  Next: Where files are open,  Prev: Servers,  Up: Top
 
-14 The Trash
+15 The Trash
 ************
 
 Esploro uses the Trash other programs use (the freedesktop one,
@@ -680,7 +708,7 @@ emptying it gives back.
 
 File: esploro.info,  Node: Where files are open,  Next: Closing a project,  Prev: The Trash,  Up: Top
 
-15 Where files are open
+16 Where files are open
 ***********************
 
 Beside a file that a window has open, Esploro says which: "open
@@ -692,7 +720,7 @@ such a file goes to its window instead of opening it again.
 
 File: esploro.info,  Node: Closing a project,  Next: Plans from agents,  Prev: Where files are open,  Up: Top
 
-16 Closing a project
+17 Closing a project
 ********************
 
 Done with a project for now?  File ⇒ Close Project..., in any
@@ -713,7 +741,7 @@ Other windows are for you to close.  ‘g’ looks again.
 
 File: esploro.info,  Node: Plans from agents,  Next: Keys and mouse,  Prev: Closing a project,  Up: Top
 
-17 Plans from agents
+18 Plans from agents
 ********************
 
 An agent (Claude Code, through Vikix's ‘vikix mcp’) never moves,
@@ -762,7 +790,7 @@ terminal.
 
 File: esploro.info,  Node: Keys and mouse,  Next: The command line,  Prev: Plans from agents,  Up: Top
 
-18 Keys and mouse
+19 Keys and mouse
 *****************
 
 Mouse
@@ -793,6 +821,7 @@ C-c b                     bookmark this folder
 C-c r                     recent files
 C-c u                     every change, to undo any one
 C-c k                     connect to a server
+C-c t, C-c T              tag the selection, take a tag off
 C-c s                     what's taking space, or the list again
 C-c S                     the biggest things anywhere below, or the
                           folder's own
@@ -816,7 +845,7 @@ m, u, U                   mark, unmark, unmark all (dired's)
 
 File: esploro.info,  Node: The command line,  Next: Writing commands,  Prev: Keys and mouse,  Up: Top
 
-19 The command line
+20 The command line
 *******************
 
 ‘esploro [FOLDER]’
@@ -877,6 +906,15 @@ File: esploro.info,  Node: The command line,  Next: Writing commands,  Prev: Key
 ‘esploro remote known’
      A server connected like a folder (*note Servers::),
      disconnected; those connected; those you've used.
+‘esploro tag add|remove NAME FILE...’
+     A tag of yours on files, or off them (*note Tags::); a
+     plan, journaled.
+‘esploro tags’
+‘esploro tags in FOLDER’
+‘esploro tags of FILE...’
+‘esploro tags forget NAME’
+     The tags you've used; those of a folder's entries, or of
+     files; one no longer offered.
 ‘esploro phone [mount [ID] | unmount]’
      The iPhones plugged in and which is mounted; mounting one
      at ‘~/iphone’, unmounting it.
@@ -922,7 +960,8 @@ File: esploro.info,  Node: The command line,  Next: Writing commands,  Prev: Key
      Applies the plan in FILE, or on standard input: one step a
      line, ‘(:copy "/from" "/to")’, ‘(:move ...)’, ‘(:rename
      "/path" "new name")’, ‘(:mkdir "/path")’, ‘(:trash
-     "/path")’.  Anything else is refused.
+     "/path")’, ‘(:tag "/path" "tender,to read")’.  Anything
+     else is refused.
 ‘esploro undo’
      Undoes the last applied plan.
 ‘esploro where FOLDER’
@@ -947,7 +986,7 @@ File: esploro.info,  Node: The command line,  Next: Writing commands,  Prev: Key
 
 File: esploro.info,  Node: Writing commands,  Prev: The command line,  Up: Top
 
-20 Writing commands
+21 Writing commands
 *******************
 
 Commands are on Esploro's menus (File ⇒ Commands, and the
@@ -980,26 +1019,27 @@ the next step.
 
 Tag Table:
 Node: Top276
-Node: Opening Esploro2180
-Node: The window3996
-Node: Selecting and opening6482
-Node: Changing files7535
-Node: Recipes9916
-Node: Drag and drop14704
-Node: The preview15430
-Node: Two panes16544
-Node: Windows and workspaces17117
-Node: Looking around18565
-Node: Searches23036
-Node: Archives24808
-Node: Servers25644
-Node: The Trash26658
-Node: Where files are open27240
-Node: Closing a project27711
-Node: Plans from agents28580
-Node: Keys and mouse30844
-Node: The command line33155
-Node: Writing commands38393
+Node: Opening Esploro2256
+Node: The window4072
+Node: Selecting and opening6558
+Node: Changing files7611
+Node: Recipes9992
+Node: Drag and drop14780
+Node: The preview15506
+Node: Two panes16620
+Node: Windows and workspaces17193
+Node: Looking around18641
+Node: Searches23112
+Node: Tags24880
+Node: Archives26072
+Node: Servers26904
+Node: The Trash27918
+Node: Where files are open28500
+Node: Closing a project28971
+Node: Plans from agents29840
+Node: Keys and mouse32104
+Node: The command line34475
+Node: Writing commands40087
 
 End Tag Table
 

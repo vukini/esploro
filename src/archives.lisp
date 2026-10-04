@@ -104,7 +104,7 @@ point."
     (let ((op (first step)) (a (second step)) (b (third step)))
       (cond ((and (member op '(:copy :move)) (inside b))
              (format nil "~a is open read-only: Extract Here to change it" (short-path (inside b))))
-            ((and (eq op :mkdir) (inside a))
+            ((and (member op '(:mkdir :tag)) (inside a))
              (format nil "~a is open read-only: Extract Here to change it" (short-path (inside a))))
             ((and (member op '(:move :rename :trash)) (inside a))
              (format nil "~a is open read-only: copy files out of it instead" (short-path (inside a))))))))

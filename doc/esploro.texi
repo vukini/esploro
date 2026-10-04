@@ -43,6 +43,7 @@ anything happens, done in the background, and kept in a journal.
 * Windows and workspaces:: One Esploro per workspace, or more.
 * Looking around::         Sorting, hidden files, a filter, finding below.
 * Searches::               Folders that are questions, kept by name.
+* Tags::                   Words of your own on files, and finding by them.
 * Archives::               A zip or a tarball, opened like a folder.
 * Servers::                A server's folders over SSH, like local ones.
 * The Trash::              Looking in it, restoring, emptying.
@@ -571,6 +572,30 @@ and always up to date.  They're kept in
 written as an s-expression:
 @code{(:and (:kind :pdf) (:or (:name "tax") (:name "receipt")))}.
 
+@node Tags
+@chapter Tags
+
+A tag is a word of your own on a file, or a few: ``tender'', ``to
+read''.  Right-click a file (or several selected) @result{} Tags lists
+the tags you've used, ticked when every selected file has it: click one
+to add it, or to take it off.  New Tag@dots{} (@kbd{C-c t}) asks for
+another; @kbd{C-c T} takes one off.
+
+Each file's tags show after its name (``#tender #to read''), and the
+tags you've used are down the side under Tags: click one for every file
+below your home that has it.  In Search Below, @samp{tag:tender} finds
+them under the folder you're in, with the rest of a search
+(@samp{tag:tender kind:pdf newer:30}); a tag of two words is asked as
+@code{(:tag "to read")}.
+
+A tag is kept on the file itself (the extended attribute
+@code{user.xdg.tags}, which Dolphin and others read too), so it goes
+where the file goes: moved, renamed, copied, backed up.  Tagging is a
+change like any other: undo takes it back, and Changes lists it.  A
+place that keeps no such attributes (a server, some USB drives) can't
+keep tags, and says so.  Forget a Tag@dots{} stops offering one; the
+files that have it keep it.
+
 @node Archives
 @chapter Archives
 
@@ -719,6 +744,7 @@ then ask an agent to ``sort the ones I've selected'', or run
 @item C-c r @tab recent files
 @item C-c u @tab every change, to undo any one
 @item C-c k @tab connect to a server
+@item C-c t, C-c T @tab tag the selection, take a tag off
 @item C-c s @tab what's taking space, or the list again
 @item C-c S @tab the biggest things anywhere below, or the folder's own
 @item z @tab the last change again, on the selection
@@ -800,6 +826,14 @@ and the ones open.
 @itemx esploro remote known
 A server connected like a folder (@pxref{Servers}), disconnected; those
 connected; those you've used.
+@item esploro tag add|remove @var{name} @var{file}@dots{}
+A tag of yours on files, or off them (@pxref{Tags}); a plan, journaled.
+@item esploro tags
+@itemx esploro tags in @var{folder}
+@itemx esploro tags of @var{file}@dots{}
+@itemx esploro tags forget @var{name}
+The tags you've used; those of a folder's entries, or of files; one no
+longer offered.
 @item esploro phone [mount [@var{id}] | unmount]
 The iPhones plugged in and which is mounted; mounting one at
 @file{~/iphone}, unmounting it.
@@ -842,7 +876,7 @@ What the window uses (each answers with one s-expression):
 Applies the plan in @var{file}, or on standard input: one step a line,
 @code{(:copy "/from" "/to")}, @code{(:move @dots{})},
 @code{(:rename "/path" "new name")}, @code{(:mkdir "/path")},
-@code{(:trash "/path")}.  Anything else is refused.
+@code{(:trash "/path")}, @code{(:tag "/path" "tender,to read")}.  Anything else is refused.
 @item esploro undo
 Undoes the last applied plan.
 @item esploro where @var{folder}

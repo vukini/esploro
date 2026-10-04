@@ -48,6 +48,11 @@ esploro archive open PATH  PATH (a zip, a tarball, 7z, an ISO) opened read-only,
 esploro archive close POINT | list   closing one; the ones open
 esploro remote open SERVER  connect to user@host:folder (sshfs): where it is, like a folder
 esploro remote close POINT | list | known   disconnect; those connected; those you've used
+esploro tag add|remove NAME FILE...   a tag of yours on files (kept on the file itself,
+                            user.xdg.tags; a plan, so undo takes it back); find them
+                            with tag:NAME in a query
+esploro tags [in FOLDER | of FILE... | forget NAME]   the tags you've used; those of a
+                            folder's entries, or of files; one no longer offered
 esploro phone [mount [ID] | unmount]   the iPhones plugged in, and which is mounted
                             (at ~/iphone, with ifuse); mounting one, unmounting it
 esploro changes [--lines [N]]   every change Esploro made, newest first, in words
@@ -637,6 +642,44 @@ same, byte for byte; with --plan, the copies to the Trash, as a plan to review."
              (progn (answer (list :busy (phone-folder))) 1)))
         (t (answer (phone-status)) 0)))
 
+(defun cli-tags (args)
+  "esploro tags | tags in FOLDER | tags of FILE... | tags forget NAME"
+  (let ((what (first args)))
+    (cond ((null what) (answer (known-tags)) 0)
+          ((and (equal what "in") (second args))
+           (let ((found (folder-tags (absolute (second args)))))
+             (remember-tags (loop for f in found append (rest f)))
+             (answer found) 0))
+          ((equal what "of")
+           (answer (loop for p in (rest args)
+                         for path = (absolute p)
+                         for tags = (and path (file-tags path))
+                         when tags collect (cons path tags)))
+           0)
+          ((and (equal what "forget") (second args))
+           (forget-tag (second args)) (answer (list :forgotten (second args))) 0)
+          (t (answer (list :error "esploro tags | tags in FOLDER | tags of FILE... | tags forget NAME")) 2))))
+
+(defun cli-tag (args)
+  "esploro tag add|remove NAME FILE...: a plan, applied (journaled: undo takes it back)."
+  (destructuring-bind (&optional how tag &rest files) args
+    (let ((how (cond ((equal how "add") :add) ((equal how "remove") :remove))))
+      (if (or (null how) (null tag) (null files))
+          (progn (answer (list :error "esploro tag add|remove NAME FILE...")) 2)
+          (handler-case
+              (let* ((paths (remove nil (mapcar #'absolute files)))
+                     (steps (tag-steps how tag paths)))
+                (when (eq how :add) (remember-tags (parse-tags tag)))
+                (if (null steps)
+                    (progn (answer (list :done 0)) 0)
+                    (with-input-from-string (*standard-input*
+                                             (with-output-to-string (out)
+                                               (with-standard-io-syntax
+                                                 (let ((*print-case* :downcase))
+                                                   (dolist (s steps) (prin1 s out) (terpri out))))))
+                      (cli-apply "-"))))
+            (error (e) (answer (list :error (princ-to-string e))) 1))))))
+
 (defun cli-dbus ()
   "Make the running Emacs answer org.freedesktop.FileManager1 (the browsers'
 \"Show in folder\"): what the session bus runs when it's first asked."
@@ -689,6 +732,8 @@ same, byte for byte; with --plan, the copies to the Trash, as a plan to review."
           ((equal command "changes") (cli-changes (rest args)))
           ((equal command "remote") (cli-remote (rest args)))
           ((equal command "phone") (cli-phone (rest args)))
+          ((equal command "tags") (cli-tags (rest args)))
+          ((equal command "tag") (cli-tag (rest args)))
           ((equal command "open-on") (cli-open-on (second args) (cddr args)))
           ((equal command "thumbnails") (cli-thumbnails (rest args)))
           ((equal command "project") (cli-project (rest args)))

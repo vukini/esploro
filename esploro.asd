@@ -18,6 +18,7 @@
                (:file "plan")
                (:file "stumpwm")
                (:file "where")
+               (:file "tags")
                (:file "commands")
                (:file "recipes")
                (:file "searches")

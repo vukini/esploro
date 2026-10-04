@@ -1018,6 +1018,8 @@ a dropped name kept its newline, named no file, and the drop was lost."
   "C-c r" #'esploro-recent
   "C-c u" #'esploro-changes
   "C-c k" #'esploro-connect
+  "C-c t" #'esploro-tag
+  "C-c T" #'esploro-untag
   "C-c s" #'esploro-space-toggle
   "C-c S" #'esploro-space-below-toggle
   "C-c C-k" #'esploro-cancel
@@ -1074,6 +1076,7 @@ show the pane's sort and history even when the places are selected."
           ["Open With..." esploro-open-with :active (esploro--marked-or-point-p)]
           ("Open on Workspace" :filter esploro--workspaces-menu)
           ("Commands" :filter esploro--commands-menu)
+          ("Tags" :filter esploro--tags-menu)
           ["Properties" esploro-properties :active (esploro--file-at)]
           "---"
           ["Terminal Here" esploro-terminal-here]
@@ -1208,7 +1211,7 @@ Esploro's that has turned up since is hidden too."
       (when (bound-and-true-p esploro-mode)
         (dolist (f '(esploro--whole-row-drag esploro--annotate esploro--thumbnails-show
                      esploro--grid-after-readin esploro--git-show esploro--space-after-readin
-                     esploro--dropbox-show))
+                     esploro--dropbox-show esploro--tags-show))
           (add-hook 'dired-after-readin-hook f nil t))))))
 
 (defun esploro--install-menu-bar (map)
@@ -1228,6 +1231,7 @@ Esploro's that has turned up since is hidden too."
     ["Open With..." esploro-open-with]
     ("Open on Workspace" :filter esploro--workspaces-menu)
     ("Commands" :filter esploro--commands-menu)
+    ("Tags" :filter esploro--tags-menu)
     "---"
     ["Copy" esploro-copy]
     ["Cut" esploro-cut]
@@ -1346,7 +1350,8 @@ through the core, journaled so they can be undone."
     (add-hook 'dired-after-readin-hook #'esploro--grid-after-readin nil t)
     (add-hook 'dired-after-readin-hook #'esploro--git-show nil t)
     (add-hook 'dired-after-readin-hook #'esploro--space-after-readin nil t)
-    (add-hook 'dired-after-readin-hook #'esploro--dropbox-show nil t)))
+    (add-hook 'dired-after-readin-hook #'esploro--dropbox-show nil t)
+    (add-hook 'dired-after-readin-hook #'esploro--tags-show nil t)))
 
 ;;; --- Places, down the side --------------------------------------------------------------
 
@@ -1429,6 +1434,7 @@ PCManFM's and the file dialogs' (GTK's bookmarks, which they share)."
                     (cons "Bookmarks" (esploro--bookmarks))
                     (cons "Servers" (esploro--servers))
                     (cons "Searches" (esploro--searches))
+                    (cons "Tags" (mapcar (lambda (tag) (cons (concat "#" tag) (cons 'tag tag))) (esploro--tags)))
                     (cons "" (list (cons "Trash" (esploro--trash-dir)))))))
 
 (defvar-keymap esploro-places-mode-map
@@ -1468,6 +1474,7 @@ PCManFM's and the file dialogs' (GTK's bookmarks, which they share)."
                                 'action (cond ((stringp (cdr place)) (lambda (_) (esploro--from-places (cdr place))))
                                               ((eq (car-safe (cdr place)) 'remote) (lambda (_) (esploro-connect (cddr place))))
                                               ((eq (car-safe (cdr place)) 'phone) (lambda (_) (esploro-open-phone (cddr place))))
+                                              ((eq (car-safe (cdr place)) 'tag) (lambda (_) (esploro-show-tag (cddr place))))
                                               ((eq (cdr place) 'recent) (lambda (_) (esploro--from-places-recent)))
                                               (t (lambda (_) (esploro-run-search (cddr place)))))
                                 'follow-link t
@@ -1475,6 +1482,7 @@ PCManFM's and the file dialogs' (GTK's bookmarks, which they share)."
                                                  ((eq (cdr place) 'recent) "The files opened lately")
                                                  ((eq (car-safe (cdr place)) 'remote) "Connect to it")
                                                  ((eq (car-safe (cdr place)) 'phone) "Open it")
+                                                 ((eq (car-safe (cdr place)) 'tag) "The files with this tag")
                                                  (t "A search"))
                                 'face (if (equal (if (stringp (cdr place)) (file-name-as-directory (cdr place)) (cdr place))
                                                  here)
@@ -2606,6 +2614,134 @@ places are drawn on each move)."
             (mapcar (lambda (h) (cons h (cons 'remote h)))
                     (seq-remove (lambda (h) (seq-some (lambda (c) (string-match-p (regexp-quote h) (car c))) connected))
                                 known)))))
+
+;;; --- Tags: words of your own on files ------------------------------------------------------
+
+;; A tag is kept on the file itself (the core: user.xdg.tags), so it goes
+;; where the file goes.  Right-click > Tags ticks the ones you've used (or a
+;; new one); C-c t adds one, C-c T takes one off; each file's tags show after
+;; its name; the ones you've used are down the side, a click finding their
+;; files; tag:NAME works in Search Below.  Tagging is a plan: undo takes it
+;; back, and Changes lists it.
+
+(defface esploro-tag '((t :inherit font-lock-type-face))
+  "A file's tags, after its name.")
+
+(defvar esploro--known-tags nil "(TIME . TAGS): the tags you've used, asked of the core at TIME.")
+(defvar-local esploro--tags-here nil "The tags of this view's files: ((FILE TAG ...) ...).")
+
+(defun esploro--tags (&optional again)
+  "The tags you've used, asked of the core at most every 30 seconds (the
+places are drawn on each move), or now with AGAIN."
+  (when (or again (null esploro--known-tags)
+            (> (float-time (time-since (car esploro--known-tags))) 30))
+    (let ((tags (and (executable-find esploro-program)
+                     (ignore-errors (esploro--call (list "tags") nil nil t)))))
+      (setq esploro--known-tags (cons (current-time) (and (listp tags) (seq-filter #'stringp tags))))))
+  (cdr esploro--known-tags))
+
+(defun esploro--tags-show ()
+  "Ask the core, in the background, for the tags of the files shown; put
+them after the names."
+  (remove-overlays (point-min) (point-max) 'esploro-tags t)
+  (setq esploro--tags-here nil)
+  (when (executable-find esploro-program)
+    (let* ((buffer (current-buffer))
+           (dir (expand-file-name default-directory))
+           (listed (and (consp dired-directory)
+                        (seq-take (mapcar (lambda (f) (expand-file-name f dir)) (cdr dired-directory)) 300))))
+      (when (or listed (not (consp dired-directory)))
+        (esploro--call (if listed (append (list "tags" "of") listed) (list "tags" "in" dir)) nil
+                       (lambda (answer)
+                         (when (and (buffer-live-p buffer) (consp answer) (consp (car answer)))
+                           (with-current-buffer buffer
+                             (when (equal (expand-file-name default-directory) dir)
+                               (setq esploro--tags-here
+                                     (mapcar (lambda (f) (cons (expand-file-name (car f) dir) (cdr f))) answer))
+                               (esploro--tags-mark))))))))))
+
+(defun esploro--tags-mark ()
+  "Each tagged file's tags after its name."
+  (remove-overlays (point-min) (point-max) 'esploro-tags t)
+  (save-excursion
+    (goto-char (point-min))
+    (while (not (eobp))
+      (let* ((file (esploro--grid-file))
+             (tags (and file (cdr (assoc (directory-file-name file) esploro--tags-here)))))
+        (when (and tags (dired-move-to-end-of-filename t))
+          (let ((o (make-overlay (point) (point))))
+            (overlay-put o 'esploro-tags t)
+            (overlay-put o 'after-string
+                         (propertize (concat "  " (mapconcat (lambda (tag) (concat "#" tag)) tags " "))
+                                     'face 'esploro-tag)))))
+      (forward-line 1))))
+
+(defun esploro--tag-run (how tag files)
+  "Add TAG to FILES (HOW \"add\") or take it off (\"remove\"), through the core."
+  (let ((tag (string-trim tag)))
+    (when (or (string-empty-p tag) (string-search "," tag))
+      (user-error "A tag is a word or a few, without commas"))
+    (esploro--call (append (list "tag" how tag) files) nil
+                   (lambda (answer)
+                     (pcase answer
+                       (`(:done ,n)
+                        (message "Esploro: %s %s %d %s (undo takes it back)"
+                                 (if (equal how "add") "tagged" "took") (concat "#" tag (if (equal how "add") ":" " off"))
+                                 n (if (= n 1) "file" "files")))
+                       (_ (esploro--say answer "tag")))
+                     (setq esploro--known-tags nil)
+                     (esploro--refresh)
+                     (esploro-places-refresh)))))
+
+(defun esploro-tag (tag &optional files)
+  "Add TAG to FILES (the selection)."
+  (interactive (list (completing-read "Tag with: " (esploro--tags t))))
+  (esploro--tag-run "add" tag (or files (esploro--in-view (esploro--selection)) (user-error "Nothing selected"))))
+
+(defun esploro-untag (tag &optional files)
+  "Take TAG off FILES (the selection)."
+  (interactive
+   (list (let* ((files (esploro--in-view (esploro--selection)))
+                (have (seq-uniq (seq-mapcat (lambda (f) (cdr (assoc (directory-file-name f) esploro--tags-here))) files))))
+           (if have (completing-read "Take off the tag: " have nil t)
+             (user-error "What's selected has no tags")))))
+  (esploro--tag-run "remove" tag (or files (esploro--in-view (esploro--selection)) (user-error "Nothing selected"))))
+
+(defun esploro--tags-menu (_items)
+  "Tags, made as the menu opens: the ones you've used, ticked when every
+selected file has it (a click adds it, or takes it off), and a new one."
+  (let* ((view (esploro--view))
+         (files (and view (with-current-buffer view (esploro--selection))))
+         (here (and view (buffer-local-value 'esploro--tags-here view)))
+         (known (esploro--tags)))
+    (append
+     (mapcar (lambda (tag)
+               (let ((all (and files (seq-every-p (lambda (f) (member-ignore-case tag (cdr (assoc (directory-file-name f) here))))
+                                                  files))))
+                 (vector tag (list (if all 'esploro-untag 'esploro-tag) tag (list 'quote files))
+                         :style 'toggle :selected (and all t) :active (and files t))))
+             known)
+     (when known (list "---"))
+     (list (vector "New Tag..." 'esploro-tag :active (and files t) :keys "C-c t")
+           (vector "Forget a Tag..." 'esploro-forget-tag :active (and known t))))))
+
+(defun esploro-forget-tag (tag)
+  "TAG is no longer offered; the files that have it keep it."
+  (interactive (list (completing-read "No longer offer the tag: " (esploro--tags t) nil t)))
+  (esploro--call (list "tags" "forget" tag) nil nil t)
+  (setq esploro--known-tags nil)
+  (esploro-places-refresh)
+  (message "Esploro: #%s is no longer offered (the files that have it keep it)" tag))
+
+(defun esploro-show-tag (tag)
+  "The files below your home with TAG, as a list."
+  (interactive (list (completing-read "Files tagged: " (esploro--tags t) nil t)))
+  (let* ((frame (esploro--frame))
+         (buffer (if frame (window-buffer (esploro--main-window frame)) (esploro--view))))
+    (unless (esploro--view-p buffer) (user-error "No Esploro here (M-x esploro)"))
+    (message "Esploro: looking for #%s..." tag)
+    (esploro--call (list "query" (format "(:tag %S)" tag) (expand-file-name "~")) nil
+                   (lambda (answer) (esploro--search-show buffer answer)))))
 
 ;;; --- Commands in embark: on any file name in Emacs ----------------------------------
 

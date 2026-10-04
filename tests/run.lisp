@@ -1098,6 +1098,52 @@
       (sb-posix:setenv "PATH" path 1)
       (sb-posix:unsetenv "ESPLORO_PHONE_FOLDER"))))
 
+;;; --- Tags: words of your own on files ------------------------------------------------------
+
+(check "tags from text: trimmed, none twice whatever the case, none empty"
+       (equal (esploro::parse-tags " tender, To read,,TENDER ,x") '("tender" "To read" "x")))
+(esploro::ensure-folder (p "tg/sub"))
+(make-file (p "tg/a.pdf")) (make-file (p "tg/b.txt")) (make-file (p "tg/sub/c.md"))
+(if (not (esploro::set-file-tags (p "tg/a.pdf") '("probe")))
+    (format t "(tags: this folder's drive keeps no extended attributes; skipped)~%")
+    (progn
+      (esploro::set-file-tags (p "tg/a.pdf") '())
+      (check "no tags to begin with" (null (esploro::file-tags (p "tg/a.pdf"))))
+      (check "a tag added to two files, as a plan"
+             (and (equal (run-cli (list "tag" "add" "tender" (p "tg/a.pdf") (p "tg/b.txt"))) '(0 :done 2))
+                  (equal (esploro::file-tags (p "tg/a.pdf")) '("tender"))))
+      (check "a second beside the first; one it has already changes nothing"
+             (and (equal (run-cli (list "tag" "add" "to read" (p "tg/a.pdf"))) '(0 :done 1))
+                  (equal (run-cli (list "tag" "add" "Tender" (p "tg/a.pdf"))) '(0 :done 0))
+                  (equal (esploro::file-tags (p "tg/a.pdf")) '("tender" "to read"))))
+      (check "the tags you've used are remembered" (equal (cdr (run-cli (list "tags"))) '("tender" "to read")))
+      (check "a folder's tagged entries" (equal (sort (cdr (run-cli (list "tags" "in" (p "tg")))) #'string< :key #'first)
+                                                '(("a.pdf" "tender" "to read") ("b.txt" "tender"))))
+      (flet ((found (text) (sort (mapcar (lambda (f) (esploro::short-path f (p "tg")))
+                                         (fourth (cdr (run-cli (list "query" text (p "tg"))))))
+                                 #'string<)))
+        (check "found by tag" (equal (found "tag:tender") '("a.pdf" "b.txt")))
+        (check "with the rest of a query" (equal (found "tag:tender kind:pdf") '("a.pdf")))
+        (check "a tag of two words, as an s-expression" (equal (found "(:tag \"to read\")") '("a.pdf")))
+        (check "and not" (equal (found "kind:file -tag:tender") '("sub/c.md"))))
+      (check "the tags go with the file when it moves"
+             (progn (run-cli (list "apply") (format nil "(:move ~s ~s)" (p "tg/b.txt") (p "tg/sub/b.txt")))
+                    (equal (esploro::file-tags (p "tg/sub/b.txt")) '("tender"))))
+      (undo-last)
+      (check "taken off, as a plan; undo puts it back"
+             (and (equal (run-cli (list "tag" "remove" "tender" (p "tg/b.txt"))) '(0 :done 1))
+                  (null (esploro::file-tags (p "tg/b.txt")))
+                  (progn (undo-last) (equal (esploro::file-tags (p "tg/b.txt")) '("tender")))))
+      (check "said in words" (equal (esploro::summarize-steps (list (list :tag "/h/a.pdf" "tender,to read")))
+                                    "tagged \"a.pdf\": tender, to read"))
+      (check "a plan may tag, and one tagging what isn't there is refused"
+             (and (null (esploro::check-plan (list (list :tag (p "tg/a.pdf") "x"))))
+                  (esploro::check-plan (list (list :tag (p "tg/nope.pdf") "x")))))
+      (check "a tag forgotten is no longer offered; the files keep it"
+             (progn (run-cli (list "tags" "forget" "tender"))
+                    (and (equal (cdr (run-cli (list "tags"))) '("to read"))
+                         (member "tender" (esploro::file-tags (p "tg/a.pdf")) :test #'string=))))))
+
 ;;; --- The end -------------------------------------------------------------------------
 
 (sb-ext:run-program "chmod" (list "-R" "u+w" *top*) :search t)
