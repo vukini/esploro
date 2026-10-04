@@ -26,6 +26,7 @@
                (:file "archives")
                (:file "recent")
                (:file "duplicates")
+               (:file "changes")
                (:file "preview")))
 
 (defsystem "esploro"

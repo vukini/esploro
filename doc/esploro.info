@@ -233,6 +233,13 @@ stopped during the copy, the original is as it was; once the
 delete has begun, it finishes, so a file is never lost between
 the two.
 
+   Edit ⇒ Changes... (‘C-c u’) lists every change Esploro made,
+newest first, in words ("moved 3 files into ~/Work", "duplicated
+"bin" in ~/vikix"), each with ‘Undo’ and ‘Show’ (its folder);
+‘RET’ on one shows its steps.  Undo takes back any one of them,
+not only the last: when its files have moved on since, it says
+why and nothing changes.
+
    Dired's own keys (‘C’, ‘R’, ‘D’ and the rest) still work in
 the list, but around the journal: what they do can't be undone
 from Esploro.
@@ -756,6 +763,7 @@ C-c C-k                   stop a long copy
 M-o 1..9                  open the selection on that workspace
 C-c b                     bookmark this folder
 C-c r                     recent files
+C-c u                     every change, to undo any one
 C-c s                     what's taking space, or the list again
 C-c S                     the biggest things anywhere below, or the
                           folder's own
@@ -834,6 +842,9 @@ File: esploro.info,  Node: The command line,  Next: Writing commands,  Prev: Key
 ‘esploro archive list’
      An archive opened read-only like a folder (*note
      Archives::), closed, and the ones open.
+‘esploro changes’
+‘esploro changes undo ID’
+     Every change, newest first, in words; undoing any one.
 ‘esploro duplicates [--plan] FOLDER’
      The files below FOLDER that are the same, byte for byte, in
      groups; ‘--plan’, the copies to the Trash as a plan to
@@ -935,21 +946,21 @@ Node: Opening Esploro2107
 Node: The window3923
 Node: Selecting and opening6178
 Node: Changing files7231
-Node: Recipes9250
-Node: Drag and drop14038
-Node: The preview14764
-Node: Two panes15878
-Node: Windows and workspaces16451
-Node: Looking around17899
-Node: Searches22370
-Node: Archives24142
-Node: The Trash24980
-Node: Where files are open25563
-Node: Closing a project26034
-Node: Plans from agents26903
-Node: Keys and mouse29167
-Node: The command line31376
-Node: Writing commands36121
+Node: Recipes9612
+Node: Drag and drop14400
+Node: The preview15126
+Node: Two panes16240
+Node: Windows and workspaces16813
+Node: Looking around18261
+Node: Searches22732
+Node: Archives24504
+Node: The Trash25342
+Node: Where files are open25925
+Node: Closing a project26396
+Node: Plans from agents27265
+Node: Keys and mouse29529
+Node: The command line31794
+Node: Writing commands36651
 
 End Tag Table
 

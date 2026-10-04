@@ -223,6 +223,13 @@ is a copy, then the original deleted: stopped during the copy, the
 original is as it was; once the delete has begun, it finishes, so a
 file is never lost between the two.
 
+Edit @result{} Changes@dots{} (@kbd{C-c u}) lists every change Esploro
+made, newest first, in words (``moved 3 files into ~/Work'',
+``duplicated "bin" in ~/vikix''), each with @samp{Undo} and @samp{Show}
+(its folder); @kbd{RET} on one shows its steps.  Undo takes back any one
+of them, not only the last: when its files have moved on since, it says
+why and nothing changes.
+
 Dired's own keys (@kbd{C}, @kbd{R}, @kbd{D} and the rest) still work
 in the list, but around the journal: what they do can't be undone from
 Esploro.
@@ -686,6 +693,7 @@ then ask an agent to ``sort the ones I've selected'', or run
 @item M-o 1..9 @tab open the selection on that workspace
 @item C-c b @tab bookmark this folder
 @item C-c r @tab recent files
+@item C-c u @tab every change, to undo any one
 @item C-c s @tab what's taking space, or the list again
 @item C-c S @tab the biggest things anywhere below, or the folder's own
 @item z @tab the last change again, on the selection
@@ -761,6 +769,9 @@ That one, never offered again.
 @itemx esploro archive list
 An archive opened read-only like a folder (@pxref{Archives}), closed,
 and the ones open.
+@item esploro changes
+@itemx esploro changes undo @var{id}
+Every change, newest first, in words; undoing any one.
 @item esploro duplicates [--plan] @var{folder}
 The files below @var{folder} that are the same, byte for byte, in
 groups; @option{--plan}, the copies to the Trash as a plan to review.

@@ -1104,4 +1104,30 @@ without a frame."
        (accept-process-output nil 0.3)
        (should-not esploro--dropbox)))))
 
+(ert-deftest esploro-changes-panel ()
+  (skip-unless (file-executable-p (expand-file-name "../esploro" (file-name-directory (locate-library "esploro")))))
+  (esploro-tests--world
+   (esploro-tests--file "c/a.txt") (esploro-tests--file "c/b.txt")
+   (make-directory (esploro-tests--path "c/done"))
+   (esploro-go (esploro-tests--path "c"))
+   (esploro--apply (list (list :move (esploro-tests--path "c/a.txt") (esploro-tests--path "c/done/a.txt"))) "moved")
+   (sleep-for 1.1)
+   (esploro--apply (list (list :trash (esploro-tests--path "c/b.txt"))) "trashed")
+   (save-window-excursion
+     (esploro-changes)
+     (with-current-buffer "*Esploro: changes*"
+       (should (string-match-p "put \"b.txt\" in the Trash" (buffer-string)))
+       (should (string-match-p "moved \"a.txt\" into" (buffer-string)))
+       ;; Its steps, on RET.
+       (goto-char (point-min)) (search-forward "moved \"a.txt\"")
+       (esploro-changes-toggle)
+       (should (string-match-p "move ~/c/a.txt to ~/c/done/a.txt" (buffer-string)))
+       ;; Undo the older one: a.txt comes back; b.txt stays in the Trash.
+       (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) t)))
+         (esploro-changes-undo (get-text-property (point) 'esploro-change) "moved"))
+       (should (file-exists-p (esploro-tests--path "c/a.txt")))
+       (should-not (file-exists-p (esploro-tests--path "c/b.txt")))
+       (should (string-match-p "undone" (buffer-string)))
+       (kill-buffer)))))
+
 ;;; esploro-tests.el ends here

@@ -1015,6 +1015,7 @@ a dropped name kept its newline, named no file, and the drop was lost."
   "M-o" #'esploro-open-on-workspace
   "C-c b" #'esploro-bookmark-folder
   "C-c r" #'esploro-recent
+  "C-c u" #'esploro-changes
   "C-c s" #'esploro-space-toggle
   "C-c S" #'esploro-space-below-toggle
   "C-c C-k" #'esploro-cancel
@@ -1082,6 +1083,7 @@ show the pane's sort and history even when the places are selected."
           ["Close Esploro" esploro-close :keys "C-x C-c"])
     (esploro-edit "Edit"
           ["Undo" esploro-undo :keys "C-/"]
+          ["Changes..." esploro-changes :keys "C-c u"]
           ["Stop Copying" esploro-cancel :keys "C-c C-k" :visible esploro--running]
           ["Repeat Last Change" esploro-repeat :keys "z" :active (esploro--marked-or-point-p)]
           ("Recipes" :filter esploro--recipes-menu)
@@ -1192,7 +1194,8 @@ Esploro's that has turned up since is hidden too."
   (dolist (buffer (buffer-list))
     (with-current-buffer buffer
       (when (or (bound-and-true-p esploro-mode)
-                (memq major-mode '(esploro-places-mode esploro-project-mode esploro-habits-mode esploro-review-mode)))
+                (memq major-mode '(esploro-places-mode esploro-project-mode esploro-habits-mode esploro-review-mode
+                           esploro-changes-mode)))
         (setq esploro--menus-only t))
       ;; Views open from before: what's done after a folder is shown, as
       ;; esploro-mode now sets it (new things, like git status, included).
@@ -3315,6 +3318,104 @@ working there; not Esploro's own views."
     (when frame (select-frame-set-input-focus frame))
     (esploro--call (list "query" words from) nil
                    (lambda (answer) (esploro--search-show buffer answer)))))
+
+;;; --- Changes: the journal, to read and undo from ------------------------------------------
+
+;; Edit > Changes... (C-c u): every change Esploro made, newest first, in
+;; words, each with Undo, any one of them and not only the last (checked
+;; whole first: when its files have moved on since, nothing changes and it
+;; says why).  RET or TAB on one shows its steps; Show goes to its folder.
+
+(defvar-keymap esploro-changes-mode-map
+  :doc "Esploro's changes."
+  :parent special-mode-map
+  "g" #'esploro-changes-refresh
+  "RET" #'esploro-changes-toggle
+  "TAB" #'esploro-changes-toggle
+  "n" #'next-line
+  "p" #'previous-line)
+
+(esploro--install-menu-bar esploro-changes-mode-map)
+
+(define-derived-mode esploro-changes-mode special-mode "Changes"
+  "Every change Esploro made, to read and undo."
+  (setq-local esploro--menus-only t)
+  (setq-local tool-bar-map esploro-tool-bar-map)
+  (setq-local truncate-lines t))
+
+(defvar-local esploro--changes-open nil "The changes whose steps are shown: their ids.")
+
+(defun esploro-changes ()
+  "Every change Esploro made, newest first, to read and undo any one."
+  (interactive)
+  (let ((buffer (get-buffer-create "*Esploro: changes*")))
+    (with-current-buffer buffer
+      (unless (derived-mode-p 'esploro-changes-mode) (esploro-changes-mode))
+      (esploro-changes-refresh))
+    (pop-to-buffer buffer)))
+
+(defun esploro--changes-when (time)
+  "\"2026-10-04T06:15:59\" as \"today 06:15\", \"yesterday 23:53\", or a date."
+  (let* ((day (substring time 0 10))
+         (clock (substring time 11 16))
+         (today (format-time-string "%Y-%m-%d"))
+         (yesterday (format-time-string "%Y-%m-%d" (time-subtract nil (* 24 3600)))))
+    (cond ((equal day today) (concat "today " clock))
+          ((equal day yesterday) (concat "yesterday " clock))
+          (t (concat day " " clock)))))
+
+(defun esploro-changes-refresh ()
+  "Look again at the changes."
+  (interactive)
+  (let ((changes (esploro--call (list "changes") nil nil t))
+        (inhibit-read-only t)
+        (line (line-number-at-pos)))
+    (erase-buffer)
+    (insert (propertize "Changes" 'face 'bold) "\n"
+            (propertize "Everything Esploro changed in your files, newest first.\nUndo takes any one back, when its files are still as it left them.\nRET shows a change's steps." 'face 'shadow)
+            "\n\n")
+    (if (not (and (consp changes) (consp (car changes))))
+        (insert "No changes yet.\n")
+      (dolist (c changes)
+        (pcase-let ((`(,id ,time ,summary ,undone ,steps ,folder) c))
+          (let ((start (point)))
+            (insert (format "%-17s " (esploro--changes-when time)))
+            ;; The buttons before the words, so a long one doesn't hide them.
+            (if undone
+                (insert (propertize "undone" 'face 'shadow))
+              (insert-text-button "Undo" 'action (lambda (_) (esploro-changes-undo id summary))
+                                  'follow-link t 'face 'esploro-button 'help-echo "Take this change back"))
+            (insert " ")
+            (if (and folder (file-directory-p folder))
+                (insert-text-button "Show" 'action (lambda (_) (esploro--from-places folder))
+                                    'follow-link t 'help-echo (abbreviate-file-name folder))
+              (insert "    "))
+            (insert "  " (if undone (propertize summary 'face 'shadow) summary) "\n")
+            (put-text-property start (point) 'esploro-change id)
+            (when (member id esploro--changes-open)
+              (dolist (s steps)
+                (insert (propertize (concat "                    " s "\n") 'face 'shadow 'esploro-change id))))))))
+    (goto-char (point-min))
+    (forward-line (1- line))))
+
+(defun esploro-changes-toggle ()
+  "Show the steps of the change on this line, or hide them."
+  (interactive)
+  (let ((id (get-text-property (point) 'esploro-change)))
+    (when id
+      (setq esploro--changes-open (if (member id esploro--changes-open) (delete id esploro--changes-open)
+                                    (cons id esploro--changes-open)))
+      (esploro-changes-refresh))))
+
+(defun esploro-changes-undo (id summary)
+  "Take back the change ID (SUMMARY says what it was)."
+  (when (y-or-n-p (format "Undo \"%s\"? " summary))
+    (pcase (esploro--call (list "changes" "undo" id) nil nil t)
+      (`(:undone ,steps) (message "Esploro: undone: %s" (string-join steps "; ")) (esploro--refresh))
+      (`(:refused ,problems)
+       (message "Esploro: can't undo it, its files have moved on since (nothing changed): %s" (string-join problems "; ")))
+      (answer (esploro--say answer "undo")))
+    (when (derived-mode-p 'esploro-changes-mode) (esploro-changes-refresh))))
 
 ;;; --- Plans to review: an agent's proposals ---------------------------------------------
 

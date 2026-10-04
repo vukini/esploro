@@ -958,6 +958,39 @@
   (check "whose steps put only the copy in the Trash"
          (equal (esploro::read-plan-file (third answer)) (list (list :trash (p "dup/b/report copy.pdf"))))))
 
+;;; --- Changes: the journal, read and undone from ----------------------------------------------
+
+(check "moves into one folder, in words"
+       (equal (esploro::summarize-steps '((:move "/h/a/x.pdf" "/h/w/x.pdf") (:move "/h/a/y.pdf" "/h/w/y.pdf")))
+              "moved 2 files into /h/w"))
+(check "one file, by its name" (equal (esploro::summarize-steps '((:trash "/h/a/old.txt"))) "put \"old.txt\" in the Trash"))
+(check "a copy beside itself is a duplicate"
+       (equal (esploro::summarize-steps '((:copy "/h/a/bin" "/h/a/bin copy"))) "duplicated \"bin\" in /h/a"))
+(check "mixed, counted"
+       (equal (esploro::summarize-steps '((:mkdir "/h/w") (:move "/h/a/x" "/h/w/x") (:trash "/h/a/y") (:trash "/h/a/z")))
+              "3 changes: moved 1, 2 to the Trash"))
+(esploro::ensure-folder (p "chg/in"))
+(esploro::ensure-folder (p "chg/out"))
+(make-file (p "chg/in/a.txt")) (make-file (p "chg/in/b.txt"))
+(run-cli (list "apply") (format nil "(:move ~s ~s)" (p "chg/in/a.txt") (p "chg/out/a.txt")))
+(sleep 1.1)   ; each change its own entry, newest first
+(run-cli (list "apply") (format nil "(:move ~s ~s)" (p "chg/in/b.txt") (p "chg/out/b.txt")))
+(let* ((changes (cdr (run-cli (list "changes"))))
+       (older (find "moved \"a.txt\" into ~/chg/out" changes :key #'third :test #'string=)))
+  (check "each change listed, in words, newest first"
+         (and older (string= (third (first changes)) "moved \"b.txt\" into ~/chg/out")))
+  (check "an older change undone on its own, the newer one left"
+         (and (eq :undone (second (run-cli (list "changes" "undo" (first older)))))
+              (path-exists-p (p "chg/in/a.txt")) (path-exists-p (p "chg/out/b.txt"))))
+  (check "and said to be undone" (fourth (find (first older) (cdr (run-cli (list "changes"))) :key #'first :test #'string=)))
+  (check "not twice" (eq :error (second (run-cli (list "changes" "undo" (first older)))))))
+;; The files moved on since: refused, nothing changed.
+(let ((newest (first (cdr (run-cli (list "changes"))))))
+  (rename-file (p "chg/out/b.txt") (p "chg/out/renamed.txt"))
+  (check "a change whose files moved on since isn't undone; nothing changes"
+         (and (eq :refused (second (run-cli (list "changes" "undo" (first newest)))))
+              (path-exists-p (p "chg/out/renamed.txt")))))
+
 ;;; --- The end -------------------------------------------------------------------------
 
 (sb-ext:run-program "chmod" (list "-R" "u+w" *top*) :search t)

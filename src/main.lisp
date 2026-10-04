@@ -46,6 +46,8 @@ esploro habits --dismiss KEY   that one, never offered again
 esploro archive open PATH  PATH (a zip, a tarball, 7z, an ISO) opened read-only, like a
                             folder (archivemount): where it is
 esploro archive close POINT | list   closing one; the ones open
+esploro changes             every change Esploro made, newest first, in words
+esploro changes undo ID     undo that one (checked whole first), not only the last
 esploro duplicates [--plan] FOLDER   the files below that are the same, byte for byte
                             (1 KB or more, not another repository's); --plan: the
                             copies to the Trash, the oldest kept, for your review
@@ -581,6 +583,18 @@ same, byte for byte; with --plan, the copies to the Trash, as a plan to review."
         when (>= bytes scale) do (return (format nil "~,1f ~a" (/ bytes scale) unit))
         finally (return (format nil "~d bytes" bytes))))
 
+(defun cli-changes (args)
+  "esploro changes | changes undo ID"
+  (if (equal (first args) "undo")
+      (handler-case
+          (let ((steps (undo-entry (or (second args) ""))))
+            (answer (if steps (list :undone (mapcar #'describe-step steps))
+                        (list :error "no such change, or it's undone already")))
+            (if steps 0 1))
+        (plan-refused (e) (answer (list :refused (plan-refused-problems e))) 1)
+        (step-failed (e) (answer (list :failed (describe-step (step-failed-step e)) (step-failed-reason e))) 1))
+      (progn (answer (changes)) 0)))
+
 (defun cli-dbus ()
   "Make the running Emacs answer org.freedesktop.FileManager1 (the browsers'
 \"Show in folder\"): what the session bus runs when it's first asked."
@@ -630,6 +644,7 @@ same, byte for byte; with --plan, the copies to the Trash, as a plan to review."
           ((equal command "recent") (cli-recent (rest args)))
           ((equal command "sizes") (cli-sizes (rest args)))
           ((equal command "duplicates") (cli-duplicates (rest args)))
+          ((equal command "changes") (cli-changes (rest args)))
           ((equal command "open-on") (cli-open-on (second args) (cddr args)))
           ((equal command "thumbnails") (cli-thumbnails (rest args)))
           ((equal command "project") (cli-project (rest args)))

@@ -8,10 +8,6 @@ list (DESIGN.md says what was done).
 
 ## Fitting how Vid works
 
-8. **The journal as a panel.** Every applied plan, newest first, in words
-   ("moved 3 files into ~/Work"), with undo for any one of them when the
-   files allow, not only the last. *Medium.*
-
 9. **Remote folders.** A server's folders over SSH like local ones
    (TRAMP shows them; plans, the Trash and undo would need to work there
    too). *Larger.*
