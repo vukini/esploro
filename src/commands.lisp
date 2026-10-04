@@ -26,7 +26,7 @@
   (let ((words (substitute #\Space #\- (string-downcase (symbol-name (file-command-name command))))))
     (setf (char words 0) (char-upcase (char words 0)))
     ;; Names keep their capitals.
-    (dolist (name '("Esploro" "Emacs" "PDF") words)
+    (dolist (name '("Esploro" "Emacs" "PDF" "JPEG") words)
       (let ((at (search (string-downcase name) words)))
         (when at (setf words (concatenate 'string (subseq words 0 at) name
                                           (subseq words (+ at (length name))))))))))
@@ -41,8 +41,8 @@
 (defmacro define-file-command (name ((var kinds) &rest options) &body body)
   "Define the file command NAME for files of KINDS (a kind, a list of them,
 or T for anything). OPTIONS: :changes T when BODY returns plan steps
-rather than acting; :makes T when it makes a file and returns its path, or
-NIL when it couldn't, so you hear which. BODY may start with a docstring, shown in menus."
+rather than acting; :makes T when it makes a file and returns its path, NIL
+when it couldn't, so you hear which, or :SKIP when there's nothing to make. BODY may start with a docstring, shown in menus."
   (let ((doc (when (and (stringp (first body)) (rest body)) (first body))))
     `(progn
        (register-file-command
@@ -78,9 +78,10 @@ paths made (an error names a file it couldn't make one from); else NIL."
           ((file-command-makes command)
            (loop for path in paths
                  for made = (funcall (file-command-function command) path)
-                 unless (stringp made)
+                 ;; :skip: nothing to make from this one (a JPEG asked for a JPEG).
+                 unless (or (stringp made) (eq made :skip))
                    do (error "~a didn't work on ~a" (file-command-label command) (path-name path))
-                 collect made))
+                 when (stringp made) collect made))
           (t (dolist (path paths) (funcall (file-command-function command) path))
              nil))))
 
@@ -293,6 +294,29 @@ usual program. Returns the window gone to, or NIL."
   "A copy at half the size beside it (\"photo small.jpg\")."
   (let ((to (free-name path " small")))
     (and (tool-ok "magick" path "-auto-orient" "-resize" "50%" to) to)))
+
+(define-file-command to-jpeg ((path :image) :makes t)
+  "A JPEG copy beside it (of an iPhone's HEIC, a PNG, a WebP); a JPEG is left as it is."
+  (let* ((dot (position #\. path :from-end t :start (1+ (or (position #\/ path :from-end t) -1))))
+         (type (if dot (string-downcase (subseq path (1+ dot))) "")))
+    (if (member type '("jpg" "jpeg") :test #'string=)
+        :skip
+        (let ((to (free-name (concatenate 'string (subseq path 0 (or dot (length path))) ".jpg") "")))
+          ;; [0]: the first picture of several; on white: a JPEG has no see-through.
+          (and (tool-ok "magick" (concatenate 'string path "[0]") "-auto-orient"
+                        "-background" "white" "-flatten" "-quality" "90" to)
+               to)))))
+
+(define-file-command fit-1600 ((path :image) :makes t)
+  "A copy no bigger than 1600 pixels on its longer side, for sending (\"photo 1600.jpg\")."
+  (let ((to (free-name path " 1600")))
+    (and (tool-ok "magick" path "-auto-orient" "-resize" "1600x1600>" to) to)))
+
+(define-file-command remove-location ((path :image) :makes t)
+  "A copy without where and when it was taken, or by which camera (\"photo clean.jpg\")."
+  ;; Turned the right way up first: which way is up is one of the details.
+  (let ((to (free-name path " clean")))
+    (and (tool-ok "magick" path "-auto-orient" "-strip" to) to)))
 
 ;;; --- Your own commands ---------------------------------------------------------------
 

@@ -1182,6 +1182,39 @@
 (check "a folder isn't compared with itself, or with one inside it"
        (eq :error (second (run-cli (list "compare" (p "cmp") (p "cmp/a"))))))
 
+;;; --- Picture tools: a JPEG copy, a size for sending, the details taken out -------------------
+
+(if (not (esploro::program-p "magick"))
+    (format t "(picture tools need ImageMagick's magick; skipped)~%")
+    (flet ((magick (&rest args) (sb-ext:run-program "magick" args :search t :output nil :error nil))
+           (says (format path)
+             (string-trim '(#\Newline #\Space)
+                          (with-output-to-string (out)
+                            (sb-ext:run-program "magick" (list "identify" "-format" format path)
+                                                :search t :output out :error nil)))))
+      (esploro::ensure-folder (p "pic"))
+      (magick "-size" "2400x1200" "xc:navy" "-set" "comment" "taken at home" (p "pic/wide.png"))
+      (magick "-size" "300x200" "xc:red" "-set" "comment" "secret place" (p "pic/small.jpg"))
+      (make-file (p "pic/notes.txt"))
+      (check "picture tools are offered for pictures, not for text"
+             (and (member "to-jpeg" (cdr (run-cli (list "commands" (p "pic/wide.png")))) :key #'first :test #'string=)
+                  (not (member "to-jpeg" (cdr (run-cli (list "commands" (p "pic/notes.txt")))) :key #'first :test #'string=))))
+      (check "a JPEG copy of each that isn't one; a JPEG is left as it is"
+             (and (equal (run-cli (list "run" "to-jpeg" (p "pic/wide.png") (p "pic/small.jpg")))
+                         (list 0 :done 2 :made (list (p "pic/wide.jpg"))))
+                  (string= (says "%m %wx%h" (p "pic/wide.jpg")) "JPEG 2400x1200")))
+      (check "a copy no bigger than 1600 on its longer side; a small one stays its size"
+             (and (equal (fourth (cdr (run-cli (list "run" "fit-1600" (p "pic/wide.png") (p "pic/small.jpg")))))
+                         (list (p "pic/wide 1600.png") (p "pic/small 1600.jpg")))
+                  (string= (says "%wx%h" (p "pic/wide 1600.png")) "1600x800")
+                  (string= (says "%wx%h" (p "pic/small 1600.jpg")) "300x200")))
+      (check "a copy with its details taken out; the original keeps them"
+             (and (equal (fourth (cdr (run-cli (list "run" "remove-location" (p "pic/small.jpg")))))
+                         (list (p "pic/small clean.jpg")))
+                  (string= (says "%c" (p "pic/small clean.jpg")) "")
+                  (string= (says "%c" (p "pic/small.jpg")) "secret place")))
+      (check "said with its capitals" (equal (esploro::file-command-label (esploro::find-file-command "to-jpeg")) "To JPEG"))))
+
 ;;; --- The end -------------------------------------------------------------------------
 
 (sb-ext:run-program "chmod" (list "-R" "u+w" *top*) :search t)

@@ -134,8 +134,8 @@ own menus.
 
 @itemize
 @item File: new window and folder, open, open with, Commands (what
-else suits the file: copy its path, compress, extract, shrink a
-picture, yours), properties, a terminal here, closing a project.
+else suits the file: copy its path, compress, extract, picture tools,
+yours), properties, a terminal here, closing a project.
 @item Edit: undo, repeat the last change and Recipes, copy, cut,
 paste and the rest, rename by a pattern, sort into folders by kind,
 the Trash, selecting.
@@ -921,6 +921,14 @@ The Trash.
 
 @node Writing commands
 @chapter Writing commands
+
+For pictures, Commands has four, each on everything selected and each
+making new files beside the old (the originals stay as they are):
+@samp{Shrink} (half the size, ``photo small.jpg''), @samp{Fit 1600} (no
+bigger than 1600 pixels on the longer side, for sending), @samp{To
+JPEG} (a JPEG copy of an iPhone's HEIC, a PNG or a WebP), and
+@samp{Remove location} (a copy without where and when it was taken, or
+by which camera: ``photo clean.jpg'').
 
 Commands are on Esploro's menus (File @result{} Commands, and the
 right-click menu), and anywhere in Emacs on a file name: with embark,

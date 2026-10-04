@@ -8,12 +8,6 @@ list (DESIGN.md says what was done).
 
 ## Fitting how Vid works
 
-## Next (2026-10-04)
-
-5. **Batch picture tools.** On a selection of pictures: resize, convert
-   (HEIC to JPG), strip location and camera data; each as a plan of new
-   files beside the old, for review. *Small to medium.*
-
 ## Parked
 
 - **Dropping files on a workspace's number in the bar.** Needs XDND (drag
