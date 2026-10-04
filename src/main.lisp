@@ -50,7 +50,8 @@ esploro remote open SERVER  connect to user@host:folder (sshfs): where it is, li
 esploro remote close POINT | list | known   disconnect; those connected; those you've used
 esploro phone [mount [ID] | unmount]   the iPhones plugged in, and which is mounted
                             (at ~/iphone, with ifuse); mounting one, unmounting it
-esploro changes             every change Esploro made, newest first, in words
+esploro changes [--lines [N]]   every change Esploro made, newest first, in words
+                            (--lines: as text, the N newest, each with its steps)
 esploro changes undo ID     undo that one (checked whole first), not only the last
 esploro duplicates [--plan] FOLDER   the files below that are the same, byte for byte
                             (1 KB or more, not another repository's); --plan: the
@@ -597,7 +598,19 @@ same, byte for byte; with --plan, the copies to the Trash, as a plan to review."
             (if steps 0 1))
         (plan-refused (e) (answer (list :refused (plan-refused-problems e))) 1)
         (step-failed (e) (answer (list :failed (describe-step (step-failed-step e)) (step-failed-reason e))) 1))
-      (progn (answer (changes)) 0)))
+      (if (equal (first args) "--lines")
+          ;; As text, for a shell or an agent: a change a line (its time, what it
+          ;; did, undone or not), then its steps, each indented.
+          (let ((limit (or (and (second args) (parse-integer (second args) :junk-allowed t)) 30)))
+            (handler-case
+                (progn
+                  (loop for (nil time summary undone steps) in (changes :limit limit)
+                        do (format t "~a  ~a~:[~;  (undone)~]~%~{    ~a~%~}"
+                                   (substitute #\Space #\T time) summary undone steps))
+                  (finish-output))
+              (stream-error () nil))
+            0)
+          (progn (answer (changes)) 0))))
 
 (defun cli-remote (args)
   "esploro remote open SERVER | close POINT | list | known"

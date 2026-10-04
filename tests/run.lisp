@@ -984,6 +984,11 @@
               (path-exists-p (p "chg/in/a.txt")) (path-exists-p (p "chg/out/b.txt"))))
   (check "and said to be undone" (fourth (find (first older) (cdr (run-cli (list "changes"))) :key #'first :test #'string=)))
   (check "not twice" (eq :error (second (run-cli (list "changes" "undo" (first older)))))))
+;; As text, for a shell or an agent.
+(let ((text (with-output-to-string (*standard-output*) (esploro::main-1 (list "changes" "--lines" "5")))))
+  (check "changes as text: a change a line, its steps indented, undone said"
+         (and (search "moved \"a.txt\" into ~/chg/out  (undone)" text)
+              (search (format nil "~%    move ~~/chg/in/b.txt to ~~/chg/out/b.txt") text))))
 ;; The files moved on since: refused, nothing changed.
 (let ((newest (first (cdr (run-cli (list "changes"))))))
   (rename-file (p "chg/out/b.txt") (p "chg/out/renamed.txt"))
