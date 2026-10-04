@@ -49,7 +49,12 @@ esploro archive close POINT | list   closing one; the ones open
 esploro duplicates [--plan] FOLDER   the files below that are the same, byte for byte
                             (1 KB or more, not another repository's); --plan: the
                             copies to the Trash, the oldest kept, for your review
-esploro sizes FOLDER        its entries by the space they take (du), biggest first
+esploro sizes [--lines] FOLDER   its entries by the space they take (du), biggest first
+esploro sizes --below [--lines] FOLDER   the biggest things anywhere below it, each
+                            taking a hundredth of it or more: a file, a folder of
+                            smaller things, or the smaller things beside those in
+                            a folder; no byte is counted twice
+esploro sizes --trash       what the Trash takes, and how many things are in it
 esploro recent [--lines]    the files opened lately, newest first: those opened through
                             Esploro, and GTK programs' (recently-used.xbel)
 esploro workspaces          StumpWM's workspaces, each with the project its windows are about
@@ -525,14 +530,34 @@ its usual program."
         (answer (list :recent files)))
     0))
 
-(defun cli-sizes (folder)
-  "esploro sizes FOLDER: its entries by the space they take, biggest first."
-  (let ((folder (absolute (or folder "."))))
-    (if (not (directory-p folder))
-        (progn (answer (list :error (format nil "~a isn't a folder" folder))) 1)
-        (let ((sizes (folder-sizes folder)))
-          (answer (if sizes (list* :sizes folder sizes) (list :error "du couldn't measure it")))
-          (if sizes 0 1)))))
+(defun cli-sizes (args)
+  "esploro sizes [--below] [--lines] FOLDER: its entries by the space they take,
+biggest first, or the biggest things anywhere below it; --trash: the Trash's."
+  (let* ((below (and (member "--below" args :test #'string=) t))
+         (lines (and (member "--lines" args :test #'string=) t))
+         (words (remove-if (lambda (a) (member a '("--below" "--lines") :test #'string=)) args))
+         (folder (absolute (or (first words) "."))))
+    (cond ((equal (first words) "--trash")
+           (answer (list :trash (trash-size) (length (trash-entries))))
+           0)
+          ((not (directory-p folder))
+           (answer (list :error (format nil "~a isn't a folder" folder)))
+           1)
+          (t
+           (let* ((sizes (if below (biggest-below folder) (folder-sizes folder)))
+                  ;; (PATH SHOWN WHOLE), or (NAME . BYTES): as bytes and a whole path.
+                  (rows (mapcar (lambda (entry)
+                                  (if below
+                                      (cons (second entry) (first entry))
+                                      (cons (cdr entry) (join-path folder (car entry)))))
+                                (second sizes))))
+             (cond ((null sizes) (answer (list :error "du couldn't measure it")) 1)
+                   (lines
+                    (handler-case (progn (format t "~:{~d~c~a~%~}" (mapcar (lambda (row) (list (car row) #\Tab (cdr row))) rows))
+                                         (finish-output))
+                      (stream-error () nil))
+                    0)
+                   (t (answer (list* (if below :biggest :sizes) folder sizes)) 0)))))))
 
 (defun cli-duplicates (args)
   "esploro duplicates [--plan] FOLDER: the files below FOLDER that are the
@@ -603,7 +628,7 @@ same, byte for byte; with --plan, the copies to the Trash, as a plan to review."
           ((equal command "archive") (cli-archive (rest args)))
           ((equal command "workspaces") (cli-workspaces))
           ((equal command "recent") (cli-recent (rest args)))
-          ((equal command "sizes") (cli-sizes (second args)))
+          ((equal command "sizes") (cli-sizes (rest args)))
           ((equal command "duplicates") (cli-duplicates (rest args)))
           ((equal command "open-on") (cli-open-on (second args) (cddr args)))
           ((equal command "thumbnails") (cli-thumbnails (rest args)))

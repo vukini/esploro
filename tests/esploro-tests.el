@@ -998,4 +998,76 @@ without a frame."
        (should (file-exists-p (esploro-tests--path "d/one/photo.jpg")))
        (should-not (file-exists-p (esploro-tests--path "d/two/photo (1).jpg")))))))
 
+(ert-deftest esploro-space-biggest-below ()
+  (skip-unless (file-executable-p (expand-file-name "../esploro" (file-name-directory (locate-library "esploro")))))
+  (esploro-tests--world
+   (esploro-tests--file "b/deep/er/huge.bin" (make-string 4000000 ?x))
+   (esploro-tests--file "b/photos/film.bin" (make-string 1000000 ?x))
+   (dotimes (i 40) (esploro-tests--file (format "b/photos/p%d.jpg" i) (make-string 30000 ?x)))
+   (esploro-tests--file "b/note.txt" "x")
+   (esploro-go (esploro-tests--path "b"))
+   (with-current-buffer (esploro--view)
+     (cl-flet ((rows () (save-excursion
+                          (goto-char (point-min))
+                          (let (rows)
+                            (while (not (eobp))
+                              (let ((f (esploro--grid-file)))
+                                (when f (push (file-relative-name (directory-file-name f) (esploro--dir)) rows)))
+                              (forward-line 1))
+                            (nreverse rows))))
+               (after (name) (save-excursion
+                               (dired-goto-file (esploro-tests--path name))
+                               (mapconcat (lambda (o) (concat (overlay-get o 'before-string) (overlay-get o 'after-string)))
+                                          (seq-filter (lambda (o) (overlay-get o 'esploro-space))
+                                                      (overlays-in (line-beginning-position) (1+ (line-end-position))))
+                                          ""))))
+       ;; From the plain list, C-c S goes straight to the biggest below.
+       (esploro-space-below-toggle)
+       (should (eq esploro--space 'below))
+       ;; The file four folders down first, by its way down; then the folder
+       ;; of photos for its small things, and the film in it by itself.
+       (should (equal (rows) '("deep/er/huge.bin" "photos" "photos/film.bin")))
+       (should (string-match-p "its smaller things" (after "b/photos")))
+       ;; Size, bar and share come before the name here.
+       (should (string-match-p "[0-9.]+M █+ +[0-9]+%" (after "b/deep/er/huge.bin")))
+       (should truncate-lines)
+       (should-not (string-match-p "its smaller things" (after "b/photos/film.bin")))
+       (should (string-match-p "the biggest anywhere below" (esploro--header)))
+       (should (string-match-p "free: [0-9.]+[kMGT]? of " (esploro--header)))
+       ;; Nothing marked, nothing said about marks.
+       (should-not (string-match-p "marked:" (esploro--header)))
+       ;; One marked: its size.  The folder and the film in it: the folder
+       ;; counted once, whole (the film goes with it).
+       (dired-goto-file (esploro-tests--path "b/photos/film.bin"))
+       (dired-mark 1)
+       (should (string-match-p "marked: 1, 9[0-9][0-9]k\\|marked: 1, 1\\(\\.0\\)?M" (esploro--header)))
+       (dired-goto-file (esploro-tests--path "b/photos"))
+       (dired-mark 1)
+       (should (string-match-p "marked: 1, 2\\.[0-9]M" (esploro--header)))
+       (should (equal (esploro--outermost (esploro--selection)) (list (esploro-tests--path "b/photos"))))
+       ;; To the Trash: one step, the folder; the view measures again, and
+       ;; the top line says what the Trash now holds.
+       (esploro-trash)
+       (should (equal (rows) '("deep/er/huge.bin")))
+       (should-not (file-exists-p (esploro-tests--path "b/photos")))
+       (should (string-match-p "Trash: 2\\.[0-9]M" (esploro--header)))
+       ;; Emptying it says what it gives back, and the top line forgets it.
+       (let (asked)
+         (cl-letf (((symbol-function 'yes-or-no-p) (lambda (prompt) (setq asked prompt) t)))
+           (esploro-empty-trash))
+         (should (string-match-p "(1 thing, 2\\.[0-9]M)" asked)))
+       (should-not (string-match-p "Trash:" (esploro--header)))
+       ;; C-c S again: this folder's own entries; C-c s: the list as it was.
+       (esploro-space-below-toggle)
+       (should (eq esploro--space t))
+       (should (equal (rows) '("deep" "note.txt")))
+       (esploro-space-toggle)
+       (should-not esploro--space)))))
+
+(ert-deftest esploro-empty-trash-already-empty ()
+  (skip-unless (file-executable-p (expand-file-name "../esploro" (file-name-directory (locate-library "esploro")))))
+  (esploro-tests--world
+   (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) (error "asked about an empty Trash"))))
+     (esploro-empty-trash))))
+
 ;;; esploro-tests.el ends here

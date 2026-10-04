@@ -504,6 +504,28 @@ What's Taking Space (‘C-c s’)
      "measuring...", and leaving it stops.  ‘C-c s’ again shows
      the folder as it was.
 
+     The top line says what the folder takes in all, what's free
+     on its drive, and what the Trash holds when it's on that
+     drive: a file in the Trash still takes its space, and
+     emptying the Trash is what gives it back.  Mark files and
+     folders (‘m’) and the top line adds them up, "marked: 7,
+     12G (20%)": what putting them in the Trash, and emptying
+     it, would free.
+
+Biggest Anywhere Below (‘C-c S’)
+     The same view, of the biggest things at any depth below the
+     folder, each by its way down from it: what takes the space
+     is often four folders down.  A row is something that takes
+     a hundredth of the folder or more: a file; a folder whose
+     own things are all smaller, whole (a cache, a
+     ‘node_modules’); or a folder that holds listed things too,
+     for "its smaller things", the ones beside them.  So no byte
+     is shown twice, and the rows add up.  At most fifty are
+     shown.  Marking a folder and something in it counts the
+     folder once, and the Trash takes the folder alone.  ‘C-c S’
+     again shows the folder's own entries; ‘C-c s’ the folder as
+     it was.
+
 Grid (‘G’)
      The folder as tiles, side by side: a picture of each
      picture, PDF and video, a folder or a page (with its type)
@@ -606,7 +628,9 @@ in ‘~/.local/share/Trash’).  Go, The Trash (or Trash in the
 places) shows what's in it.  There, Restore from the Trash puts
 the selection back where it was; undo puts it in the Trash
 again.  Empty the Trash deletes everything in it, for good,
-after asking: that one can't be undone.
+after asking: that one can't be undone.  The question says how
+many things are there and what they take, which is the space
+emptying it gives back.
 
 
 File: esploro.info,  Node: Where files are open,  Next: Closing a project,  Prev: The Trash,  Up: Top
@@ -723,6 +747,8 @@ M-o 1..9                  open the selection on that workspace
 C-c b                     bookmark this folder
 C-c r                     recent files
 C-c s                     what's taking space, or the list again
+C-c S                     the biggest things anywhere below, or the
+                          folder's own
 z                         the last change again, on the selection
 s                         next sort
 .                         hidden files
@@ -802,8 +828,15 @@ File: esploro.info,  Node: The command line,  Next: Writing commands,  Prev: Key
      The files below FOLDER that are the same, byte for byte, in
      groups; ‘--plan’, the copies to the Trash as a plan to
      review.
-‘esploro sizes FOLDER’
-     Its entries by the space they take, biggest first.
+‘esploro sizes [--lines] FOLDER’
+     Its entries by the space they take, biggest first.  With
+     ‘--lines’, for a shell or an agent: bytes, a tab and the
+     whole path, a line each.
+‘esploro sizes --below [--lines] FOLDER’
+     The biggest things anywhere below it (Biggest Anywhere
+     Below).
+‘esploro sizes --trash’
+     What the things in the Trash take, and how many there are.
 ‘esploro recent [--lines]’
      The files opened lately, newest first.
 ‘esploro workspaces’
@@ -898,15 +931,15 @@ Node: The preview14764
 Node: Two panes15878
 Node: Windows and workspaces16451
 Node: Looking around17899
-Node: Searches20708
-Node: Archives22480
-Node: The Trash23318
-Node: Where files are open23793
-Node: Closing a project24264
-Node: Plans from agents25133
-Node: Keys and mouse27397
-Node: The command line29499
-Node: Writing commands33922
+Node: Searches21858
+Node: Archives23630
+Node: The Trash24468
+Node: Where files are open25051
+Node: Closing a project25522
+Node: Plans from agents26391
+Node: Keys and mouse28655
+Node: The command line30864
+Node: Writing commands35609
 
 End Tag Table
 

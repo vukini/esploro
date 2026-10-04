@@ -528,6 +528,15 @@ checked whole first, journaled, so undo puts them back in the Trash."
                       collect (list :restore name (if entry (second entry) "")))
                 :allowed *undo-operations*)))
 
+(defun trash-size ()
+  "What the things in the Trash take on disk, in bytes: what emptying it
+gives back (0 for an empty one: its own empty folders aren't counted)."
+  (let ((bytes 0) (files (join-path (trash-folder) "files")))
+    (when (directory-p files)
+      (du-each (list "-a" "-d1" "--" files)
+               (lambda (n path) (unless (string= path files) (incf bytes n)))))
+    bytes))
+
 (defun empty-trash ()
   "Delete everything in the Trash, for good. Returns how many were there."
   (let* ((trash (trash-folder))

@@ -85,7 +85,9 @@ Its menu bar and tool bar are on even when they're off elsewhere."
 (defvar-local esploro--recent nil "Non-nil in a view of the files opened lately.")
 (defvar-local esploro--duplicates nil "In a view of duplicates: (FOLDER . GROUPS).")
 (put 'esploro--duplicates 'permanent-local t)
-(defvar-local esploro--space nil "Non-nil: this view shows what takes space, biggest first.")
+(defvar-local esploro--space nil
+  "Non-nil: this view shows what takes space, biggest first: t, the
+folder's entries; `below', the biggest things anywhere below it.")
 (defvar-local esploro--space-total nil "The folder's size as measured, or `measuring'.")
 (put 'esploro--space 'permanent-local t)
 (put 'esploro--recent 'permanent-local t)
@@ -609,8 +611,10 @@ From the clipboard (another program, or Esploro), else Esploro's own."
 (defun esploro-trash ()
   "Put the selection in the Trash (undo puts it back)."
   (interactive)
-  (let ((files (or (esploro--selection) (user-error "Nothing selected"))))
-    (esploro--apply (mapcar (lambda (f) (list :trash (directory-file-name f))) files)
+  ;; A folder and something in it both selected (Biggest Anywhere Below
+  ;; lists both): the folder alone, which takes the other with it.
+  (let ((files (esploro--outermost (or (esploro--selection) (user-error "Nothing selected")))))
+    (esploro--apply (mapcar (lambda (f) (list :trash f)) files)
                     (format "%d to the Trash" (length files)))))
 
 (defun esploro-rename (file name)
@@ -672,11 +676,29 @@ From the clipboard (another program, or Esploro), else Esploro's own."
                    (lambda (answer) (esploro--say answer "restored") (esploro--refresh)))))
 
 (defun esploro-empty-trash ()
-  "Delete everything in the Trash, for good: this can't be undone."
+  "Delete everything in the Trash, for good: this can't be undone.
+It's measured first, so the question says what emptying it gives back."
   (interactive)
-  (when (yes-or-no-p "Delete everything in the Trash for good? This can't be undone. ")
-    (esploro--call (list "empty-trash") nil
-                   (lambda (answer) (esploro--say answer "emptied") (esploro--refresh)))))
+  (message "Esploro: measuring the Trash...")
+  (esploro--call
+   (list "sizes" "--trash") nil
+   (lambda (measured)
+     (pcase-let* ((`(,bytes ,count) (pcase measured (`(:trash ,b ,c) (list b c)) (_ (list nil nil))))
+                  (gives (and bytes (> bytes 0) (file-size-human-readable bytes))))
+       (cond
+        ((and count (= count 0) (not gives)) (message "Esploro: the Trash is empty already"))
+        ((yes-or-no-p (if gives
+                          (format "Delete everything in the Trash for good (%d %s, %s)? This can't be undone. "
+                                  count (if (= count 1) "thing" "things") gives)
+                        "Delete everything in the Trash for good? This can't be undone. "))
+         (esploro--call (list "empty-trash") nil
+                        (lambda (answer)
+                          (pcase answer
+                            ((and `(:emptied ,n) (guard gives))
+                             (message "Esploro: the Trash is empty (%d deleted, %s given back)" n gives))
+                            (_ (esploro--say answer "emptied")))
+                          (esploro--refresh))))
+        (t (message "Esploro: the Trash is as it was")))))))
 
 ;;; --- Looking: sort, hidden, filter, find --------------------------------------------
 
@@ -991,6 +1013,7 @@ a dropped name kept its newline, named no file, and the drop was lost."
   "C-c b" #'esploro-bookmark-folder
   "C-c r" #'esploro-recent
   "C-c s" #'esploro-space-toggle
+  "C-c S" #'esploro-space-below-toggle
   "C-c C-k" #'esploro-cancel
   "<f6>" #'esploro-move-to-other-pane
   "C-c C-c" #'esploro-copy-to-other-pane
@@ -1093,6 +1116,8 @@ show the pane's sort and history even when the places are selected."
           ["Thumbnails" esploro-thumbnails-toggle :keys "T" :style toggle :selected (esploro--value 'esploro--thumbnails)]
           ["Grid" esploro-grid-toggle :keys "G" :style toggle :selected (esploro--value 'esploro--grid)]
           ["What's Taking Space" esploro-space-toggle :keys "C-c s" :style toggle :selected (esploro--value 'esploro--space)]
+          ["Biggest Anywhere Below" esploro-space-below-toggle :keys "C-c S" :style toggle
+           :selected (eq (esploro--value 'esploro--space) 'below)]
           ["Filter..." esploro-filter :keys "/"]
           ["Search Below..." esploro-search :keys "M-s s"]
           ["Refresh" esploro--refresh :keys "F5"]
@@ -1265,11 +1290,7 @@ Esploro's that has turned up since is hidden too."
                           (abbreviate-file-name (car esploro--duplicates)) (length (cdr esploro--duplicates))
                           (if (= 1 (length (cdr esploro--duplicates))) "group" "groups"))
                 (if esploro--space
-                  (format "Space: %s, %s   biggest first, F5 measures again"
-                          (abbreviate-file-name (esploro--dir))
-                          (cond ((eq esploro--space-total 'measuring) "measuring...")
-                                (esploro--space-total (concat (file-size-human-readable esploro--space-total) " in all"))
-                                (t "")))
+                  (esploro--space-header)
                 (if esploro--recent "Recent: the files opened lately, newest first   F5 looks again"
                 (if esploro--search
                   (pcase-let ((`(,words ,root ,name) esploro--search))
@@ -2460,25 +2481,51 @@ Your own kinds and folders are a recipe: see the manual."
 
 ;; View > What's Taking Space (C-c s): the folder's entries, hidden ones too,
 ;; by the space they take (du, on this drive), biggest first, each with its
-;; size and a bar.  Going into a folder keeps it; the Trash, copying and
-;; undo work as anywhere; F5 measures again.  A big folder is measured in
-;; the background ("measuring..."), and leaving it stops the measuring.
+;; size and a bar.  Biggest Anywhere Below (C-c S) is the same view of the
+;; biggest things at any depth: a file, a folder of smaller things, or the
+;; smaller things beside those in a folder, so no byte is shown twice.
+;; Going into a folder keeps the view; the Trash, copying and undo work as
+;; anywhere; F5 measures again.  The top line says what the folder takes,
+;; what's marked would give back, what's free on the drive, and what the
+;; Trash holds (emptying it is what frees the space).  A big folder is
+;; measured in the background ("measuring..."), and leaving it stops the
+;; measuring.
 
 (defface esploro-space-bar '((t :inherit font-lock-constant-face))
   "The bar beside a size, in What's Taking Space.")
 
 (defvar-local esploro--space-process nil "The core measuring this view now.")
+(defvar-local esploro--space-sizes nil
+  "In a space view: a table, each file shown (no slash at its end) to
+(SHOWN . WHOLE), the bytes its row shows and all it takes.")
+(defvar-local esploro--space-drive nil "(FREE TOTAL), in bytes, of the drive the view's folder is on.")
+(defvar-local esploro--space-trash nil "What the Trash takes, in bytes, when it's on this drive.")
+(defvar-local esploro--space-marked nil "(TICK COUNT BYTES): what's marked, as of the buffer's TICK.")
+;; Found while the folder is measured, before the list is shown again.
+(put 'esploro--space-drive 'permanent-local t)
+(put 'esploro--space-trash 'permanent-local t)
 
 (defun esploro-space-toggle ()
   "What's taking space in this folder, biggest first; or the folder as it was."
   (interactive)
-  (esploro--in-view
-   (setq esploro--space (not esploro--space))
-   (if esploro--space
-       (esploro--space-measure)
-     (esploro--space-stop)
-     (esploro--show (esploro--dir) nil (current-buffer))
-     (dired-hide-details-mode -1))))
+  (esploro--in-view (esploro--space-set (not esploro--space))))
+
+(defun esploro-space-below-toggle ()
+  "The biggest things anywhere below this folder; or its own entries by
+the space they take."
+  (interactive)
+  (esploro--in-view (esploro--space-set (if (eq esploro--space 'below) t 'below))))
+
+(defun esploro--space-set (how)
+  "The view as a space view: HOW is t (the folder's entries), `below' (the
+biggest anywhere below it) or nil (the folder as it was)."
+  (setq esploro--space how)
+  (if how
+      (esploro--space-measure)
+    (esploro--space-stop)
+    (setq esploro--space-sizes nil esploro--space-marked nil)
+    (esploro--show (esploro--dir) nil (current-buffer))
+    (dired-hide-details-mode -1)))
 
 (defun esploro--space-stop ()
   (when (and (processp esploro--space-process) (process-live-p esploro--space-process))
@@ -2497,32 +2544,148 @@ itself is already measured)."
   (let ((buffer (current-buffer)) (dir (esploro--dir)))
     (setq esploro--space-total 'measuring)
     (force-mode-line-update)
+    (esploro--space-around dir)
     (let ((call
-          (esploro--call (list "sizes" dir) nil
+          (esploro--call (if (eq esploro--space 'below) (list "sizes" "--below" dir) (list "sizes" dir)) nil
                          (lambda (answer)
                            (when (buffer-live-p buffer)
                              (with-current-buffer buffer
                                (setq esploro--space-process nil)
                                (when esploro--space
                                  (pcase answer
-                                   (`(:sizes ,folder ,total ,entries)
-                                    (when (equal (file-name-as-directory folder) (file-name-as-directory dir))
-                                      (esploro--space-show folder total entries)))
+                                   ((and `(,(or :sizes :biggest) ,folder ,total ,entries)
+                                         (guard (equal (file-name-as-directory folder) (file-name-as-directory dir))))
+                                    (esploro--space-show
+                                     folder total
+                                     ;; Each as (FILE SHOWN WHOLE), FILE a whole path.
+                                     (mapcar (lambda (entry)
+                                               (if (consp (cdr entry))
+                                                   (list (car entry) (nth 1 entry) (nth 2 entry))
+                                                 (list (expand-file-name (car entry) folder) (cdr entry) (cdr entry))))
+                                             entries)))
+                                   (`(,(or :sizes :biggest) . ,_))   ; of a folder since left
                                    (_ (setq esploro--space-total nil) (esploro--say answer "measure"))))))))))
       ;; In the background, the process (to stop on leaving); waited for, its answer.
       (when (processp call) (setq esploro--space-process call)))))
 
+(defun esploro--space-around (dir)
+  "What's free on DIR's drive, now; and what the Trash takes, when it's on
+that drive (asked in the background): emptying it is what gives space back."
+  (setq esploro--space-drive
+        (pcase (ignore-errors (file-system-info dir))
+          (`(,total ,_free ,available) (list available total))))
+  (setq esploro--space-trash nil)
+  (let ((buffer (current-buffer))
+        (trash (file-attributes (esploro--trash-dir)))
+        (here (file-attributes dir)))
+    (when (and trash here (equal (file-attribute-device-number trash) (file-attribute-device-number here)))
+      (esploro--call (list "sizes" "--trash") nil
+                     (lambda (answer)
+                       (pcase answer
+                         (`(:trash ,bytes ,_)
+                          (when (buffer-live-p buffer)
+                            (with-current-buffer buffer
+                              (setq esploro--space-trash (and (> bytes 0) bytes))
+                              (force-mode-line-update))))))))))
+
+(defun esploro--outermost (files)
+  "FILES without those inside another of them: a folder takes what's in it."
+  (let ((kept '()))
+    (dolist (file (sort (mapcar #'directory-file-name files) (lambda (a b) (< (length a) (length b)))))
+      (unless (seq-some (lambda (k) (string-prefix-p (file-name-as-directory k) file)) kept)
+        (push file kept)))
+    (nreverse kept)))
+
+(defun esploro--space-marked ()
+  "(COUNT BYTES) of what's marked in this space view, or nil with nothing
+marked: what trashing it and emptying the Trash would give back.  Looked
+for again only when the marks changed."
+  (when esploro--space-sizes
+    (let ((tick (buffer-chars-modified-tick)))
+      (unless (eql (car esploro--space-marked) tick)
+        (let* ((marked (ignore-errors (dired-get-marked-files nil nil nil t)))
+               ;; Nothing marked: the file at point alone; one mark: (t FILE).
+               (files (cond ((eq (car marked) t) (cdr marked)) ((cdr marked) marked)))
+               (outer (esploro--outermost files)))
+          (setq esploro--space-marked
+                (list tick (length outer)
+                      (apply #'+ (mapcar (lambda (f) (or (cdr (gethash f esploro--space-sizes)) 0)) outer))))))
+      (and (> (nth 1 esploro--space-marked) 0) (cdr esploro--space-marked)))))
+
+(defun esploro--space-header ()
+  "The top line of a space view."
+  (let ((total esploro--space-total)
+        (marked (esploro--space-marked)))
+    ;; What matters most first: a narrow window cuts the line's end.
+    (concat (format "Space: %s, %s" (abbreviate-file-name (esploro--dir))
+                    (cond ((eq total 'measuring) "measuring...")
+                          (total (concat (file-size-human-readable total) " in all"))
+                          (t "")))
+            (if (eq esploro--space 'below) ", the biggest anywhere below" ", biggest first")
+            (pcase marked
+              (`(,count ,bytes)
+               (format "   marked: %d, %s%s" count (file-size-human-readable bytes)
+                       (if (and (numberp total) (> total 0)) (format " (%d%%)" (round (* 100.0 bytes) total)) ""))))
+            (pcase esploro--space-drive
+              (`(,free ,all) (format "   free: %s of %s"
+                                     (file-size-human-readable free) (file-size-human-readable all))))
+            (when esploro--space-trash
+              (format "   Trash: %s" (file-size-human-readable esploro--space-trash)))
+            "   F5 measures again")))
+
 (defun esploro--space-show (folder total entries)
-  "FOLDER's ENTRIES ((NAME . BYTES) ...), biggest first, each with its size and
-a bar; TOTAL in the top line."
-  (let ((esploro--unsorted t))
-    (esploro--show (cons (file-name-as-directory folder) (mapcar #'car entries)) nil (current-buffer)))
-  (setq esploro--space-total total)
+  "FOLDER's ENTRIES ((FILE SHOWN WHOLE) ...), biggest first, each with the
+size it shows and a bar; TOTAL in the top line."
+  (let ((esploro--unsorted t)
+        (space esploro--space)
+        (dir (file-name-as-directory folder)))
+    ;; Names as they are from the folder: one below it shows its way down.
+    (esploro--show (cons dir (mapcar (lambda (e) (file-relative-name (car e) dir)) entries)) nil (current-buffer))
+    (setq esploro--space space))
+  (setq esploro--space-total total
+        esploro--space-marked nil
+        esploro--space-sizes (make-hash-table :test #'equal))
+  (dolist (entry entries)
+    (puthash (directory-file-name (car entry)) (cons (nth 1 entry) (nth 2 entry)) esploro--space-sizes))
   (setq-local revert-buffer-function (lambda (&rest _) (esploro--space-measure)))
   ;; Name, size, bar: the listing's own columns (permissions, date) hidden.
   (dired-hide-details-mode 1)
-  (let ((biggest (max 1 (or (cdar entries) 1)))
-        (column 0)
+  (if (eq esploro--space 'below)
+      (esploro--space-rows-below total (max 1 (or (nth 1 (car entries)) 1)))
+    (esploro--space-rows total (max 1 (or (nth 1 (car entries)) 1))))
+  (force-mode-line-update))
+
+(defun esploro--space-rows-below (total biggest)
+  "Size, bar and share before each name: the names here are ways down, of
+any length, so the sizes line up on the left and a long name is cut by
+the window's edge, not wrapped."
+  (setq truncate-lines t)
+  (let ((bar-room 10))
+    (save-excursion
+      (goto-char (point-min))
+      (while (not (eobp))
+        (let ((file (esploro--grid-file)))
+          (when (and file (dired-move-to-filename))
+            (let* ((sizes (gethash (directory-file-name file) esploro--space-sizes))
+                   (bytes (or (car sizes) 0))
+                   (bar (max (if (> bytes 0) 1 0) (round (* bar-room bytes) biggest)))
+                   (o (make-overlay (point) (point))))
+              (overlay-put o 'esploro-space t)
+              (overlay-put o 'before-string
+                           (concat (format "%6s " (file-size-human-readable bytes))
+                                   (propertize (make-string bar ?█) 'face 'esploro-space-bar)
+                                   (make-string (- bar-room bar) ?\s)
+                                   (propertize (format "%3d%%  " (round (* 100.0 bytes) (max 1 total))) 'face 'shadow)))
+              ;; A folder shown for less than it takes: the rest is in rows of their own.
+              (when (and sizes (< (car sizes) (cdr sizes)) (dired-move-to-end-of-filename t))
+                (let ((note (make-overlay (point) (point))))
+                  (overlay-put note 'esploro-space t)
+                  (overlay-put note 'after-string (propertize "  its smaller things" 'face 'shadow)))))))
+        (forward-line 1)))))
+
+(defun esploro--space-rows (total biggest)
+  "Size, bar and share after each name, lined up past the longest."
+  (let ((column 0)
         (bar-room 24))
     (save-excursion
       (goto-char (point-min))
@@ -2539,7 +2702,8 @@ a bar; TOTAL in the top line."
       (while (not (eobp))
         (let ((file (esploro--grid-file)))
           (when (and file (dired-move-to-end-of-filename t))
-            (let* ((bytes (or (cdr (assoc (file-name-nondirectory (directory-file-name file)) entries)) 0))
+            (let* ((sizes (gethash (directory-file-name file) esploro--space-sizes))
+                   (bytes (or (car sizes) 0))
                    (bar (max (if (> bytes 0) 1 0) (round (* bar-room bytes) biggest)))
                    (o (make-overlay (point) (point))))
               (overlay-put o 'esploro-space t)
@@ -2547,9 +2711,8 @@ a bar; TOTAL in the top line."
                            (concat (propertize " " 'display `(space :align-to ,(+ column 2)))
                                    (format "%7s  " (file-size-human-readable bytes))
                                    (propertize (make-string bar ?█) 'face 'esploro-space-bar)
-                                   (propertize (format " %d%%" (round (* 100 bytes) (max 1 total))) 'face 'shadow))))))
-        (forward-line 1))))
-  (force-mode-line-update))
+                                   (propertize (format " %d%%" (round (* 100.0 bytes) (max 1 total))) 'face 'shadow))))))
+        (forward-line 1)))))
 
 ;;; --- Duplicates: files that are the same --------------------------------------------------
 

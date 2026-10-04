@@ -177,3 +177,73 @@ NIL when du can't say."
                          (push (cons (path-name path) bytes) entries))))))
              (setf start (1+ end)))
     (and total (list total (sort entries #'> :key #'cdr)))))
+
+(defun du-each (arguments function)
+  "Run du with ARGUMENTS, giving FUNCTION each entry's bytes and path as it
+comes (so a whole home folder is never held in memory at once)."
+  (let ((process (sb-ext:run-program "du" (append '("-0" "-B1") arguments)
+                                     :search t :output :stream :error nil :input nil :wait nil
+                                     :external-format '(:utf-8 :replacement #\?))))
+    (when process
+      (unwind-protect
+           (let ((in (sb-ext:process-output process))
+                 (entry (make-array 256 :element-type 'character :adjustable t :fill-pointer 0)))
+             ;; -0: an entry ends with a NUL, since a name may hold a newline.
+             (loop for char = (read-char in nil)
+                   while char
+                   do (if (char= char (code-char 0))
+                          (let ((tab (position #\Tab entry)))
+                            (when tab
+                              (let ((bytes (parse-integer entry :end tab :junk-allowed t)))
+                                (when bytes (funcall function bytes (subseq entry (1+ tab))))))
+                            (setf (fill-pointer entry) 0))
+                          (vector-push-extend char entry))))
+        (sb-ext:process-wait process)
+        (sb-ext:process-close process)))))
+
+(defun biggest-below (folder &key (top 50) (smallest 65536))
+  "The biggest things anywhere below FOLDER (on this drive, hidden ones too):
+(TOTAL ((PATH SHOWN WHOLE) ...)), biggest first, at most TOP of them; NIL
+when du can't say. Each is something that takes a hundredth of FOLDER or
+more: a file; a folder whose own things are all smaller, whole (SHOWN =
+WHOLE); or a folder that holds listed things too, for the smaller things
+beside them (SHOWN, the rest of it; WHOLE, all of it). So the SHOWNs never
+count a byte twice. When things that big are less than half of FOLDER
+(it's all small things, spread wide), smaller ones are listed too."
+  (let ((folder (string-right-trim "/" folder))
+        (kept '()) (total nil))
+    (when (string= folder "") (setf folder "/"))
+    (flet ((measure (threshold)
+             ;; Only what's THRESHOLD or more is kept: nothing less is listed.
+             (setf kept '() total nil)
+             (du-each (append '("-a" "-x") (and (> threshold 1) (list "-t" (princ-to-string threshold)))
+                              (list "--" folder))
+                      (lambda (bytes path)
+                        (if (string= path folder)
+                            (setf total bytes)
+                            (push (cons path bytes) kept))))
+             total)
+           (listed (least)
+             ;; What each folder's big children take, to know what's beside them.
+             (let ((big (make-hash-table :test #'equal)) (out '()))
+               (dolist (entry kept)
+                 (when (>= (cdr entry) least)
+                   (incf (gethash (path-parent (car entry)) big 0) (cdr entry))))
+               (dolist (entry kept out)
+                 (destructuring-bind (path . bytes) entry
+                   (let ((beside (- bytes (gethash path big 0))))
+                     (when (>= beside least)
+                       (push (list path beside bytes) out))))))))
+      ;; A folder of nothing but things under SMALLEST (or smaller than that
+      ;; altogether) is measured again, everything kept: it's a small one.
+      (dolist (smallest (list smallest 1))
+        (when (measure smallest)
+          (flet ((enough-p (found) (>= (* 2 (reduce #'+ found :key #'second)) total)))
+            (let* ((least (max smallest (floor total 100)))
+                   (found (listed least)))
+              (loop until (or (enough-p found) (<= least smallest))
+                    do (setf least (max smallest (floor least 4))
+                             found (listed least)))
+              (when (or (enough-p found) (= smallest 1))
+                (let ((sorted (sort found #'> :key #'second)))
+                  (return (list total (subseq sorted 0 (min top (length sorted))))))))))))))

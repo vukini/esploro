@@ -879,6 +879,65 @@
   (check "and the folder's total" (>= (first sizes) (reduce #'+ (mapcar #'cdr (second sizes))))))
 (check "esploro sizes says so" (eq :sizes (second (run-cli (list "sizes" (p "space"))))))
 
+;; Below: the biggest things at any depth, no byte counted twice.
+(esploro::ensure-folder (p "below/deep/er/est"))
+(esploro::ensure-folder (p "below/photos"))
+(dotimes (i 10) (esploro::ensure-folder (p (format nil "below/lump/d~d" i))))
+(make-file (p "below/deep/er/est/huge.bin") (make-string 4000000 :initial-element #\x))
+(make-file (p "below/photos/film.bin") (make-string 1000000 :initial-element #\x))
+(dotimes (i 40) (make-file (p (format nil "below/photos/p~d.jpg" i)) (make-string 30000 :initial-element #\x)))
+(dotimes (i 20) (make-file (p (format nil "below/lump/d~d/f~d" (mod i 10) i)) (make-string 20000 :initial-element #\x)))
+(make-file (p "below/note.txt") "x")
+(let* ((below (esploro::biggest-below (p "below") :smallest 4096))
+       (rows (second below)))
+  (flet ((row (path) (find (p path) rows :key #'first :test #'string=)))
+    (check "the biggest file, however deep, comes first"
+           (string= (first (first rows)) (p "below/deep/er/est/huge.bin")))
+    (check "the folders it's in aren't listed for it" (not (or (row "below/deep") (row "below/deep/er/est"))))
+    (check "a folder of small things is one row, whole"
+           (let ((lump (row "below/lump"))) (and lump (= (second lump) (third lump)) (not (row "below/lump/d1")))))
+    (check "a folder with a big file and many small ones: the file, and the rest of the folder"
+           (let ((film (row "below/photos/film.bin")) (photos (row "below/photos")))
+             (and film photos (< (second photos) (third photos))
+                  (>= (second photos) (* 40 30000)) (< (second photos) (+ (* 40 30000) 400000)))))
+    (check "nothing small is listed" (not (row "below/note.txt")))
+    (check "biggest first" (equal (mapcar #'second rows) (sort (mapcar #'second rows) #'>)))
+    (check "no byte is counted twice: what's shown adds up to no more than the folder"
+           (<= (reduce #'+ (mapcar #'second rows)) (first below)))))
+;; All small things, spread wide: nothing takes a hundredth, so smaller ones are listed.
+(dotimes (i 300)
+  (esploro::ensure-folder (p (format nil "wide/d~d" i)))
+  (make-file (p (format nil "wide/d~d/f" i)) (make-string 5000 :initial-element #\x)))
+(check "a folder of nothing but small things still lists something"
+       (let ((wide (esploro::biggest-below (p "wide") :smallest 4096)))
+         ;; 300 rows there are (the folders, or where a folder takes no
+         ;; blocks of its own, their files); the 50 biggest come back.
+         (= (length (second wide)) 50)))
+(check "nor does the usual threshold leave it empty"
+       (= (length (second (esploro::biggest-below (p "wide")))) 50))
+(check "a folder too small for the usual threshold is still measured"
+       (let ((below (esploro::biggest-below (p "space/.hidden"))))
+         (and below (plusp (first below)))))
+(check "esploro sizes --below says so"
+       (let ((said (run-cli (list "sizes" "--below" (p "below")))))
+         (and (eql (first said) 0) (eq (second said) :biggest) (equal (third said) (p "below")))))
+(check "esploro sizes --lines: bytes, a tab, the whole path, a line each"
+       (let ((out (with-output-to-string (*standard-output*) (esploro::main-1 (list "sizes" "--lines" (p "space"))))))
+         (and (search (format nil "~c~a~%" #\Tab (p "space/big")) out)
+              (digit-char-p (char out 0)))))
+(check "a folder that isn't one is refused" (eql 1 (first (run-cli (list "sizes" "--below" (p "space/small.txt"))))))
+
+;; The Trash's size: what emptying it gives back.
+(run-cli (list "empty-trash"))
+(check "an empty Trash takes nothing" (zerop (esploro::trash-size)))
+(let ((before (esploro::trash-size)))
+  (make-file (p "space/to-trash.bin") (make-string 500000 :initial-element #\x))
+  (run-cli (list "apply") (format nil "(:trash ~s)" (p "space/to-trash.bin")))
+  (check "the Trash's size grows by what's put in it" (>= (- (esploro::trash-size) before) 500000))
+  (check "esploro sizes --trash: its bytes and how many things"
+         (let ((said (run-cli (list "sizes" "--trash"))))
+           (and (eq (second said) :trash) (>= (third said) 500000) (plusp (fourth said))))))
+
 ;;; --- Duplicates: the same, byte for byte -----------------------------------------------------
 
 (esploro::ensure-folder (p "dup/a"))

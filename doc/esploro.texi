@@ -468,6 +468,25 @@ copying and undo work as anywhere, and F5 measures again.  A big folder
 (all of home) takes a while: the top line says ``measuring...'', and
 leaving it stops.  @kbd{C-c s} again shows the folder as it was.
 
+The top line says what the folder takes in all, what's free on its
+drive, and what the Trash holds when it's on that drive: a file in the
+Trash still takes its space, and emptying the Trash is what gives it
+back.  Mark files and folders (@kbd{m}) and the top line adds them up,
+``marked: 7, 12G (20%)'': what putting them in the Trash, and emptying
+it, would free.
+
+@item Biggest Anywhere Below (@kbd{C-c S})
+The same view, of the biggest things at any depth below the folder,
+each by its way down from it: what takes the space is often four
+folders down.  A row is something that takes a hundredth of the folder
+or more: a file; a folder whose own things are all smaller, whole (a
+cache, a @file{node_modules}); or a folder that holds listed things
+too, for ``its smaller things'', the ones beside them.  So no byte is
+shown twice, and the rows add up.  At most fifty are shown.  Marking a
+folder and something in it counts the folder once, and the Trash takes
+the folder alone.  @kbd{C-c S} again shows the folder's own entries;
+@kbd{C-c s} the folder as it was.
+
 @item Grid (@kbd{G})
 The folder as tiles, side by side: a picture of each picture, PDF and
 video, a folder or a page (with its type) for the rest, the name under
@@ -558,7 +577,8 @@ Esploro uses the Trash other programs use (the freedesktop one, in
 shows what's in it.  There, Restore from the Trash puts the selection
 back where it was; undo puts it in the Trash again.  Empty the Trash
 deletes everything in it, for good, after asking: that one can't be
-undone.
+undone.  The question says how many things are there and what they
+take, which is the space emptying it gives back.
 
 @node Where files are open
 @chapter Where files are open
@@ -658,6 +678,7 @@ then ask an agent to ``sort the ones I've selected'', or run
 @item C-c b @tab bookmark this folder
 @item C-c r @tab recent files
 @item C-c s @tab what's taking space, or the list again
+@item C-c S @tab the biggest things anywhere below, or the folder's own
 @item z @tab the last change again, on the selection
 @item s @tab next sort
 @item . @tab hidden files
@@ -734,8 +755,14 @@ and the ones open.
 @item esploro duplicates [--plan] @var{folder}
 The files below @var{folder} that are the same, byte for byte, in
 groups; @option{--plan}, the copies to the Trash as a plan to review.
-@item esploro sizes @var{folder}
-Its entries by the space they take, biggest first.
+@item esploro sizes [--lines] @var{folder}
+Its entries by the space they take, biggest first.  With
+@code{--lines}, for a shell or an agent: bytes, a tab and the whole
+path, a line each.
+@item esploro sizes --below [--lines] @var{folder}
+The biggest things anywhere below it (Biggest Anywhere Below).
+@item esploro sizes --trash
+What the things in the Trash take, and how many there are.
 @item esploro recent [--lines]
 The files opened lately, newest first.
 @item esploro workspaces
