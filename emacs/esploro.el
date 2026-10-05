@@ -252,6 +252,34 @@ No owner or group (-g -G): size, time and name are what a file manager shows."
           (if esploro--unsorted "U" (pcase esploro--sort ('size "S") ('time "t") ('kind "X") (_ "v")))
           (if esploro--reverse "r" "")))
 
+(defun esploro--names-only-file ()
+  (expand-file-name "esploro/names-only" (or (getenv "XDG_STATE_HOME") "~/.local/state")))
+
+(defun esploro--names-only-p ()
+  "Non-nil: the list has names only, no size or time before them.  As the
+preview's, kept in a file in ~/.local/state/esploro: the same in every
+Esploro window, and the next time."
+  (file-exists-p (esploro--names-only-file)))
+
+(defun esploro--details-show ()
+  "This view's rows as the setting has them: names only, or with their
+permissions, size and time.  A space view has its own columns either way."
+  (dired-hide-details-mode (if (or esploro--space (esploro--names-only-p)) 1 -1)))
+
+(defun esploro-names-only-toggle ()
+  "Names only in the list, so a long name has the row to itself; or each
+with its permissions, size and time again.  In every Esploro window."
+  (interactive)
+  (let ((file (esploro--names-only-file)))
+    (if (esploro--names-only-p)
+        (delete-file file)
+      (make-directory (file-name-directory file) t)
+      (with-temp-file file (insert "Esploro's list has names only: ( in Esploro shows size and time again.\n")))
+    (dolist (view (esploro--views))
+      (with-current-buffer view
+        (when (derived-mode-p 'dired-mode) (esploro--details-show))))
+    (message "Esploro: %s" (if (esploro--names-only-p) "names only" "names with size and time"))))
+
 (defun esploro--view-p (buffer)
   (and (buffer-live-p buffer) (buffer-local-value 'esploro--view buffer)))
 
@@ -307,6 +335,7 @@ FRAME (the selected one) used last; else its first; nil when it has none."
       (dired-mode (if (consp what) what dir) (esploro--switches))
       (setq default-directory (if (consp what) (file-name-as-directory (car what)) dir))
       (esploro-mode 1)
+      (esploro--details-show)
       (dired-readin)
       (goto-char (point-min))
       (or (and file (dired-goto-file (expand-file-name file)))
@@ -1003,6 +1032,7 @@ a dropped name kept its newline, named no file, and the drop was lost."
   "C-_" #'esploro-undo
   "s" #'esploro-sort-cycle
   "." #'esploro-toggle-hidden
+  "(" #'esploro-names-only-toggle
   "/" #'esploro-filter
   "M-s f" #'esploro-search
   "M-s s" #'esploro-search
@@ -1125,6 +1155,7 @@ show the pane's sort and history even when the places are selected."
            :style toggle :selected (esploro--value 'esploro--reverse)]
           "---"
           ["Hidden Files" esploro-toggle-hidden :style toggle :selected (esploro--value 'esploro--hidden)]
+          ["Names Only" esploro-names-only-toggle :keys "(" :style toggle :selected (esploro--names-only-p)]
           ["Thumbnails" esploro-thumbnails-toggle :keys "T" :style toggle :selected (esploro--value 'esploro--thumbnails)]
           ["Grid" esploro-grid-toggle :keys "G" :style toggle :selected (esploro--value 'esploro--grid)]
           ["What's Taking Space" esploro-space-toggle :keys "C-c s" :style toggle :selected (esploro--value 'esploro--space)]
@@ -1267,6 +1298,7 @@ Esploro's that has turned up since is hidden too."
     ["Close Project..." esploro-close-project]
     "---"
     ["Hidden Files" esploro-toggle-hidden :style toggle :selected esploro--hidden]
+    ["Names Only" esploro-names-only-toggle :style toggle :selected (esploro--names-only-p)]
     ["Sort by Name" (esploro-sort 'name) :style radio :selected (eq esploro--sort 'name)]
     ["Sort by Size" (esploro-sort 'size) :style radio :selected (eq esploro--sort 'size)]
     ["Sort by Time" (esploro-sort 'time) :style radio :selected (eq esploro--sort 'time)]
@@ -2952,8 +2984,7 @@ biggest anywhere below it) or nil (the folder as it was)."
       (esploro--space-measure)
     (esploro--space-stop)
     (setq esploro--space-sizes nil esploro--space-marked nil)
-    (esploro--show (esploro--dir) nil (current-buffer))
-    (dired-hide-details-mode -1)))
+    (esploro--show (esploro--dir) nil (current-buffer))))
 
 (defun esploro--space-stop ()
   (when (and (processp esploro--space-process) (process-live-p esploro--space-process))

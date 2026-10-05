@@ -143,8 +143,9 @@ The menus
         • Edit: undo, repeat the last change and Recipes, copy,
           cut, paste and the rest, rename by a pattern, sort
           into folders by kind, the Trash, selecting.
-        • View: sorting, hidden files, the filter, searching
-          below, refresh, two panes, the preview, places.
+        • View: sorting, hidden files, names only, the filter,
+          searching below, refresh, two panes, the preview,
+          places.
         • Go: back, forward, up, home, a folder typed, your
           Searches, the Trash.
         • Help: this manual, and the keys.
@@ -507,6 +508,16 @@ Sorting (View, or ‘s’)
 Hidden files (‘.’)
      Shows or hides the files whose names start with a dot.
 
+Names Only (‘(’)
+     The list with names alone: the permissions, size and time
+     before each name go, so a long name has the row to itself.
+     ‘(’ again, or View, Names Only, brings them back.  It holds
+     in every Esploro window, and the next time, until you turn
+     it off.  What comes after a name stays (git's and Dropbox's
+     word, tags, the window that has it open), and the preview
+     (‘F11’) still has the size and the time of the file under
+     the cursor.
+
 Thumbnails (‘T’)
      A small picture before each picture, PDF and video in the
      list, made in the background (a big folder fills in as it
@@ -847,6 +858,7 @@ C-c S                     the biggest things anywhere below, or the
 z                         the last change again, on the selection
 s                         next sort
 .                         hidden files
+(                         names only, or with size and time
 T                         thumbnails in the list
 G                         the grid, or the list
 /                         only names with...
@@ -1054,25 +1066,25 @@ Tag Table:
 Node: Top276
 Node: Opening Esploro2256
 Node: The window4072
-Node: Selecting and opening6555
-Node: Changing files7608
-Node: Recipes9989
-Node: Drag and drop15616
-Node: The preview16342
-Node: Two panes17456
-Node: Windows and workspaces18029
-Node: Looking around19477
-Node: Searches23948
-Node: Tags25716
-Node: Archives26908
-Node: Servers27740
-Node: The Trash28754
-Node: Where files are open29336
-Node: Closing a project29807
-Node: Plans from agents30676
-Node: Keys and mouse32940
-Node: The command line35357
-Node: Writing commands41238
+Node: Selecting and opening6577
+Node: Changing files7630
+Node: Recipes10011
+Node: Drag and drop15638
+Node: The preview16364
+Node: Two panes17478
+Node: Windows and workspaces18051
+Node: Looking around19499
+Node: Searches24464
+Node: Tags26232
+Node: Archives27424
+Node: Servers28256
+Node: The Trash29270
+Node: Where files are open29852
+Node: Closing a project30323
+Node: Plans from agents31192
+Node: Keys and mouse33456
+Node: The command line35933
+Node: Writing commands41814
 
 End Tag Table
 

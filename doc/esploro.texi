@@ -139,8 +139,8 @@ yours), properties, a terminal here, closing a project.
 @item Edit: undo, repeat the last change and Recipes, copy, cut,
 paste and the rest, rename by a pattern, sort into folders by kind,
 the Trash, selecting.
-@item View: sorting, hidden files, the filter, searching below,
-refresh, two panes, the preview, places.
+@item View: sorting, hidden files, names only, the filter, searching
+below, refresh, two panes, the preview, places.
 @item Go: back, forward, up, home, a folder typed, your Searches, the
 Trash.
 @item Help: this manual, and the keys.
@@ -472,6 +472,15 @@ through them in turn.
 @item Hidden files (@kbd{.})
 Shows or hides the files whose names start with a dot.
 
+@item Names Only (@kbd{(})
+The list with names alone: the permissions, size and time before each
+name go, so a long name has the row to itself.  @kbd{(} again, or View,
+Names Only, brings them back.  It holds in every Esploro window, and the
+next time, until you turn it off.  What comes after a name stays (git's
+and Dropbox's word, tags, the window that has it open), and the preview
+(@kbd{F11}) still has the size and the time of the file under the
+cursor.
+
 @item Thumbnails (@kbd{T})
 A small picture before each picture, PDF and video in the list, made
 in the background (a big folder fills in as it goes) and kept, so
@@ -767,6 +776,7 @@ then ask an agent to ``sort the ones I've selected'', or run
 @item z @tab the last change again, on the selection
 @item s @tab next sort
 @item . @tab hidden files
+@item ( @tab names only, or with size and time
 @item T @tab thumbnails in the list
 @item G @tab the grid, or the list
 @item / @tab only names with...

@@ -346,6 +346,61 @@
        (delete-window (esploro--preview-window))
        (kill-buffer preview)))))
 
+(defun esploro-tests--row-seen ()
+  "The text of this row that isn't hidden, as the window would show it."
+  (let ((pos (line-beginning-position)) (end (line-end-position)) (seen ""))
+    (while (< pos end)
+      (let ((next (next-single-char-property-change pos 'invisible nil end)))
+        (unless (invisible-p pos) (setq seen (concat seen (buffer-substring-no-properties pos next))))
+        (setq pos next)))
+    seen))
+
+(ert-deftest esploro-names-only ()
+  (esploro-tests--world
+   (esploro-tests--file "f/a-long-name-that-wants-the-row.txt" "0123456789")
+   (make-directory (esploro-tests--path "f/sub"))
+   (esploro-tests--file "f/sub/inside.txt")
+   (esploro-go (esploro-tests--path "f"))
+   (cl-flet ((row () (with-current-buffer (esploro--view)
+                       (dired-goto-file (car (directory-files default-directory t "\\.txt\\'")))
+                       (string-trim (esploro-tests--row-seen)))))
+     ;; As it comes: the size and the time before the name.
+     (should-not (esploro--names-only-p))
+     (should (string-match-p "\\`-rw.* 10 .*[0-9]:[0-9][0-9] a-long-name-that-wants-the-row\\.txt\\'" (row)))
+     (should (eq (lookup-key esploro-mode-map "(") #'esploro-names-only-toggle))
+     (esploro-names-only-toggle)
+     (should (esploro--names-only-p))
+     (should (equal (row) "a-long-name-that-wants-the-row.txt"))
+     ;; It holds in the next folder, in a second pane, and after a sort and a refresh.
+     (esploro-go (esploro-tests--path "f/sub"))
+     (should (equal (row) "inside.txt"))
+     (esploro-sort 'size)
+     (esploro--refresh)
+     (should (equal (row) "inside.txt"))
+     (esploro-up)
+     (let ((other (esploro--show (esploro-tests--path "f/sub") nil (esploro--new-view (esploro--view)))))
+       (with-current-buffer other
+         (dired-goto-file (esploro-tests--path "f/sub/inside.txt"))
+         (should (equal (string-trim (esploro-tests--row-seen)) "inside.txt")))
+       ;; Off again: in every view there is, not only the one it was pressed in.
+       (esploro-names-only-toggle)
+       (should-not (esploro--names-only-p))
+       (with-current-buffer other
+         (dired-goto-file (esploro-tests--path "f/sub/inside.txt"))
+         (should (string-match-p "\\`-rw.*[0-9]:[0-9][0-9] inside\\.txt\\'" (string-trim (esploro-tests--row-seen))))))
+     (should (string-match-p "\\`-rw.* a-long-name-that-wants-the-row\\.txt\\'" (row)))
+     ;; What's Taking Space has its own columns; leaving it, the list is as the setting has it.
+     (with-current-buffer (esploro--view)
+       (esploro-space-toggle)
+       (should dired-hide-details-mode)
+       (esploro-space-toggle)
+       (should-not dired-hide-details-mode)
+       (esploro-names-only-toggle)
+       (esploro-space-toggle)
+       (esploro-space-toggle)
+       (should dired-hide-details-mode))
+     (should (equal (row) "a-long-name-that-wants-the-row.txt")))))
+
 (defun esploro-tests--review (plan)
   "A review buffer for the plan in PLAN, as `esploro-review-plan' makes it,
 without a frame."
