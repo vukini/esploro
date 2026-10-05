@@ -1431,10 +1431,11 @@ PCManFM's and the file dialogs' (GTK's bookmarks, which they share)."
     (esploro-places-refresh)
     (message "Esploro: %s is under Bookmarks" (abbreviate-file-name dir))))
 
-(defun esploro-remove-bookmark ()
-  "Take this folder out of the bookmarks."
+(defun esploro-remove-bookmark (&optional dir name)
+  "Take this folder out of the bookmarks; or DIR, one clicked down the
+side: with NAME, only the bookmark of that name (a folder may have two)."
   (interactive)
-  (let* ((dir (directory-file-name (esploro--in-view (esploro--dir))))
+  (let* ((dir (directory-file-name (expand-file-name (or dir (esploro--in-view (esploro--dir))))))
          (file (esploro--bookmarks-file)))
     (unless (esploro--bookmarked-p dir) (user-error "%s isn't bookmarked" (abbreviate-file-name dir)))
     (with-temp-buffer
@@ -1443,7 +1444,10 @@ PCManFM's and the file dialogs' (GTK's bookmarks, which they share)."
       (while (not (eobp))
         (let* ((line (buffer-substring (line-beginning-position) (line-end-position)))
                (uri-dir (esploro--uri-file (car (split-string line " ")))))
-          (if (and uri-dir (equal (directory-file-name uri-dir) dir))
+          (if (and uri-dir (equal (directory-file-name uri-dir) dir)
+                   (or (null name)
+                       (equal name (if (string-match " \\(.+\\)\\'" line) (match-string 1 line)
+                                     (file-name-nondirectory dir)))))
               (delete-region (line-beginning-position) (min (point-max) (1+ (line-end-position))))
             (forward-line 1))))
       (write-region nil nil file nil 'silent))
@@ -1475,7 +1479,9 @@ PCManFM's and the file dialogs' (GTK's bookmarks, which they share)."
   :doc "Esploro's places."
   :parent special-mode-map
   "<remap> <save-buffers-kill-terminal>" #'esploro-close
-  "<remap> <save-buffers-kill-emacs>" #'esploro-close)
+  "<remap> <save-buffers-kill-emacs>" #'esploro-close
+  "<down-mouse-3>" #'ignore
+  "<mouse-3>" #'esploro-places-context-menu)
 
 (esploro--install-menu-bar esploro-places-mode-map)
 
@@ -1505,6 +1511,7 @@ PCManFM's and the file dialogs' (GTK's bookmarks, which they share)."
           (dolist (place (cdr group))
             (insert "  ")
             (insert-text-button (car place)
+                                'esploro-place (cons (car group) place)
                                 'action (cond ((stringp (cdr place)) (lambda (_) (esploro--from-places (cdr place))))
                                               ((eq (car-safe (cdr place)) 'remote) (lambda (_) (esploro-connect (cddr place))))
                                               ((eq (car-safe (cdr place)) 'phone) (lambda (_) (esploro-open-phone (cddr place))))
@@ -1524,6 +1531,34 @@ PCManFM's and the file dialogs' (GTK's bookmarks, which they share)."
             (insert "\n"))
           (insert "\n"))
         (goto-char (point-min)))))))
+
+(defun esploro--place-menu (group place open)
+  "The right-click menu of PLACE (NAME . WHAT), down the side in GROUP:
+OPEN (a form) goes there; a bookmark, a search and a tag can be taken out."
+  (let ((name (car place)) (what (cdr place)))
+    (easy-menu-create-menu
+     name
+     (delq nil
+           (list (vector "Open" open)
+                 (when (and (equal group "Bookmarks") (stringp what))
+                   (vector "Remove Bookmark" (list 'esploro-remove-bookmark what name)))
+                 (when (equal group "Searches")
+                   (vector "Forget This Search" (list 'esploro-forget-search (cdr what))))
+                 (when (eq (car-safe what) 'tag)
+                   (vector "No Longer Offer This Tag" (list 'esploro-forget-tag (cdr what)))))))))
+
+(defun esploro-places-context-menu (event)
+  "Right-click on a place down the side: open it, or take out a bookmark,
+a search or a tag."
+  (interactive "e")
+  (let* ((posn (event-start event))
+         (pos (posn-point posn))
+         (buffer (window-buffer (posn-window posn)))
+         (entry (and pos (with-current-buffer buffer (get-text-property pos 'esploro-place)))))
+    (when entry
+      (popup-menu (esploro--place-menu (car entry) (cdr entry)
+                                       `(with-current-buffer ,buffer (push-button ,pos)))
+                  event))))
 
 (defun esploro--from-places (dir)
   "DIR in the pane used last of the frame whose places were clicked."

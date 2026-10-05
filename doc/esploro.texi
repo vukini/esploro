@@ -122,7 +122,10 @@ paired yet, it asks you to unlock it and tap Trust), the bookmarks GTK programs 
 @kbd{C-c b}, adds the folder you're in, and Remove Bookmark takes it
 out; PCManFM and the file dialogs share the list), the searches you kept
 (@pxref{Searches}), and the Trash.  Click one to go
-there.  @kbd{F9}, or View, Places, hides them or shows them again.
+there.  Right-click one for its menu: Open, and on a bookmark Remove
+Bookmark (that one only, and also when its folder is gone), on a search
+Forget This Search, on a tag No Longer Offer This Tag.  @kbd{F9}, or
+View, Places, hides them or shows them again.
 
 @item The tool bar
 Back, Forward, Up, Home, Places, Two Panes, Preview, New Folder, Copy,
@@ -751,6 +754,7 @@ then ask an agent to ``sort the ones I've selected'', or run
 @item Ctrl+click @tab add it to the selection, or take it out
 @item Shift+click @tab select everything from the last one to here
 @item right-click @tab what can be done with it, or with the folder
+@item right-click a place @tab open it; take out a bookmark, a search, a tag
 @item drag a row out @tab give the file to another program
 @item drop files in @tab copy them here
 @headitem Keys @tab

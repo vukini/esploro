@@ -111,7 +111,32 @@
                           (cons "my work" (esploro-tests--path "my work")))))
      (should (assoc "Bookmarks" (esploro--places)))
      (should (equal (cdr (assoc "Trash" (cdr (assoc "" (esploro--places)))))
-                    (esploro--trash-dir))))))
+                    (esploro--trash-dir)))
+     ;; Down the side, a right-click on a bookmark takes that one out; a
+     ;; place that isn't yours to take out only opens.
+     (esploro-places-show)
+     (cl-flet ((entry (name) (with-current-buffer esploro-places-buffer-name
+                               (goto-char (point-min))
+                               (search-forward (concat "  " name "\n"))
+                               (get-text-property (- (point) 2) 'esploro-place)))
+               (items (menu) (delq nil (mapcar (lambda (i) (and (eq (car-safe (cdr-safe i)) 'menu-item) (nth 2 i)))
+                                               (cdr menu)))))
+       (should (eq (lookup-key esploro-places-mode-map [mouse-3]) #'esploro-places-context-menu))
+       (should (equal (entry "Work") (cons "Bookmarks" (cons "Work" (esploro-tests--path "my work")))))
+       (let ((work (entry "Work")) (trash (entry "Trash")))
+         (should (equal (items (esploro--place-menu (car work) (cdr work) '(ignore))) '("Open" "Remove Bookmark")))
+         (should (equal (items (esploro--place-menu (car trash) (cdr trash) '(ignore))) '("Open")))
+         (esploro-remove-bookmark (cddr work) (cadr work)))
+       ;; Only the one clicked: the folder's other bookmark stays, in the file and down the side.
+       (should (equal (esploro--bookmarks) (list (cons "my work" (esploro-tests--path "my work")))))
+       (should (entry "my work"))
+       (should-error (entry "Work"))
+       ;; A bookmark whose folder is gone can be taken out too.
+       (delete-directory (esploro-tests--path "my work"))
+       (esploro-remove-bookmark (cddr (entry "my work")) "my work")
+       (should (null (esploro--bookmarks)))
+       (should-not (assoc "Bookmarks" (esploro--places))))
+     (kill-buffer esploro-places-buffer-name))))
 
 (ert-deftest esploro-menus-and-the-manual ()
   ;; A file manager's menus; Emacs's and dired's hidden on Esploro's frame.

@@ -124,8 +124,12 @@ Places
      Bookmark This Folder, or ‘C-c b’, adds the folder you're
      in, and Remove Bookmark takes it out; PCManFM and the file
      dialogs share the list), the searches you kept (*note
-     Searches::), and the Trash.  Click one to go there.  ‘F9’,
-     or View, Places, hides them or shows them again.
+     Searches::), and the Trash.  Click one to go there.
+     Right-click one for its menu: Open, and on a bookmark
+     Remove Bookmark (that one only, and also when its folder is
+     gone), on a search Forget This Search, on a tag No Longer
+     Offer This Tag.  ‘F9’, or View, Places, hides them or shows
+     them again.
 
 The tool bar
      Back, Forward, Up, Home, Places, Two Panes, Preview, New
@@ -831,6 +835,8 @@ Shift+click               select everything from the last one to
                           here
 right-click               what can be done with it, or with the
                           folder
+right-click a place       open it; take out a bookmark, a search, a
+                          tag
 drag a row out            give the file to another program
 drop files in             copy them here
 Keys
@@ -1066,25 +1072,25 @@ Tag Table:
 Node: Top276
 Node: Opening Esploro2256
 Node: The window4072
-Node: Selecting and opening6577
-Node: Changing files7630
-Node: Recipes10011
-Node: Drag and drop15638
-Node: The preview16364
-Node: Two panes17478
-Node: Windows and workspaces18051
-Node: Looking around19499
-Node: Searches24464
-Node: Tags26232
-Node: Archives27424
-Node: Servers28256
-Node: The Trash29270
-Node: Where files are open29852
-Node: Closing a project30323
-Node: Plans from agents31192
-Node: Keys and mouse33456
-Node: The command line35933
-Node: Writing commands41814
+Node: Selecting and opening6785
+Node: Changing files7838
+Node: Recipes10219
+Node: Drag and drop15846
+Node: The preview16572
+Node: Two panes17686
+Node: Windows and workspaces18259
+Node: Looking around19707
+Node: Searches24672
+Node: Tags26440
+Node: Archives27632
+Node: Servers28464
+Node: The Trash29478
+Node: Where files are open30060
+Node: Closing a project30531
+Node: Plans from agents31400
+Node: Keys and mouse33664
+Node: The command line36239
+Node: Writing commands42120
 
 End Tag Table
 
